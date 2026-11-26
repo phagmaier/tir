@@ -1,0 +1,12 @@
+{
+  // The core's purity guard (architecture, design rule 3): no DOM library
+  // and no ambient types, so `document`, `window` or a Node import in the
+  // core fails to type-check. Biome's noRestrictedImports covers packages.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024"],
+    "types": []
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["./**/*.test.ts"]
+}

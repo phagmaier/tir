@@ -1,0 +1,11 @@
+# Dependencies and build output
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+result
+.direnv/
+
+# Other people's scripts: Final Draft PDFs for the parity check (task 0.8).
+# They are test data on this machine only and never enter version control.
+/calibration/

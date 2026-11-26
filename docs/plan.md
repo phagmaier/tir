@@ -34,9 +34,9 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none
+- Active: 0.10 User check: Stage 0 (waiting for the user to run it)
 - Blockers: none
-- Next: 0.1 Toolchain and app skeleton
+- Next: 1.1 Editor spike, after the user passes 0.10
 
 ## Stages
 
@@ -57,8 +57,8 @@ anything else. V1 is done when 7.4 is checked.
 
 ## Stage 0: skeleton and page engine
 
-- [ ] 0.1 — Toolchain and app skeleton
-  - Status: todo
+- [x] 0.1 — Toolchain and app skeleton
+  - Status: done
   - Depends on: none
   - Spec: brief "Stack"; architecture "Repository layout", "Working here"
   - Do: Pin Node, pnpm and Rust in `mise.toml`. Add a Nix flake
@@ -77,9 +77,21 @@ anything else. V1 is done when 7.4 is checked.
     `mise run dev` opens a Tauri window on Hyprland showing a placeholder
     page in Courier Prime in look.css's colours; architecture.md gives the
     commands.
+  - Evidence: 2026-11-26, inside `nix develop`: `mise run check` exited 0
+    (Biome clean, both type checks, 13 Vitest tests, rustfmt, clippy with
+    `-D warnings`, cargo test), and exited 1 when a type error was added to
+    `src/core/`. Breaking the guard (dropping the Tauri pattern, adding the
+    DOM lib to the core) made 5 guard tests fail. `mise run dev` opened a
+    "Tir" window on Hyprland (workspace 1); a grim screenshot showed the
+    Night page (#141920) on the #0a0d11 desk with slab-serif text, which is
+    the bundled Courier Prime since the system's fallbacks are sans-serif.
+    The first launch failed with `libgdk-3.so.0` missing; the fix is in
+    findings "NixOS development shell". Reviewed with user-code-review:
+    removed an unused `@tauri-apps/api`, duplicate package scripts and a
+    `.deb` bundle target that pre-empted Stage 7.
 
-- [ ] 0.2 — Script model and draft file
-  - Status: todo
+- [x] 0.2 — Script model and draft file
+  - Status: done
   - Depends on: 0.1
   - Spec: brief "Elements and keys", "Title page", "Storage", "Terms"
   - Do: Define the model: elements of the eight types with inline bold,
@@ -92,9 +104,19 @@ anything else. V1 is done when 7.4 is checked.
     model → file → model unchanged, and a damaged file, or one from a newer
     format version, is refused with a readable message instead of being
     partly loaded.
+  - Evidence: 2026-11-26, `src/core/draft-file.test.ts` (35 tests): the
+    `everyFormat` fixture (all eight types, bold, italic, underline, dual
+    dialogue, centred, forced page break, line break, empty element,
+    non-ASCII, full title page) reads back equal after writing; a small
+    script writes exactly a hand-written file; 25 damaged variants (empty,
+    truncated, wrong format, bad version, unknown fields, bad spans, bad
+    flags, dual on dialogue) and newer versions are refused with messages
+    naming the problem, and a file damaged at its last element is refused
+    whole. Review added that `writeDraft` throws rather than write a file
+    it cannot read back. `mise run check` exited 0 (48 tests).
 
-- [ ] 0.3 — Fountain reader and writer
-  - Status: todo
+- [x] 0.3 — Fountain reader and writer
+  - Status: done
   - Depends on: 0.2
   - Spec: brief "Storage", "Import report"; the Fountain 1.1 spec
   - Do: Read Fountain into the model: title page keys, forced elements,
@@ -106,9 +128,23 @@ anything else. V1 is done when 7.4 is checked.
     examples, and every fixture survives model → Fountain → model
     unchanged, including all-caps action lines that inference would read as
     character cues.
+  - Evidence: 2026-11-26, `src/core/fountain/*.test.ts` (135 tests):
+    `read.test.ts` has a group with worked examples for every section of
+    fountain.io/syntax (headings and scene numbers, action, characters,
+    dialogue, parentheticals, dual dialogue, lyrics, transitions, centred
+    text, emphasis, title page, page breaks, punctuation, notes, boneyard,
+    sections, synopses); `write.test.ts` gives the exact Fountain for 34
+    forcing cases (including `BANG\nThe door shakes.` written as
+    `!BANG…`), and `everyFormat` (whose all-caps `TIDE TABLE` action would
+    read as a cue) survives model → Fountain → model unchanged. A seeded
+    random round trip of 300 scripts runs in the suite; a one-off sweep of
+    12,000 more across four seeds also passed. Review fixed a `/` before
+    `**` opening boneyard, a cue ending in `^` reading as dual, and title
+    keys like `constructor:` matching object properties.
+    `mise run check` exited 0 (183 tests).
 
-- [ ] 0.4 — Line layout
-  - Status: todo
+- [x] 0.4 — Line layout
+  - Status: done
   - Depends on: 0.2
   - Spec: architecture design rule 1; findings "Final Draft's default
     screenplay format"
@@ -119,9 +155,20 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: unit tests with hand-worked expected lines pass for every
     element type and edge case, including empty elements, long words, and
     accented and other non-ASCII characters.
+  - Evidence: 2026-11-26, `src/core/layout.test.ts` (33 tests, expected
+    lines and positions worked by hand from findings' table): each of the
+    eight types' indent, space before and capitals; wrapping at 60, 35, 37,
+    26-then-25 and 16 characters, including exact fits; right-aligned
+    transitions; centred lines; line breaks; an empty element; words longer
+    than a line; composed and decomposed accents, dashes, "ñ" and an emoji
+    counting one character each; "ß" kept in capitals. Values live in
+    `src/core/format.ts`. `AllCaps` confirmed in the cited FDX files and
+    added to findings; dual dialogue columns are provisional and 0.8 now
+    measures them and hyphen breaks. Review caught an emoji split by the
+    plain-text fast path. `mise run check` exited 0 (216 tests).
 
-- [ ] 0.5 — Pagination
-  - Status: todo
+- [x] 0.5 — Pagination
+  - Status: done
   - Depends on: 0.4
   - Spec: brief "Page parity", "Elements and keys" (automatic); findings
     "Final Draft's default screenplay format"
@@ -134,9 +181,22 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: unit tests with worked examples pass for each rule, and a
     test shows paginating a 120-page script takes under 16 ms on this
     machine.
+  - Evidence: 2026-11-26, `src/core/paginate.test.ts` (22 tests, worked by
+    hand on short pages): space before dropped at a page top; forced breaks
+    without a blank first page; headings and shots moved with what follows;
+    action split at a sentence end with the rest wrapped afresh, moved whole
+    when it has none, and split at a line when longer than a page; dialogue
+    split at "Go home." with (MORE) and "MAYA (CONT'D)", moved whole without
+    a sentence end, split before but never after a parenthetical, no lone
+    cue; automatic (CONT'D) and its four exceptions; dual columns; numbers
+    shown from page 2. Speed: an original 122-page script (1,970 elements)
+    paginated in 3.6 ms fastest, 4.6 ms median over 40 runs (Node 24, this
+    machine); the test asserts the fastest of 25 runs is under 16 ms. Lines
+    per page is the `linesPerPage` option. Rules still provisional are
+    listed in findings for 0.8. `mise run check` exited 0 (238 tests).
 
-- [ ] 0.6 — Review: the core and the page engine
-  - Status: todo
+- [x] 0.6 — Review: the core and the page engine
+  - Status: done
   - Depends on: 0.5
   - Scope: everything built in 0.1–0.5.
   - Check:
@@ -157,9 +217,26 @@ anything else. V1 is done when 7.4 is checked.
       everything.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-26, reviewed with user-code-review at HEAD
+    `c4a2175bf025d924c0f95d2c30c3a36f7d2866c3` plus uncommitted changes
+    (all of 0.1–0.5 is uncommitted). Checklist: `src/core/` imports only
+    core modules (Node and Vitest only in tests), and real probe files made
+    `mise run check` exit 1 for a ProseMirror import, a Tauri import and
+    `document`; no format value outside `format.ts` matches findings'
+    table; lockfiles present and not ignored, runtimes pinned exactly,
+    `mise run install` passed pnpm's supply-chain check; the speed test's
+    script is 122 pages. Findings fixed: no test had a speech longer than a
+    page (added one splitting at sentence ends over four pages and one
+    splitting at lines); the placeholder's CSS repeated 12 pt (now
+    `FONT_SIZE_PT`); the draft file wrote U+2028 and U+2029 raw (now
+    escaped, with a test that fails without it); the Fountain reader's
+    collapsing of extra blank lines and dropping of title page emphasis
+    were undocumented (now in `read.ts`). Nothing deferred beyond Known
+    gaps. `mise run check` exited 0 (241 tests); `mise run dev` still shows
+    the page.
 
-- [ ] 0.7 — Parity check tool
-  - Status: todo
+- [x] 0.7 — Parity check tool
+  - Status: done
   - Depends on: 0.6
   - Spec: brief "Page parity"; findings "Final Draft's default screenplay
     format"
@@ -174,9 +251,23 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: given test PDFs generated from known scripts, the tool
     rebuilds each script exactly and reports every page break that was
     deliberately moved.
+  - Evidence: 2026-11-26. Libraries chosen and recorded in findings ("PDF
+    libraries"): unpdf to read, @cantoo/pdf-lib with @cantoo/fontkit to
+    write (dev dependencies until Stage 3). `tools/parity/parity.test.ts`:
+    an original 11-page script, written as a plain PDF and as one with a
+    title page, scene numbers, CONTINUEDs and a run per word, is rebuilt
+    exactly (`toEqual` the script), page numbers and (MORE)s are found, and
+    every page matches; a break forced before a mid-page heading is
+    reported as the first differing page, with the pages before it the
+    same; a PDF made at 50 lines matches at `--lines 50`; split runs,
+    ligatures, double printing and an unknown indent are handled or noted.
+    A one-off sweep of 120 generated PDFs matched 1,280 of 1,304 page
+    starts, and every differing page was preceded by a note (findings,
+    "Reading screenplay PDFs"). `mise run parity -- <three PDFs>` printed
+    the per-page report and summary. `mise run check` exited 0 (247 tests).
 
-- [ ] 0.8 — Calibration against Final Draft
-  - Status: todo
+- [x] 0.8 — Calibration against Final Draft
+  - Status: done
   - Depends on: 0.7
   - Spec: brief "Page parity", "Still to settle"
   - Do: Collect public screenplay PDFs whose metadata names Final Draft as
@@ -185,14 +276,34 @@ anything else. V1 is done when 7.4 is checked.
     and adjust the engine. Use Beat's pagination as a reference where the
     corpus cannot decide. Settle lines per page, how headings, cues and
     parentheticals are kept off a page's foot, how dual dialogue splits,
-    and whether page numbers end with a period.
+    and whether page numbers end with a period. Also measure the dual
+    dialogue columns' indents and widths, which 0.4 set provisionally
+    because FDX files do not hold them, and whether lines break after
+    hyphens and dashes (0.4 breaks only at spaces). Teach the parity tool
+    to read dual dialogue once its columns are known (0.7 does not).
   - Done when: findings.md records each of those facts with its evidence,
     and every calibration page starts on the same line as Final Draft's,
     or each remaining mismatch is explained in findings.md and listed
     under Known gaps.
+  - Evidence: 2026-11-26. 14 PDFs with Final Draft as Creator downloaded
+    from studio awards pages into `calibration/`; 7 kept as the
+    calibration set, 7 set aside with reasons (findings, "Calibration").
+    Settled and recorded with evidence in findings ("Line widths",
+    "Pagination", "Dual dialogue"): 54 lines with (MORE) below and the
+    repeated cue above; widths 61/35/38/26/25/16 and 29 in dual columns;
+    breaks after hyphens, with a hanging hyphen; two lines each side of a
+    split; a parenthetical may end a page above (MORE); transitions stay
+    with what precedes them; dual dialogue columns and centred cues; page
+    numbers "2.". `mise run parity`: page by page 582 of 605 pages end
+    where Final Draft's do (99 pages ending inside action and 13 with
+    image gaps left out, as the PDF cannot decide them); 270 of 722 start
+    on the same line read from page 1. The 23 differing pages are
+    explained by category in findings and listed under Known gaps. Each
+    engine change has a test that fails without it (checked by mutating
+    each rule). `mise run check` exited 0.
 
-- [ ] 0.9 — Review: Stage 0
-  - Status: todo
+- [x] 0.9 — Review: Stage 0
+  - Status: done
   - Depends on: 0.8
   - Scope: everything changed since 0.6's recorded state.
   - Check:
@@ -206,9 +317,26 @@ anything else. V1 is done when 7.4 is checked.
       (`git status --ignored`, `git ls-files`).
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-26, reviewed with user-code-review at HEAD
+    `c4a2175bf025d924c0f95d2c30c3a36f7d2866c3` plus uncommitted changes
+    (everything since 0.6, all uncommitted). Checklist: the tool's tests
+    cover split runs, ligatures, double printing, off-grid styled runs,
+    unknown indents (noted, read as action), page-top shots and ambiguous
+    action (noted), image gaps, the page number and repeated cue above the
+    body, and hyphens rejoined with or without a space; every engine change
+    from 0.8 failed a test when mutated away (transition keep, two-line
+    minimum and its relaxation for over-long elements, parenthetical before
+    (MORE), two dialogue lines above (MORE), (MORE) and the repeated cue
+    outside the 54 lines, widths 61 and 38, hyphen breaks, hanging hyphen,
+    off-grid spacing); findings name the PDFs and pages behind each fact;
+    `git ls-files` and `git status --ignored` show no PDF or FDX tracked or
+    trackable, with `calibration/` ignored. Found and fixed: off-grid
+    spacing had no test. Pagination still takes 4.8 ms median for 121
+    pages. Not changed: `tools/parity/rebuild.ts` is long (807 lines) but
+    holds one job. `mise run check` exited 0 (255 tests).
 
 - [ ] 0.10 — User check: Stage 0
-  - Status: todo
+  - Status: in progress (waiting for the user)
   - Depends on: 0.9
   - Check: in the development shell, the user runs `mise run parity` and
     reads its summary for the calibration scripts, then runs `mise run dev`
@@ -707,5 +835,29 @@ saving arrive in Stage 2.
 
 ## Known gaps
 
-None yet. Each entry names the task or stage that found it and, if
-known, the one that will close it.
+Each entry names the task or stage that found it and, if known, the one
+that will close it.
+
+- Fountain round trips drop trailing whitespace, indentation outside
+  action, a line break in a cue, centring inside a speech, empty lines in
+  title page fields, and some mid-word bold and italic crossings (0.3; the
+  list heads `src/core/fountain/write.ts`). Accepted: the editor rarely
+  produces these. 2.6's export test should use scripts within these limits.
+- Page parity (0.8): 23 of 605 checkable calibration pages end
+  differently from Final Draft's (findings, "Calibration"): 14 where Final
+  Draft left lines empty that its rules would fill (likely manual page
+  breaks or kept pages), 5 page-top misreads, 4 unexplained (A Real Pain
+  76, Babygirl 87, After the Hunt 12 and 40). Pages ending inside action
+  (99) cannot be checked from PDFs at all. More evidence (FDX files of
+  calibration scripts, or Beat's rules) would settle them.
+- Final Draft's automatic (CONT'D) rule and its dual dialogue splitting are
+  unverified (0.8; findings, "Pagination"); Tir adds (CONT'D) after action
+  within a scene and never splits dual dialogue.
+- About 0.2% of elements wrap differently from Final Draft, whose width
+  measurement is not strictly fixed-pitch (0.8; findings, "Line widths").
+- The cue width (38) and dual parenthetical widths rest on few samples
+  (0.8).
+- `writeFountain` takes about 75–100 ms on a 1,500-element script, because
+  it checks each paragraph by reading it back (0.3). 2.2 writes the
+  Fountain copy on every save; measure it there and speed it up or move it
+  off the interface thread if a save is felt.

@@ -1,0 +1,16 @@
+[package]
+name = "tir"
+version = "0.1.0"
+description = "A desktop screenwriting application"
+edition = "2024"
+publish = false
+
+[lib]
+name = "tir_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }

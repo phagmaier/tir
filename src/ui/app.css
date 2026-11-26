@@ -1,0 +1,73 @@
+@import "./theme.css";
+
+/* Courier Prime, SIL Open Font License 1.1 (fonts/OFL-courierprime.txt). */
+@font-face {
+  font-family: "Courier Prime";
+  src: url("./fonts/CourierPrime-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Courier Prime";
+  src: url("./fonts/CourierPrime-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Courier Prime";
+  src: url("./fonts/CourierPrime-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: "Courier Prime";
+  src: url("./fonts/CourierPrime-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+}
+#pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  padding: 40px 48px 140px;
+}
+
+/* A sheet's size, font size and line height come from src/core/format.ts;
+   the layout engine places every line on it, so script text never wraps in
+   the browser (design rule 1). */
+.sheet {
+  position: relative;
+  flex: none;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--sheet-shadow);
+  font-family: "Courier Prime", monospace;
+}
+.sheet .line {
+  position: absolute;
+  white-space: pre;
+}

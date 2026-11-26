@@ -1,0 +1,47 @@
+/* Colours from docs/prototype/look.css ("Ink & Brass" with Night or white
+   paper, docs/brief.md "Look"). Both themes share the dark frame; the theme
+   changes only the paper. */
+body {
+  --canvas: #0d1014;
+  --chrome: #141820;
+  --rule: rgba(160, 180, 210, 0.09);
+  --hover: rgba(160, 180, 210, 0.06);
+  --fg: #e9e4d8;
+  --muted: #939aa5;
+  --faint: #7d848d;
+  --accent: #d4b278;
+  --accent-soft: rgba(212, 178, 120, 0.14);
+  --on-accent: #16120b;
+  --ring: #d4b278;
+  --warn: #f08a6e;
+  --danger: #f08a6e;
+  --ok: #9cc7a2;
+  --mark: #f08a6e;
+  --mark-halo: rgba(240, 138, 110, 0.25);
+  --pop-bg: #1b2029;
+  --pop-fg: #e9e4d8;
+  --pop-border: rgba(160, 180, 210, 0.12);
+  --field: #10141a;
+}
+body[data-theme="dark"] {
+  --canvas: #0a0d11;
+  --paper: #141920;
+  --ink: #d6d0c2;
+  --sheet-shadow: 0 0 0 1px rgba(160, 180, 210, 0.07), 0 14px 36px rgba(0, 0, 0, 0.55);
+  --pop-bg: #222831;
+  --ghost: #6f7782;
+  --spell: #f08a6e;
+  --caret: #d4b278;
+  --hit: rgba(212, 178, 120, 0.3);
+  --hit-cur: #d4b278;
+  --hit-cur-fg: #16120b;
+  --hit-ring: #d4b278;
+  --tip-bg: #252c37;
+  --tip-fg: #e9e4d8;
+  --tip-border: rgba(160, 180, 210, 0.16);
+}
+body[data-theme="light"] {
+  --paper: #fdfcf8;
+  --ink: #141414;
+  --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 18px 44px rgba(0, 0, 0, 0.5);
+}

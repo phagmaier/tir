@@ -1,0 +1,9 @@
+# Supply-chain settings. pnpm 12 already defaults to these; they are written
+# out so the policy is explicit and survives a change of defaults.
+minimumReleaseAge: 1440
+strictDepBuilds: true
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# Install scripts stay off. Allow one by name here only when a package
+# needs it (allowBuilds replaced onlyBuiltDependencies in pnpm 10.26).
+allowBuilds: {}

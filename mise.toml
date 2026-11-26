@@ -1,0 +1,28 @@
+[tools]
+node = "24.22.2"
+pnpm = "12.18.0"
+rust = { version = "1.99.1", components = "clippy,rustfmt" }
+
+[tasks.install]
+description = "Install JavaScript dependencies from the lockfile"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.dev]
+description = "Run Tir with the Vite dev server (inside the Nix shell)"
+run = "pnpm exec tauri dev"
+
+[tasks.check]
+description = "Lint, format, type checks, tests and Rust checks (inside the Nix shell)"
+run = [
+  "pnpm exec biome check .",
+  "pnpm exec tsc -p tsconfig.json",
+  "pnpm exec tsc -p src/core/tsconfig.json",
+  "pnpm exec vitest run",
+  "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+  "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
+  "cargo test --manifest-path src-tauri/Cargo.toml --locked",
+]
+
+[tasks.parity]
+description = "Compare Tir's page breaks with Final Draft PDFs (calibration/ by default)"
+run = "node tools/parity/main.ts"

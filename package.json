@@ -1,0 +1,17 @@
+{
+  "name": "tir",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.9",
+    "@cantoo/fontkit": "^2.0.12",
+    "@cantoo/pdf-lib": "^2.11.1",
+    "@tauri-apps/cli": "^2.12.6",
+    "@types/node": "^24.19.4",
+    "typescript": "^7.0.2",
+    "unpdf": "^2.2.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.2"
+  }
+}
