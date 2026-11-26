@@ -237,10 +237,14 @@ intact.
   each state (backed up, saving, offline, paused, not connected) and the
   one-time GitHub connection, which warns about a public or unreachable
   repository.
-- **Awaiting the user's choice:** the Projects screen's layout
-  ([piece 6](prototype/06-projects.html)), a list or a shelf of title-page
-  thumbnails. Its import flow, new project, rename and delete are the same
-  in both.
+- **Projects screen: the list** ([piece 6](prototype/06-projects.html)),
+  chosen over a shelf of title-page thumbnails: one row per project with
+  its title, active draft, pages, number of drafts and last edit, most
+  recent first; New project and Import at the top; Rename and Delete from
+  each row's menu; the import dialog, its report and the empty library as
+  that piece shows them.
+- **The design is complete.** The prototype pieces are the reference for
+  every screen; [the plan](plan.md) builds them.
 
 ## Page parity
 
@@ -340,18 +344,9 @@ The user accepted this as the agent's recommendation.
 
 ## Still to settle
 
-No product decision is open. These are facts to establish while building;
-none needs the user unless it turns out to change behaviour described above.
-
-- **Final Draft's pagination details**: 54 or 55 lines a page, and how
-  Final Draft keeps scene headings, cues and parentheticals off the bottom of
-  a page and splits dual dialogue. Settled by the parity check against Final
-  Draft PDFs, with Beat's pagination as a reference.
-- **A calibration set** of public screenplay PDFs that Final Draft produced,
-  ideally without scene numbers or revision marks.
-- Whether Final Draft prints page numbers with a trailing period.
-- Keys for zoom, focus mode and the next finding. The prototype uses
-  Ctrl+= and Ctrl+−, Ctrl+Shift+F and F8. Ctrl+0 cannot reset zoom because
-  it selects General.
-- The draft file format's exact structure, and the Nix development shell.
-  Both are the agent's design work.
+No product decision is open. The facts still to establish are tasks in
+[the plan](plan.md): Final Draft's remaining pagination details and the
+page-number style (0.8), the calibration set (0.8), the draft file's
+structure (0.2), the Nix development shell (0.1), and the keys for zoom,
+focus mode, Go to page and the next finding (1.7, 1.8). None needs the
+user unless it turns out to change behaviour described above.
