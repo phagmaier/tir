@@ -1,0 +1,578 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The settled writing window (Desk layout, Ink &
+  Brass, Night or white paper from look.css) with two more pieces of the
+  design to judge:
+
+    Title page  the "Title page" row at the top of the sidebar opens a form
+                with a live preview of the printed page (docs/brief.md,
+                Title page)
+    Backup      the saved/backed-up indicator at the top right opens a panel
+                with the backup's state and actions; "Connect a repository"
+                opens the one-time setup (docs/brief.md, Saving and backup)
+
+  The paper switch (dark or white) sits in the sidebar footer. Data, backup
+  states and repository checks are simulated; nothing touches git.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tir prototype: the writing window</title>
+<link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="look.css">
+<style>
+.a-tp { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 12px 8px 0; padding: 8px 10px; border-radius: 7px; color: var(--muted); font-size: 12.5px; text-align: left; }
+.a-tp:hover { background: var(--hover); color: var(--fg); }
+.a-tp.on { background: var(--hover); color: var(--fg); box-shadow: inset 2px 0 0 var(--accent); }
+.a-tp.on svg { color: var(--accent); }
+.a-foot .paper { display: flex; align-items: center; gap: 7px; padding: 5px 8px; margin-left: -8px; border-radius: 6px; }
+.a-foot .paper:hover { background: var(--hover); color: var(--fg); }
+.a-mid[hidden] { display: none; }
+.a-viewlabel { display: flex; align-items: center; gap: 10px; height: 30px; color: var(--muted); font-size: 12.5px; }
+.a-viewlabel b { color: var(--fg); font-weight: 550; }
+.a-viewlabel kbd { font: 11px var(--ui-font); padding: 1px 6px; border: 1px solid var(--rule); border-radius: 5px; }
+
+.tp-view { display: flex; gap: 36px; align-items: flex-start; }
+.tp-form { position: sticky; top: 0; width: 330px; flex: none; display: flex; flex-direction: column; gap: 15px; padding: 20px 20px 18px; border-radius: 12px; background: var(--chrome); border: 1px solid var(--rule); }
+.tp-form h2 { margin: 0; font: 500 23px/1.2 "Newsreader", Georgia, serif; }
+.tp-form .sub { margin: -8px 0 2px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13px; color: var(--fg); }
+.toggle input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.tp-sheet .tp-block { position: absolute; left: 1.5in; width: 6in; text-align: center; white-space: pre-wrap; }
+.tp-sheet .tp-title { text-transform: uppercase; }
+.tp-sheet .tp-contact { position: absolute; left: 1.5in; bottom: 1in; white-space: pre; }
+.tp-sheet .tp-draft { position: absolute; right: 1in; bottom: 1in; white-space: pre; text-align: right; }
+.tp-sheet .empty { color: var(--faint); }
+
+#backup { width: 360px; padding: 16px; }
+.bp-h { display: flex; gap: 12px; align-items: flex-start; }
+.bp-ic { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--hover); color: var(--muted); }
+.bp-ic.ok { color: var(--ok); background: rgba(156, 199, 162, 0.12); }
+.bp-ic.warn { color: var(--warn); background: rgba(240, 138, 110, 0.12); }
+.bp-h b { display: block; font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.bp-h span { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.bp-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--pop-border); font-size: 12.5px; }
+.bp-dl dt { color: var(--faint); }
+.bp-dl dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
+.bp-dl small { margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: var(--hover); color: var(--muted); font-size: 11px; }
+#backup .note { margin-top: 12px; }
+#backup code, .dialog code { font: 12px ui-monospace, monospace; padding: 1px 5px; border-radius: 4px; background: var(--field); }
+.bp-actions { display: flex; gap: 8px; margin-top: 14px; }
+#cn-result:empty { display: none; }
+#cn-result { margin-top: 12px; }
+</style>
+</head>
+<body data-variant="A" data-theme="dark">
+<div id="app">
+  <header id="topbar"></header>
+  <aside id="sidebar" aria-label="Scenes"></aside>
+  <main id="canvas"><div id="pages"></div></main>
+</div>
+
+<div id="draftmenu" class="pop" hidden role="menu" aria-label="Drafts"></div>
+
+<div id="findbar" class="pop" hidden role="search" aria-label="Find and replace">
+  <div class="fb-row">
+    <span class="fb-ico" data-icon="search"></span>
+    <input id="fq" value="ELIS" aria-label="Find" spellcheck="false">
+    <span class="fb-count" id="fcount"></span>
+    <button class="ib" data-act="fprev" aria-label="Previous match" data-icon="up"></button>
+    <button class="ib" data-act="fnext" aria-label="Next match" data-icon="down"></button>
+    <button class="tb on" data-act="fcase" aria-pressed="true" title="Match case">Aa</button>
+    <button class="tb on" data-act="fword" aria-pressed="true" title="Whole word">Word</button>
+    <button class="ib" data-act="fclose" aria-label="Close find" data-icon="x"></button>
+  </div>
+  <div class="fb-row">
+    <span class="fb-ico" data-icon="swap"></span>
+    <input id="fr" value="ELLIS" aria-label="Replace with" spellcheck="false">
+    <button class="rb" data-act="frep">Replace</button>
+    <button class="rb" data-act="frepall">Replace all</button>
+  </div>
+</div>
+
+<div id="backup" class="pop" hidden role="dialog" aria-label="Backup"></div>
+
+<div id="connect" class="scrim" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cn-title">
+    <h2 id="cn-title">Back up to GitHub</h2>
+    <p>Tir records your library in git and pushes it to a private GitHub repository, using this machine's existing git login. It stores no passwords or tokens.</p>
+    <div class="field">
+      <label for="cn-url">Repository address</label>
+      <input type="text" id="cn-url" placeholder="git@github.com:you/screenplays.git" spellcheck="false" autocomplete="off">
+      <span class="help">Create an empty private repository on GitHub first, then paste its address here.</span>
+    </div>
+    <div id="cn-result" role="status" aria-live="polite"></div>
+    <div class="actions">
+      <button class="btn quiet" data-act="cn-cancel">Cancel</button>
+      <button class="btn primary" data-act="cn-go" id="cn-go">Check and connect</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div id="proto" role="region" aria-label="Prototype controls">
+  <span class="tag">PROTOTYPE</span>
+  <button data-p="theme" id="p-theme"></button>
+  <button data-p="find" id="p-find">Find</button>
+  <button data-p="ac" id="p-ac">Autocomplete</button>
+  <button data-p="focus" id="p-focus">Focus</button>
+  <button data-p="backup" id="p-backup"></button>
+  <button data-p="keys" id="p-keys" aria-label="Keys">?</button>
+</div>
+<div id="keys" hidden>
+  <div><b>1…7, 0</b>element of the current paragraph (Ctrl+1…7 in the app)</div>
+  <div><b>click a paragraph</b>put the cursor there</div>
+  <div><b>Ctrl+F</b>find and replace</div>
+  <div><b>F8</b>next formatting finding</div>
+  <div><b>Ctrl+Shift+F</b>focus mode</div>
+  <div><b>Ctrl+= / Ctrl+−</b>zoom</div>
+  <div><b>Esc</b>close whatever is open</div>
+  <div><b>Connect dialog</b>an address containing "public" or "nope" shows the warnings</div>
+</div>
+
+<script src="script.js"></script>
+<script>
+(function () {
+'use strict';
+const P = window.TirProto;
+const $ = (s) => document.querySelector(s);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const ICON = {
+  chev: '<path d="M4.5 6.5 8 10l3.5-3.5"/>',
+  up: '<path d="M4.5 9.5 8 6l3.5 3.5"/>',
+  down: '<path d="M4.5 6.5 8 10l3.5-3.5"/>',
+  branch: '<circle cx="4.5" cy="3.5" r="1.4"/><circle cx="4.5" cy="12.5" r="1.4"/><circle cx="11.5" cy="5" r="1.4"/><path d="M4.5 4.9v6.2M11.5 6.4c0 2.6-2.2 3.1-4.2 3.5-1.6.3-2.8 1-2.8 1.2"/>',
+  alert: '<path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/>',
+  cloudok: '<path d="M4.6 12.6h6.7a2.9 2.9 0 0 0 .3-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .7 4.9Z"/><path d="m6.4 9.7 1.2 1.2 2.3-2.5"/>',
+  cloudoff: '<path d="M4.6 12.6h6.7a2.9 2.9 0 0 0 .3-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .7 4.9Z"/><path d="m2.5 2.5 11 11"/>',
+  check: '<path d="m3.5 8.5 3 3 6-7"/>',
+  spin: '<path d="M8 2.6a5.4 5.4 0 1 1-5.4 5.4"/>',
+  search: '<circle cx="7" cy="7" r="4.3"/><path d="m10.2 10.2 3.3 3.3"/>',
+  swap: '<path d="M3 5.5h9l-2.5-2.5M13 10.5H4l2.5 2.5"/>',
+  x: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  minus: '<path d="M3.5 8h9"/>',
+  page: '<path d="M4 1.8h5.2L12 4.6v9.6H4z"/><path d="M9 1.8v3h3M6 8.5h4M6 11h3"/>',
+  moon: '<path d="M13 9.6A5.4 5.4 0 0 1 6.4 3 5.4 5.4 0 1 0 13 9.6Z"/>',
+  sun: '<circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>',
+};
+const svg = (name, size = 15, cls = '') => `<svg class="${cls}" viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+
+const BACKUP = [
+  { kind: 'ok', saved: 'Saved', icon: 'cloudok', short: 'Backed up', long: 'Saved on this machine. Backed up to GitHub 3 minutes ago.' },
+  { kind: 'busy', saved: 'Saving…', icon: 'cloudok', short: 'Backed up', long: 'Saving to this machine. Last backed up to GitHub 3 minutes ago.' },
+  { kind: 'wait', saved: 'Saved', icon: 'cloudoff', short: 'Offline, 6 waiting', long: 'Saved on this machine. Offline: 6 changes will back up when GitHub is reachable.' },
+  { kind: 'warn', saved: 'Saved', icon: 'alert', short: 'Backup paused', long: 'Saved on this machine. Backup paused: GitHub has changes this machine does not, so Tir merged nothing.' },
+  { kind: 'none', saved: 'Saved', icon: 'cloudoff', short: 'Not backed up', long: 'Saved on this machine only. No GitHub repository is connected yet.' },
+];
+
+const params = new URLSearchParams(location.search);
+const els = P.parse(P.SAMPLE);
+const S = {
+  variant: 'A',
+  view: 'script',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  tp: { title: 'Salt Line', credit: 'Written by', authors: 'Your Name', source: '', contact: 'Your Name\nyou@example.com\n(555) 010-0199', showDraft: false, draft: 'Rewrite\nNovember 26, 2026' },
+  els,
+  cur: els.findIndex((e) => e.t === 'dialogue'),
+  zoom: 1,
+  find: { open: false, q: 'ELIS', r: 'ELLIS', matchCase: true, whole: true, cur: 0, total: 0, hitEls: [] },
+  ac: false, focus: false, backup: 0, page: 1,
+  project: 'Salt Line',
+  drafts: [{ name: 'First Draft', when: 'Sep 2026' }, { name: 'Rewrite, Nov 2026', when: 'today' }],
+  active: 1,
+  forking: false,
+  lay: null,
+};
+
+const curType = () => { const e = S.els[S.cur]; return e ? e.t : null; };
+const curScene = () => (S.lay ? S.lay.sceneOf[S.cur] : 0);
+const pageCount = () => (S.lay ? S.lay.pages.length : 0);
+const issues = () => (S.lay ? S.lay.findings.length : 0);
+const bk = () => BACKUP[S.backup];
+
+// ---------- variant chrome ----------
+const T = {
+  A: {
+    top() {
+      const b = bk();
+      return `<div class="a-left">
+          <button class="a-proj" title="Projects · Ctrl+O">${S.project}</button>
+          <span class="a-slash">/</span>
+          <button class="a-draft" data-act="drafts" aria-haspopup="menu">${svg('branch', 14)}<span>${S.drafts[S.active].name}</span>${svg('chev', 14)}</button>
+        </div>
+        ${S.view === 'title' ? `<div class="a-mid"><span class="a-viewlabel"><b>Title page</b> of ${S.drafts[S.active].name}<kbd>Esc</kbd> back to the script</span></div>` : ''}<div class="a-mid" role="toolbar" aria-label="Element"${S.view === 'title' ? ' hidden' : ''}>${P.ORDER.map((t) => `<button class="elb${t === curType() ? ' on' : ''}" data-el="${t}" title="${P.LABELS[t]} · Ctrl+${P.KEYS[t]}" aria-pressed="${t === curType()}"><span class="f">${P.LABELS[t]}</span><span class="s">${P.SHORT[t]}</span></button>`).join('')}</div>
+        <div class="a-right">
+          <span class="pg" id="pgpos">${pgText()}</span>
+          <span class="sep"></span>
+          <button class="${issues() ? 'warn' : ''}" data-act="issue" title="Formatting findings · F8 next">${svg('alert', 15)}<span>${issues()}</span></button>
+          <span class="sep"></span>
+          <button data-act="status" title="${b.long}" aria-haspopup="dialog" class="${b.kind === 'warn' ? 'warn' : ''}"><span>${b.saved}</span><span style="opacity:.5">·</span>${b.kind === 'busy' ? svg('spin', 15, 'spin') : svg(b.icon, 16)}<span>${b.short}</span></button>
+        </div>`;
+    },
+    side() {
+      const sc = S.lay.scenes;
+      return `<button class="a-tp${S.view === 'title' ? ' on' : ''}" data-act="titlepage">${svg('page', 15)}<span>Title page</span></button><div class="a-head"><span>Scenes</span><span>${sc.length}</span></div>
+        <ol class="a-scenes">${sc.map((s) => `<li class="${S.view === 'script' && s.n === curScene() ? 'on' : ''}" data-scene="${s.i}" title="${s.heading}"><span class="no">${s.n}</span><span class="hd">${s.heading}</span><span class="pg">${s.page}</span></li>`).join('')}</ol>
+        <div class="a-foot"><button class="paper" data-act="paper" title="Switch the page between dark and white paper">${svg(S.theme === 'dark' ? 'moon' : 'sun', 14)}<span>${S.theme === 'dark' ? 'Dark paper' : 'White paper'}</span></button><span class="z"><button data-act="zoom-" aria-label="Zoom out">${svg('minus', 14)}</button><span>${Math.round(S.zoom * 100)}%</span><button data-act="zoom+" aria-label="Zoom in">${svg('plus', 14)}</button></span></div>`;
+    },
+    pg: () => `Page ${S.page} of ${pageCount()}`,
+  },
+};
+const pgText = () => T[S.variant].pg();
+
+// ---------- render ----------
+function render() {
+  S.lay = P.layout(S.els);
+  if (S.view === 'title') { renderTitleView(); renderChrome(); return; }
+  const r = P.renderPages($('#pages'), S.lay, { cur: S.cur, find: S.find, ac: S.ac, marginLabel: S.variant === 'B' });
+  S.find.total = r.hits;
+  S.find.hitEls = r.hitEls;
+  if (S.find.cur >= r.hits) S.find.cur = Math.max(0, r.hits - 1);
+  $('#pages').style.zoom = S.zoom;
+  renderChrome();
+}
+function renderChrome() {
+  document.body.dataset.variant = S.variant;
+  document.body.dataset.theme = S.theme;
+  document.body.classList.toggle('focus', S.focus);
+  $('#topbar').innerHTML = T[S.variant].top();
+  $('#sidebar').innerHTML = T[S.variant].side();
+  $('#fcount').textContent = S.find.total ? `${S.find.cur + 1} of ${S.find.total}` : 'No matches';
+  $('#p-theme').textContent = S.theme === 'dark' ? 'Paper: dark' : 'Paper: white';
+  $('#p-find').classList.toggle('on', S.find.open);
+  $('#p-ac').classList.toggle('on', S.ac);
+  $('#p-focus').classList.toggle('on', S.focus);
+  $('#p-backup').textContent = `Backup: ${{ ok: 'backed up', busy: 'saving', wait: 'offline', warn: 'paused', none: 'not connected' }[bk().kind]}`;
+  if (!$('#backup').hidden) $('#backup').innerHTML = backupHTML();
+}
+function setUrl() {
+  const q = new URLSearchParams();
+  if (S.theme === 'light') q.set('theme', 'light');
+  history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);
+}
+function updatePage() {
+  const canvas = $('#canvas');
+  const mid = canvas.getBoundingClientRect().top + canvas.clientHeight * 0.4;
+  let page = 1;
+  document.querySelectorAll('.sheet[data-page]').forEach((s) => { if (s.getBoundingClientRect().top <= mid) page = +s.dataset.page; });
+  if (page !== S.page) { S.page = page; const el = $('#pgpos'); if (el) el.textContent = pgText(); }
+}
+function scrollToEl(i) {
+  requestAnimationFrame(() => {
+    const target = document.querySelector(`.el[data-i="${i}"].cur`) || document.querySelector(`.el[data-i="${i}"]`);
+    if (target) target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  });
+}
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ---------- actions ----------
+function setType(t) {
+  if (S.view !== 'script') return;
+  const el = S.els[S.cur];
+  if (!el || el.t === 'dual') return;
+  let text = el.text;
+  if (el.t === 'paren' && t !== 'paren') text = text.replace(/^\(/, '').replace(/\)$/, '');
+  if (t === 'paren' && !/^\(.*\)$/.test(text)) text = `(${text})`;
+  if (P.UPPER.has(t)) text = text.toUpperCase();
+  el.t = t;
+  el.text = text;
+  if (t === 'character') el.ext = el.ext || ''; else delete el.ext;
+  render();
+}
+function nextIssue() {
+  const f = S.lay.findings;
+  if (!f.length) { toast('No formatting findings'); return; }
+  const after = f.find((x) => x.i > S.cur) || f[0];
+  S.cur = after.i;
+  render();
+  scrollToEl(S.cur);
+}
+function openFind(open) {
+  if (open) S.view = 'script';
+  S.find.open = open;
+  $('#findbar').hidden = !open;
+  render();
+  if (open) { $('#fq').focus(); $('#fq').select(); if (S.find.total) gotoHit(S.find.cur); }
+}
+function gotoHit(n) {
+  if (!S.find.total) return;
+  S.find.cur = (n + S.find.total) % S.find.total;
+  render();
+  requestAnimationFrame(() => { const h = $('#curhit'); if (h) h.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' }); });
+}
+function replaceIn(el, re, r) {
+  if (el.t === 'dual') { for (const c of [el.a, el.b]) { c.name = c.name.replace(re, r); c.text = c.text.replace(re, r); } return; }
+  el.text = el.text.replace(re, r);
+}
+function replaceOne() {
+  const i = S.find.hitEls[S.find.cur];
+  if (i === undefined) return;
+  const re = P.findRegex(S.find);
+  replaceIn(S.els[i], new RegExp(re.source, re.flags.replace('g', '')), S.find.r);
+  render();
+  toast('Replaced 1');
+}
+function replaceAll() {
+  const re = P.findRegex(S.find);
+  if (!re) return;
+  const n = S.find.total;
+  S.els.forEach((el) => replaceIn(el, re, S.find.r));
+  render();
+  toast(`Replaced ${n} · one Undo reverses it`);
+}
+function setZoom(z) { S.zoom = Math.min(1.5, Math.max(0.6, Math.round(z * 100) / 100)); render(); if (S.variant === 'B') toast(`Zoom ${Math.round(S.zoom * 100)}%`); }
+function setFocus(on) { S.focus = on; renderChrome(); if (on) toast('Focus mode · Ctrl+Shift+F or Esc to leave'); }
+
+// ---------- title page ----------
+const escH = (x) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function tpSheet() {
+  const tp = S.tp;
+  const lines = [];
+  lines.push(`<span class="tp-title">${escH(tp.title) || '<span class="empty">TITLE</span>'}</span>`);
+  if (tp.credit.trim()) lines.push('', escH(tp.credit));
+  const authors = tp.authors.split('\n').map((x) => x.trim()).filter(Boolean);
+  if (authors.length) lines.push('', ...authors.map(escH));
+  if (tp.source.trim()) lines.push('', escH(tp.source));
+  return `<div class="sheet tp-sheet" aria-label="Title page preview">
+      <div class="tp-block" style="top:3.5in">${lines.join('\n')}</div>
+      <div class="tp-contact">${escH(tp.contact)}</div>
+      ${tp.showDraft ? `<div class="tp-draft">${escH(tp.draft)}</div>` : ''}
+    </div>`;
+}
+function renderTitleView() {
+  const tp = S.tp;
+  $('#pages').innerHTML = `<div class="tp-view">
+    <form class="tp-form" onsubmit="return false" aria-label="Title page">
+      <h2>Title page</h2>
+      <p class="sub">Belongs to ${escH(S.drafts[S.active].name)}. Forking copies it to the new draft. The layout is fixed, so it always prints correctly.</p>
+      <div class="field"><label for="tp-title">Title</label><input type="text" id="tp-title" data-tp="title" value="${escH(tp.title)}"></div>
+      <div class="field"><label for="tp-credit">Credit</label><input type="text" id="tp-credit" data-tp="credit" value="${escH(tp.credit)}"></div>
+      <div class="field"><label for="tp-authors">Author(s)</label><textarea id="tp-authors" data-tp="authors" rows="2">${escH(tp.authors)}</textarea><span class="help">One per line. Use "&amp;" between writers who wrote as a team.</span></div>
+      <div class="field"><label for="tp-source">Source <span style="font-weight:400;color:var(--faint)">optional</span></label><input type="text" id="tp-source" data-tp="source" value="${escH(tp.source)}" placeholder="Based on the novel by …"></div>
+      <div class="field"><label for="tp-contact">Contact</label><textarea id="tp-contact" data-tp="contact" rows="3">${escH(tp.contact)}</textarea><span class="help">Bottom left. Your own details, or your agent's or manager's.</span></div>
+      <label class="toggle"><input type="checkbox" data-tp="showDraft"${tp.showDraft ? ' checked' : ''}>Show draft and date</label>
+      <div class="field" id="tp-draft-field"${tp.showDraft ? '' : ' hidden'}><label for="tp-draft">Draft and date</label><textarea id="tp-draft" data-tp="draft" rows="2">${escH(tp.draft)}</textarea><span class="help">Bottom right. Spec scripts usually leave this off.</span></div>
+    </form>
+    <div id="tp-preview">${tpSheet()}</div>
+  </div>`;
+  $('#pages').style.zoom = S.zoom;
+}
+document.addEventListener('input', (e) => {
+  const k = e.target.dataset && e.target.dataset.tp;
+  if (!k) return;
+  S.tp[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if (k === 'showDraft') $('#tp-draft-field').hidden = !e.target.checked;
+  $('#tp-preview').innerHTML = tpSheet();
+});
+function setView(v) {
+  S.view = v;
+  if (v === 'title') { S.find.open = false; $('#findbar').hidden = true; S.ac = false; }
+  render();
+  $('#canvas').scrollTop = 0;
+  if (v === 'title') requestAnimationFrame(() => $('#tp-title').focus());
+}
+
+// ---------- backup panel ----------
+function backupHTML() {
+  const b = bk();
+  const repo = '<dt>Repository</dt><dd>github.com/you/screenplays<small>private</small></dd>';
+  const lib = '<dt>Library</dt><dd>~/Screenplays</dd>';
+  const saved = '<dt>Saving</dt><dd>Automatic, a moment after you stop typing</dd>';
+  const head = {
+    ok: ['ok', 'cloudok', 'Backed up', 'Pushed to GitHub 3 minutes ago. Tir backs up again after a few quiet minutes, and when you close it.'],
+    busy: ['', 'spin', 'Saving…', 'Writing your changes to this machine. A backup follows after a few quiet minutes.'],
+    wait: ['', 'cloudoff', 'Offline', 'Your work is saved here. 6 changes will back up when GitHub is reachable again; Tir keeps retrying on its own.'],
+    warn: ['warn', 'alert', 'Backup paused', 'GitHub has changes this machine doesn’t have, perhaps from another computer. Tir merged nothing, and your work here is safe.'],
+    none: ['', 'cloudoff', 'Not backed up to GitHub', 'Your work is saved on this machine only.'],
+  }[b.kind];
+  let actions;
+  let extra = '';
+  if (b.kind === 'none') actions = '<button class="btn primary" data-act="connect">Connect a repository…</button>';
+  else if (b.kind === 'warn') {
+    extra = '<div class="note"><span>To resume, bring the library up to date from GitHub in a terminal (<code>git pull</code> in ~/Screenplays), then press Resume.</span></div>';
+    actions = '<button class="btn primary" data-act="resume">Resume backup</button><button class="btn quiet" data-act="connect">Change repository…</button>';
+  } else actions = `<button class="btn primary" data-act="backupnow"${b.kind === 'busy' ? ' disabled' : ''}>Back up now</button><button class="btn quiet" data-act="connect">Change repository…</button>`;
+  return `<div class="bp-h"><span class="bp-ic ${head[0]}">${head[1] === 'spin' ? svg('spin', 17, 'spin') : svg(head[1], 18)}</span><div><b>${head[2]}</b><span>${head[3]}</span></div></div>
+    ${extra}
+    <dl class="bp-dl">${b.kind === 'none' ? '' : repo}${lib}${saved}</dl>
+    <div class="bp-actions">${actions}</div>`;
+}
+function openBackup(anchor) {
+  const m = $('#backup');
+  if (!m.hidden) { closeBackup(); return; }
+  m.innerHTML = backupHTML();
+  const r = anchor.getBoundingClientRect();
+  m.hidden = false;
+  m.style.top = `${r.bottom + 8}px`;
+  m.style.left = `${Math.min(window.innerWidth - m.offsetWidth - 12, r.right - m.offsetWidth)}px`;
+}
+function closeBackup() { $('#backup').hidden = true; }
+function backupNow() {
+  if (bk().kind === 'wait') { toast('Still offline. Tir will back up as soon as GitHub is reachable.'); return; }
+  S.backup = 1; renderChrome();
+  setTimeout(() => { S.backup = 0; renderChrome(); toast('Backed up just now'); }, 1200);
+}
+
+// ---------- connect dialog ----------
+function openConnect() {
+  $('#connect').hidden = false;
+  $('#cn-result').innerHTML = '';
+  const go = $('#cn-go'); go.textContent = 'Check and connect'; go.dataset.act = 'cn-go'; go.disabled = false;
+  $('#cn-url').focus();
+}
+function closeConnect() { $('#connect').hidden = true; }
+function connectCheck() {
+  const url = $('#cn-url').value.trim();
+  const out = $('#cn-result');
+  const note = (cls, icon, html) => `<div class="note ${cls}">${svg(icon, 15)}<span>${html}</span></div>`;
+  if (!url) { out.innerHTML = note('warn', 'alert', 'Paste the repository’s address first.'); $('#cn-url').focus(); return; }
+  const go = $('#cn-go');
+  go.disabled = true;
+  out.innerHTML = note('', 'spin', 'Checking that this machine can reach the repository…');
+  setTimeout(() => {
+    go.disabled = false;
+    if (/nope/i.test(url)) { out.innerHTML = note('warn', 'alert', 'Tir couldn’t reach that repository with this machine’s git login. Check the address, or sign in with <code>gh auth login</code> in a terminal.'); return; }
+    if (/public/i.test(url)) { out.innerHTML = note('warn', 'alert', 'This repository is public, so anyone could read your scripts. Make it private on GitHub, or use another repository.'); return; }
+    out.innerHTML = note('ok', 'check', 'Connected. The first backup will hold 4 projects and 9 drafts.');
+    go.textContent = 'Done';
+    go.dataset.act = 'cn-done';
+  }, 1100);
+}
+$('#cn-url').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('#cn-go').click(); } });
+
+// ---------- draft menu ----------
+function draftMenuHTML() {
+  const rows = S.drafts.map((d, n) => `<button class="dm-d" role="menuitemradio" aria-checked="${n === S.active}" data-draft="${n}"><span class="ck">${n === S.active ? svg('check', 14) : ''}</span><span>${d.name}</span><small>${d.when}</small></button>`).join('');
+  const fork = S.forking
+    ? `<div class="dm-fork"><input id="forkname" value="Rewrite 2, Nov 2026" aria-label="Name for the new draft"><button data-act="forkgo">Fork</button></div><div class="dm-note">Copies "${S.drafts[S.active].name}" as it is now. The original stays unchanged.</div>`
+    : `<button class="dm-a" data-act="fork">Fork this draft…<small>copies it as it is now</small></button>`;
+  return `<div class="dm-h">Drafts of ${S.project}</div>${rows}<hr>${fork}<button class="dm-a" data-act="noop">Rename…</button><button class="dm-a danger" data-act="noop">Delete…</button>`;
+}
+function openDrafts(anchor) {
+  const m = $('#draftmenu');
+  if (!m.hidden) { closeMenus(); return; }
+  m.innerHTML = draftMenuHTML();
+  const r = anchor.getBoundingClientRect();
+  m.style.left = `${Math.max(8, r.left)}px`;
+  m.style.top = `${r.bottom + 8}px`;
+  m.hidden = false;
+}
+function closeMenus() { $('#draftmenu').hidden = true; S.forking = false; }
+
+// ---------- events ----------
+document.addEventListener('click', (e) => {
+  if (e.target === $('#connect')) { closeConnect(); return; }
+  const t = e.target.closest('[data-el],[data-act],[data-scene],[data-draft],[data-p],.el');
+  if (!e.target.closest('#draftmenu') && !e.target.closest('[data-act="drafts"]')) closeMenus();
+  if (!e.target.closest('#backup') && !e.target.closest('[data-act="status"]')) closeBackup();
+  if (!t) return;
+  if (t.dataset.el) { setType(t.dataset.el); return; }
+  if (t.dataset.scene) { S.cur = +t.dataset.scene; S.view = 'script'; render(); scrollToEl(S.cur); return; }
+  if (t.dataset.draft) { S.active = +t.dataset.draft; closeMenus(); renderChrome(); toast(`Switched to ${S.drafts[S.active].name}`); return; }
+  if (t.dataset.p) {
+    const p = t.dataset.p;
+    if (p === 'theme') { S.theme = S.theme === 'dark' ? 'light' : 'dark'; renderChrome(); setUrl(); }
+    if (p === 'title') setView(S.view === 'title' ? 'script' : 'title');
+    if (p === 'find') openFind(!S.find.open);
+    if (p === 'ac') { S.ac = !S.ac; if (S.ac) S.cur = S.els.findIndex((x) => x.live); render(); if (S.ac) scrollToEl(S.cur); }
+    if (p === 'focus') setFocus(!S.focus);
+    if (p === 'backup') { S.backup = (S.backup + 1) % BACKUP.length; renderChrome(); }
+    if (p === 'keys') { $('#keys').hidden = !$('#keys').hidden; t.classList.toggle('on', !$('#keys').hidden); }
+    return;
+  }
+  const a = t.dataset.act;
+  if (a === 'drafts') { openDrafts(t); return; }
+  if (a === 'fork') { S.forking = true; $('#draftmenu').innerHTML = draftMenuHTML(); $('#forkname').focus(); $('#forkname').select(); return; }
+  if (a === 'forkgo') { doFork(); return; }
+  if (a === 'noop') { closeMenus(); toast('Not in this prototype'); return; }
+  if (a === 'issue') { nextIssue(); return; }
+  if (a === 'status') { openBackup(t); return; }
+  if (a === 'titlepage') { setView(S.view === 'title' ? 'script' : 'title'); return; }
+  if (a === 'paper') { S.theme = S.theme === 'dark' ? 'light' : 'dark'; renderChrome(); setUrl(); return; }
+  if (a === 'backupnow') { backupNow(); return; }
+  if (a === 'resume') { S.backup = 0; renderChrome(); toast('Backup resumed. Backed up just now.'); return; }
+  if (a === 'connect') { closeBackup(); openConnect(); return; }
+  if (a === 'cn-cancel') { closeConnect(); return; }
+  if (a === 'cn-go') { connectCheck(); return; }
+  if (a === 'cn-done') { closeConnect(); S.backup = 0; renderChrome(); toast('Connected. Backups now go to GitHub.'); return; }
+  if (a === 'zoom-') { setZoom(S.zoom - 0.1); return; }
+  if (a === 'zoom+') { setZoom(S.zoom + 0.1); return; }
+  if (a === 'zoomcycle') { const z = [0.9, 1, 1.1, 1.25]; setZoom(z[(z.indexOf(S.zoom) + 1) % z.length] || 1); return; }
+  if (a === 'fnext') { gotoHit(S.find.cur + 1); return; }
+  if (a === 'fprev') { gotoHit(S.find.cur - 1); return; }
+  if (a === 'fcase') { S.find.matchCase = !S.find.matchCase; t.classList.toggle('on', S.find.matchCase); t.setAttribute('aria-pressed', S.find.matchCase); S.find.cur = 0; render(); return; }
+  if (a === 'fword') { S.find.whole = !S.find.whole; t.classList.toggle('on', S.find.whole); t.setAttribute('aria-pressed', S.find.whole); S.find.cur = 0; render(); return; }
+  if (a === 'fclose') { openFind(false); return; }
+  if (a === 'frep') { replaceOne(); return; }
+  if (a === 'frepall') { replaceAll(); return; }
+  if (t.classList.contains('el') && !e.target.closest('.mark')) {
+    S.cur = +t.dataset.i;
+    if (!S.els[S.cur].live) S.ac = false;
+    render();
+    typingSoon();
+  }
+});
+function doFork() {
+  const name = ($('#forkname').value || '').trim() || 'Untitled draft';
+  S.drafts.push({ name, when: 'just now' });
+  S.active = S.drafts.length - 1;
+  closeMenus();
+  renderChrome();
+  toast(`Forked: now writing in ${name}`);
+}
+
+$('#fq').addEventListener('input', (e) => { S.find.q = e.target.value; S.find.cur = 0; render(); });
+$('#fr').addEventListener('input', (e) => { S.find.r = e.target.value; });
+$('#fq').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gotoHit(S.find.cur + (e.shiftKey ? -1 : 1)); } });
+$('#canvas').addEventListener('scroll', updatePage, { passive: true });
+
+let typingTimer;
+function typingSoon() {
+  clearTimeout(typingTimer);
+  document.body.classList.remove('typing');
+  if (S.variant === 'B') typingTimer = setTimeout(() => document.body.classList.add('typing'), 1400);
+}
+document.addEventListener('mousemove', (e) => { if (document.body.classList.contains('typing') && (e.clientY < 60 || e.clientX < 260)) { document.body.classList.remove('typing'); } });
+
+const KEYMAP = { 1: 'scene', 2: 'action', 3: 'character', 4: 'paren', 5: 'dialogue', 6: 'transition', 7: 'shot', 0: 'general' };
+document.addEventListener('keydown', (e) => {
+  const typingInField = e.target.matches('input, textarea, [contenteditable]');
+  if (e.key === 'Escape') {
+    if (!$('#connect').hidden) closeConnect();
+    else if (!$('#backup').hidden) closeBackup();
+    else if (!$('#draftmenu').hidden) closeMenus();
+    else if (S.view === 'title') setView('script');
+    else if (S.find.open) openFind(false);
+    else if (S.ac) { S.ac = false; render(); }
+    else if (S.focus) setFocus(false);
+    return;
+  }
+  if (e.target.id === 'forkname' && e.key === 'Enter') { e.preventDefault(); doFork(); return; }
+  if ((e.altKey || e.ctrlKey) && !e.shiftKey && KEYMAP[e.key]) { e.preventDefault(); setType(KEYMAP[e.key]); typingSoon(); return; }
+  if (e.ctrlKey && !e.shiftKey && (e.key === 'f' || e.key === 'h')) { e.preventDefault(); openFind(true); return; }
+  if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) { e.preventDefault(); setFocus(!S.focus); return; }
+  if (e.ctrlKey && (e.key === '=' || e.key === '+')) { e.preventDefault(); setZoom(S.zoom + 0.1); return; }
+  if (e.ctrlKey && e.key === '-') { e.preventDefault(); setZoom(S.zoom - 0.1); return; }
+  if (e.key === 'F8') { e.preventDefault(); nextIssue(); return; }
+  if (typingInField) return;
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && /^[0-7]$/.test(e.key)) { setType(KEYMAP[e.key]); typingSoon(); return; }
+});
+
+document.querySelectorAll('[data-icon]').forEach((n) => { n.innerHTML = svg(n.dataset.icon, 15); });
+render();
+setUrl();
+})();
+</script>
+</body>
+</html>

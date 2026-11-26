@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  Index of Tir's design prototypes: throwaway, simulated fixtures, not the
+  app. Each piece's header comment records its question and variants. The
+  choices they settle are recorded in ../brief.md under "Look".
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tir prototypes</title>
+<style>
+@font-face { font-family: "Newsreader"; src: url("fonts/Newsreader-Variable.ttf") format("truetype"); font-weight: 200 800; }
+@font-face { font-family: "IBM Plex Sans"; src: url("fonts/IBMPlexSans-Variable.ttf") format("truetype"); font-weight: 100 700; }
+body { margin: 0; background: #1a1917; color: #e8e3da; font: 15px/1.6 "IBM Plex Sans", system-ui, sans-serif; }
+main { max-width: 46em; margin: 0 auto; padding: 56px 24px 80px; }
+h1 { font: 500 34px/1.2 "Newsreader", Georgia, serif; margin: 0 0 6px; }
+h2 { font-size: 12px; letter-spacing: 0.09em; text-transform: uppercase; color: #a09a8f; margin: 40px 0 12px; font-weight: 550; }
+p { color: #c9c3b8; }
+a { color: #e6a98f; }
+.piece { padding: 18px 20px; border: 1px solid #34322d; border-radius: 10px; background: #201f1c; }
+.piece h3 { margin: 0 0 4px; font-size: 17px; font-weight: 550; }
+.piece p { margin: 6px 0 12px; }
+.vs { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; }
+.vs a { font-weight: 550; white-space: nowrap; }
+.vs span { color: #a09a8f; }
+ul { padding-left: 1.2em; color: #c9c3b8; }
+code { font-size: 13.5px; background: #262521; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tir prototypes</h1>
+  <p>Throwaway, simulated designs for settling the look before the app is
+    built. The script, drafts and backup states are fake and live in memory
+    only. The yellow bar at the bottom of each piece is prototype controls,
+    not part of the design. See <a href="../brief.md">the brief</a> for the
+    decisions they must respect.</p>
+
+  <h2>Open: the rest of the app, in the settled look</h2>
+  <div class="piece">
+    <h3>5 · The writing window, finished look</h3>
+    <p>Desk in Ink &amp; Brass, with the paper switch in the sidebar footer
+      (dark paper or white). New here: the <b>Title page</b> row at the top of
+      the sidebar opens a form with a live preview, and the saved/backed-up
+      indicator opens the backup panel, including the one-time GitHub
+      connection.</p>
+    <div class="vs">
+      <a href="05-writing-window.html">Dark paper</a><span>The default.</span>
+      <a href="05-writing-window.html?theme=light">White paper</a><span>The light theme.</span>
+    </div>
+  </div>
+  <div class="piece" style="margin-top:12px">
+    <h3>6 · Projects</h3>
+    <p>The Projects screen (Ctrl+O) in two layouts, with New project, Import
+      (where it goes, then the report of anything left out), Rename and
+      Delete. "Empty library" in the yellow bar shows the first-run state.</p>
+    <div class="vs">
+      <a href="06-projects.html?variant=list">List</a><span>One row per project: title, active draft, pages, drafts, last edit.</span>
+      <a href="06-projects.html?variant=shelf">Shelf</a><span>Title-page thumbnails, like scripts on a shelf.</span>
+    </div>
+  </div>
+
+  <h2>Decided</h2>
+  <div class="piece">
+    <h3>4 · Light theme: dark frame, white paper</h3>
+    <p>Chosen over Linen, Sand, Mist and the all-white original. Both themes
+      now share the dark frame; the theme switches only the paper.</p>
+    <div class="vs">
+      <a href="04-light-theme.html?light=frame">Dark frame</a><span>Chosen.</span>
+    </div>
+  </div>
+  <div class="piece" style="margin-top:12px">
+    <h3>3 · Dark paper: Night</h3>
+    <p>Chosen over Dusk and Lamplight: the page barely lifts from the
+      background, with ivory text.</p>
+    <div class="vs">
+      <a href="03-dark-paper.html?paper=night">Night</a><span>Chosen.</span>
+    </div>
+  </div>
+  <div class="piece" style="margin-top:12px">
+    <h3>2 · Colours: Ink &amp; Brass</h3>
+    <p>Chosen over Graphite, Slate &amp; Sage and Charcoal &amp; Ember.</p>
+    <div class="vs">
+      <a href="02-desk-colours.html?palette=brass">Ink &amp; Brass</a><span>Chosen. Deep blue-black with a muted brass accent; coral warnings.</span>
+      <a href="02-desk-colours.html?palette=graphite">Others</a><span>Not chosen; switch with the arrows on that page.</span>
+    </div>
+  </div>
+  <div class="piece" style="margin-top:12px">
+    <h3>1 · The writing window: A, Desk</h3>
+    <p>Chosen as clearly the best of three directions. B and C stay here for
+      reference; A's first colour scheme was judged unpolished, which piece 2
+      addresses.</p>
+    <div class="vs">
+      <a href="01-writing-window.html?variant=A">A · Desk</a><span>Chosen. Attached panels and a full toolbar, a serif project title.</span>
+      <a href="01-writing-window.html?variant=B">B · Ink</a><span>Not chosen. Monospace chrome that fades while writing.</span>
+      <a href="01-writing-window.html?variant=C">C · Studio</a><span>Not chosen. Floating panels and scene cards.</span>
+    </div>
+  </div>
+
+
+  <h2>What is simulated</h2>
+  <ul>
+    <li>Page breaks come from a rough sketch of the rules at 54 lines a page,
+      not the real layout engine; (MORE) and (CONT'D) are placed by it.</li>
+    <li>The page is not editable: click a paragraph to put the cursor there,
+      then change its element with the toolbar or the number keys 1–7 and 0.
+      Browsers keep Ctrl+1–9 for tabs; the app will use Ctrl as Final Draft
+      does.</li>
+    <li>Rename and Delete in the draft menu do nothing.</li>
+  </ul>
+
+  <h2>Running it</h2>
+  <p>From the project root: <code>python3 -m http.server -d docs/prototype 8765</code>,
+    then open <code>http://127.0.0.1:8765/</code>. Opening the files
+    directly also works in Firefox; Chrome may refuse the bundled fonts from
+    a local file.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Question: what should the Projects screen (Ctrl+O)
+  look like, and how do new projects and imports flow? Two layouts, switched
+  with ?variant=list|shelf, the arrows in the yellow bar, or the left and
+  right arrow keys:
+
+    list   one row per project: title, active draft, pages, drafts, last edit
+    shelf  a grid of title-page thumbnails, like scripts on a shelf
+
+  Both in the settled look (look.css). "Import…" walks through choosing
+  where the script goes and the import report (docs/brief.md, Projects).
+  Files, projects and the file picker are simulated; Salt Line opens piece 5.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tir prototype: projects</title>
+<link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="look.css">
+<style>
+body[data-variant="A"] #topbar { gap: 16px; }
+body[data-variant="A"] #canvas { left: 0; top: 50px; }
+.brand { font: 500 21px "Newsreader", Georgia, serif; padding: 0 8px; letter-spacing: 0.01em; }
+.brand em { font-style: normal; color: var(--accent); }
+.wrap { max-width: 980px; margin: 0 auto; padding: 44px 40px 140px; }
+.head { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 26px; }
+.head h1 { margin: 0; font: 500 34px/1.1 "Newsreader", Georgia, serif; }
+.head .count { color: var(--muted); padding-bottom: 4px; }
+.head .acts { margin-left: auto; display: flex; gap: 8px; }
+
+/* list */
+.plist { border: 1px solid var(--rule); border-radius: 12px; background: var(--chrome); overflow: hidden; }
+.prow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 16px 14px 16px 20px; border-top: 1px solid var(--rule); }
+.prow:first-child { border-top: 0; }
+.prow:hover { background: var(--hover); }
+.prow .open { display: block; text-align: left; min-width: 0; }
+.prow .t { display: flex; align-items: center; gap: 10px; font: 500 20px/1.25 "Newsreader", Georgia, serif; }
+.prow .m { margin-top: 4px; color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.prow .m span { display: inline-flex; align-items: center; gap: 6px; }
+.tag { font: 500 11px var(--ui-font); padding: 2px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); letter-spacing: 0.02em; }
+.more { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+.more:hover { background: var(--hover); color: var(--fg); }
+
+/* shelf */
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, 204px); gap: 30px 28px; }
+.card { position: relative; }
+.card .open { display: block; width: 100%; text-align: left; }
+.thumb { width: 204px; height: 264px; overflow: hidden; border-radius: 3px; box-shadow: var(--sheet-shadow); transition: transform 0.18s ease; }
+.thumb .sheet { transform: scale(0.25); transform-origin: 0 0; pointer-events: none; }
+.card .open:hover .thumb, .card .open:focus-visible .thumb { transform: translateY(-3px); }
+.card .t { margin-top: 14px; font: 500 18px/1.25 "Newsreader", Georgia, serif; display: flex; gap: 8px; align-items: center; }
+.card .m { margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.card .more { position: absolute; top: 6px; left: 166px; background: rgba(13, 16, 20, 0.7); color: #e9e4d8; opacity: 0; }
+.card:hover .more, .card .more:focus-visible { opacity: 1; }
+.newcard { width: 204px; height: 264px; display: grid; place-items: center; border-radius: 3px; border: 1.5px dashed var(--rule); color: var(--muted); }
+.newcard:hover { border-color: var(--accent); color: var(--accent); }
+.newcard span { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+/* title page inside thumbnails */
+.tp-block { position: absolute; left: 1.5in; width: 6in; text-align: center; white-space: pre-wrap; top: 3.5in; }
+.tp-contact { position: absolute; left: 1.5in; bottom: 1in; white-space: pre; }
+
+/* empty */
+.empty { text-align: center; padding: 70px 20px; border: 1.5px dashed var(--rule); border-radius: 14px; }
+.empty h2 { margin: 0 0 8px; font: 500 26px "Newsreader", Georgia, serif; }
+.empty p { margin: 0 auto 20px; max-width: 30em; color: var(--muted); line-height: 1.5; }
+.empty .acts { display: flex; justify-content: center; gap: 8px; }
+
+/* menus and dialogs */
+#rowmenu { width: 180px; padding: 5px; }
+#rowmenu button { display: block; width: 100%; padding: 8px 10px; border-radius: 7px; text-align: left; }
+#rowmenu button:hover { background: var(--hover); }
+#rowmenu .danger { color: var(--danger); }
+.choice { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
+.choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--pop-border); cursor: pointer; }
+.choice label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { accent-color: var(--accent); margin: 2px 0 0; }
+.choice b { display: block; font-weight: 550; }
+.choice small { color: var(--muted); font-size: 12.5px; }
+.choice select { margin-top: 8px; width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--pop-border); background: var(--field); color: var(--fg); font: inherit; }
+.file { display: flex; gap: 10px; align-items: center; padding: 10px 12px; margin-bottom: 14px; border-radius: 9px; background: var(--field); border: 1px solid var(--pop-border); font-size: 13px; }
+.file small { display: block; color: var(--muted); font-size: 12px; }
+.report { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 6px; }
+.report li { display: flex; gap: 10px; align-items: baseline; }
+.report li b { min-width: 74px; font-weight: 550; color: var(--muted); font-size: 12.5px; }
+.left-out { margin: 4px 0 2px 0; padding-left: 18px; list-style: disc; color: var(--fg); line-height: 1.6; }
+.dialog .field + .field { margin-top: 12px; }
+</style>
+</head>
+<body data-variant="A" data-theme="dark">
+<div id="app">
+  <header id="topbar"></header>
+  <main id="canvas"><div class="wrap" id="main"></div></main>
+</div>
+
+<div id="rowmenu" class="pop" hidden role="menu"></div>
+<div id="dlg" class="scrim" hidden><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title" id="dlg-box"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div id="proto" role="region" aria-label="Prototype controls">
+  <span class="tag" style="background:#ffd60a;color:#0b0b0b;font:700 12px ui-monospace,monospace;letter-spacing:.06em;padding:6px 10px;border-radius:999px">PROTOTYPE</span>
+  <button data-p="prev" aria-label="Previous layout">&lsaquo;</button>
+  <span class="vl" id="vl"></span>
+  <button data-p="next" aria-label="Next layout">&rsaquo;</button>
+  <span class="dv"></span>
+  <button data-p="theme" id="p-theme"></button>
+  <button data-p="empty" id="p-empty">Empty library</button>
+</div>
+
+<script>
+(function () {
+'use strict';
+const $ = (s) => document.querySelector(s);
+const ICON = {
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  import: '<path d="M8 2.5v7.5M5 7l3 3 3-3M3 11.5v2h10v-2"/>',
+  dots: '<circle cx="3.5" cy="8" r=".9" fill="currentColor"/><circle cx="8" cy="8" r=".9" fill="currentColor"/><circle cx="12.5" cy="8" r=".9" fill="currentColor"/>',
+  branch: '<circle cx="4.5" cy="3.5" r="1.4"/><circle cx="4.5" cy="12.5" r="1.4"/><circle cx="11.5" cy="5" r="1.4"/><path d="M4.5 4.9v6.2M11.5 6.4c0 2.6-2.2 3.1-4.2 3.5-1.6.3-2.8 1-2.8 1.2"/>',
+  page: '<path d="M4 1.8h5.2L12 4.6v9.6H4z"/><path d="M9 1.8v3h3M6 8.5h4M6 11h3"/>',
+  cloudok: '<path d="M4.6 12.6h6.7a2.9 2.9 0 0 0 .3-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .7 4.9Z"/><path d="m6.4 9.7 1.2 1.2 2.3-2.5"/>',
+  clock: '<circle cx="8" cy="8" r="5.6"/><path d="M8 4.8V8l2.2 1.4"/>',
+  check: '<path d="m3.5 8.5 3 3 6-7"/>',
+  info: '<circle cx="8" cy="8" r="5.6"/><path d="M8 7.3v3.6M8 5.2v.1"/>',
+  alert: '<path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/>',
+};
+const svg = (n, size = 15) => `<svg viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
+const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const params = new URLSearchParams(location.search);
+const LAYOUTS = { list: 'List', shelf: 'Shelf' };
+const S = {
+  layout: LAYOUTS[params.get('variant')] ? params.get('variant') : 'list',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  empty: false,
+  menuFor: -1,
+  projects: [
+    { title: 'Salt Line', draft: 'Rewrite, Nov 2026', pages: 5, drafts: 2, edited: '2 minutes ago', credit: 'Written by', author: 'Your Name', current: true },
+    { title: 'The Lantern Keeper', draft: 'Second Draft', pages: 112, drafts: 3, edited: 'Yesterday', credit: 'Written by', author: 'Your Name' },
+    { title: 'Low Tide Motel', draft: 'First Draft', pages: 97, drafts: 1, edited: 'Oct 14, 2026', credit: 'Written by', author: 'Your Name' },
+    { title: 'Ninety Miles of Snow', draft: 'Polish', pages: 104, drafts: 4, edited: 'Jun 2, 2026', credit: 'Screenplay by', author: 'Your Name', source: 'Based on the novel by\nMarit Solberg' },
+  ],
+};
+
+function top() {
+  return `<div class="a-left"><span class="brand">Tir</span></div>
+    <div class="a-right"><span title="Saved on this machine. Backed up to GitHub 3 minutes ago.">Saved</span><span style="opacity:.5;padding:0">·</span><span>${svg('cloudok', 16)}Backed up</span></div>`;
+}
+function thumb(p) {
+  const lines = [esc(p.title.toUpperCase()), '', esc(p.credit), '', esc(p.author)];
+  if (p.source) lines.push('', esc(p.source));
+  return `<div class="thumb"><div class="sheet"><div class="tp-block">${lines.join('\n')}</div><div class="tp-contact">Your Name\nyou@example.com</div></div></div>`;
+}
+const meta = (p) => [
+  `<span>${svg('branch', 13)}${esc(p.draft)}</span>`,
+  `<span>${p.pages} ${p.pages === 1 ? 'page' : 'pages'}</span>`,
+  `<span>${p.drafts} ${p.drafts === 1 ? 'draft' : 'drafts'}</span>`,
+  `<span>${svg('clock', 13)}${esc(p.edited)}</span>`,
+].join('');
+function listHTML() {
+  return `<div class="plist">${S.projects.map((p, i) => `<div class="prow">
+      <button class="open" data-open="${i}"><div class="t">${esc(p.title)}${p.current ? '<span class="tag">Open</span>' : ''}</div><div class="m">${meta(p)}</div></button>
+      <button class="more" data-menu="${i}" aria-label="More for ${esc(p.title)}" aria-haspopup="menu">${svg('dots', 16)}</button>
+    </div>`).join('')}</div>`;
+}
+function shelfHTML() {
+  return `<div class="shelf">${S.projects.map((p, i) => `<div class="card">
+      <button class="open" data-open="${i}">${thumb(p)}<div class="t">${esc(p.title)}${p.current ? '<span class="tag">Open</span>' : ''}</div><div class="m">${esc(p.draft)} · ${p.pages} pages<br>Edited ${esc(/^(Yesterday|Just now)$/.test(p.edited) ? p.edited.toLowerCase() : p.edited)}</div></button>
+      <button class="more" data-menu="${i}" aria-label="More for ${esc(p.title)}" aria-haspopup="menu">${svg('dots', 16)}</button>
+    </div>`).join('')}
+    <div class="card"><button class="newcard" data-act="new"><span>${svg('plus', 20)}New project</span></button></div></div>`;
+}
+function emptyHTML() {
+  return `<div class="empty"><h2>No screenplays yet</h2>
+    <p>Start a new script, or bring one in from a Fountain or Final Draft file. Your library lives in ~/Screenplays.</p>
+    <div class="acts"><button class="btn" data-act="import">${svg('import')}Import…</button><button class="btn primary" data-act="new">${svg('plus')}New project</button></div></div>`;
+}
+function render() {
+  document.body.dataset.theme = S.theme;
+  $('#topbar').innerHTML = top();
+  const n = S.empty ? 0 : S.projects.length;
+  $('#main').innerHTML = `<div class="head"><h1>Projects</h1><span class="count">${n} ${n === 1 ? 'screenplay' : 'screenplays'}</span>
+      ${n ? `<div class="acts"><button class="btn" data-act="import">${svg('import')}Import…</button><button class="btn primary" data-act="new">${svg('plus')}New project</button></div>` : ''}</div>
+    ${S.empty ? emptyHTML() : S.layout === 'list' ? listHTML() : shelfHTML()}`;
+  $('#vl').textContent = `Layout: ${LAYOUTS[S.layout]}`;
+  $('#p-theme').textContent = S.theme === 'dark' ? 'Paper: dark' : 'Paper: white';
+  $('#p-empty').classList.toggle('on', S.empty);
+  const q = new URLSearchParams({ variant: S.layout });
+  if (S.theme === 'light') q.set('theme', 'light');
+  history.replaceState(null, '', `${location.pathname}?${q}`);
+}
+let toastTimer;
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2400); }
+
+// ---------- dialogs ----------
+function dialog(html, focusSel) {
+  $('#dlg-box').innerHTML = html;
+  $('#dlg').hidden = false;
+  requestAnimationFrame(() => { const f = focusSel && $(focusSel); if (f) { f.focus(); if (f.select) f.select(); } });
+}
+const closeDialog = () => { $('#dlg').hidden = true; };
+function newDialog() {
+  dialog(`<h2 id="dlg-title">New project</h2>
+    <p>A feature screenplay with one draft. You can fill in its title page later.</p>
+    <div class="field"><label for="np-title">Title</label><input type="text" id="np-title" value="Untitled Screenplay"></div>
+    <div class="field"><label for="np-draft">First draft's name</label><input type="text" id="np-draft" value="First Draft"></div>
+    <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn primary" data-act="create">Create</button></div>`, '#np-title');
+}
+function importDialog() {
+  const opts = S.projects.map((p, i) => `<option value="${i}">${esc(p.title)}</option>`).join('');
+  dialog(`<h2 id="dlg-title">Import a script</h2>
+    <div class="file">${svg('page', 18)}<div>harbor-lights.fdx<small>Final Draft file · ~/Downloads · exported from Story Architect</small></div></div>
+    <div class="choice" role="radiogroup" aria-label="Where it goes">
+      <label><input type="radio" name="dest" value="new" checked><span><b>As a new project</b><small>"Harbor Lights", from the file's title page</small></span></label>
+      ${S.empty ? '' : `<label><input type="radio" name="dest" value="draft"><span><b>As a new draft of a project</b><small>For a version someone sent back to you</small><select aria-label="Project" id="imp-proj">${opts}</select></span></label>`}
+    </div>
+    <div class="note">${svg('info')}<span>Tir makes its own copy in your library. The file you picked is never changed, moved or deleted.</span></div>
+    <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn primary" data-act="doimport">Import</button></div>`);
+}
+function reportDialog(dest) {
+  const where = dest === 'new' ? 'a new project, "Harbor Lights"' : `a new draft of "${esc(S.projects[dest].title)}"`;
+  dialog(`<h2 id="dlg-title">Imported</h2>
+    <p>harbor-lights.fdx is now ${where}.</p>
+    <ul class="report">
+      <li><b>Script</b>108 pages, 61 scenes, 41 characters</li>
+      <li><b>Title page</b>Title, credit, author and contact</li>
+    </ul>
+    <div class="note warn">${svg('alert')}<span><span style="color:var(--fg)">Left out, because Tir doesn't keep them:</span>
+      <ul class="left-out"><li>3 script notes (on pages 12, 40 and 87)</li><li>Revision colours on 8 pages; the text itself came through</li></ul></span></div>
+    <div class="actions"><button class="btn quiet" data-act="close">Done</button><button class="btn primary" data-act="openimported">Open it</button></div>`);
+}
+function deleteDialog(i) {
+  const p = S.projects[i];
+  dialog(`<h2 id="dlg-title">Delete “${esc(p.title)}”?</h2>
+    <p>Its ${p.drafts} ${p.drafts === 1 ? 'draft' : 'drafts'} will be removed from this machine. GitHub keeps the backup history, so it can still be recovered from there.</p>
+    <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn danger" data-act="dodelete" data-i="${i}">Delete project</button></div>`);
+}
+function renameDialog(i) {
+  const p = S.projects[i];
+  dialog(`<h2 id="dlg-title">Rename project</h2>
+    <p>This renames the project in your library. Each draft's title page keeps its own title; change that from the title page.</p>
+    <div class="field"><label for="rn-title">Name</label><input type="text" id="rn-title" value="${esc(p.title)}"></div>
+    <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn primary" data-act="dorename" data-i="${i}">Rename</button></div>`, '#rn-title');
+}
+
+// ---------- menu ----------
+function openMenu(i, anchor) {
+  const m = $('#rowmenu');
+  if (!m.hidden && S.menuFor === i) { closeMenu(); return; }
+  S.menuFor = i;
+  m.innerHTML = `<button role="menuitem" data-act="rename" data-i="${i}">Rename…</button><button role="menuitem" class="danger" data-act="delete" data-i="${i}">Delete…</button>`;
+  m.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  m.style.top = `${r.bottom + 6}px`;
+  m.style.left = `${Math.min(window.innerWidth - m.offsetWidth - 12, r.right - m.offsetWidth)}px`;
+}
+const closeMenu = () => { $('#rowmenu').hidden = true; S.menuFor = -1; };
+
+// ---------- events ----------
+document.addEventListener('click', (e) => {
+  if (e.target === $('#dlg')) { closeDialog(); return; }
+  const t = e.target.closest('[data-open],[data-menu],[data-act],[data-p]');
+  if (!e.target.closest('#rowmenu') && !e.target.closest('[data-menu]')) closeMenu();
+  if (!t) return;
+  if (t.dataset.open !== undefined) {
+    const p = S.projects[+t.dataset.open];
+    if (p.title === 'Salt Line') location.href = '05-writing-window.html' + (S.theme === 'light' ? '?theme=light' : '');
+    else toast(`Opens "${p.title}" on ${p.draft} in the writing window`);
+    return;
+  }
+  if (t.dataset.menu !== undefined) { openMenu(+t.dataset.menu, t); return; }
+  if (t.dataset.p) {
+    const k = Object.keys(LAYOUTS);
+    if (t.dataset.p === 'prev' || t.dataset.p === 'next') S.layout = k[(k.indexOf(S.layout) + (t.dataset.p === 'next' ? 1 : -1) + k.length) % k.length];
+    if (t.dataset.p === 'theme') S.theme = S.theme === 'dark' ? 'light' : 'dark';
+    if (t.dataset.p === 'empty') S.empty = !S.empty;
+    render();
+    return;
+  }
+  const a = t.dataset.act;
+  const i = t.dataset.i !== undefined ? +t.dataset.i : -1;
+  if (a === 'close') closeDialog();
+  if (a === 'new') newDialog();
+  if (a === 'import') importDialog();
+  if (a === 'create') {
+    const title = $('#np-title').value.trim() || 'Untitled Screenplay';
+    S.projects.forEach((p) => { p.current = false; });
+    S.projects.unshift({ title, draft: $('#np-draft').value.trim() || 'First Draft', pages: 1, drafts: 1, edited: 'Just now', credit: 'Written by', author: 'Your Name', current: true });
+    S.empty = false; closeDialog(); render(); toast(`Created "${title}". It would open in the writing window.`);
+  }
+  if (a === 'doimport') {
+    const dest = document.querySelector('input[name="dest"]:checked').value;
+    const target = dest === 'new' ? 'new' : +$('#imp-proj').value;
+    if (target === 'new') { S.projects.unshift({ title: 'Harbor Lights', draft: 'Imported draft', pages: 108, drafts: 1, edited: 'Just now', credit: 'Written by', author: 'Your Name' }); }
+    else { S.projects[target].drafts += 1; S.projects[target].edited = 'Just now'; }
+    S.empty = false; render(); reportDialog(target);
+  }
+  if (a === 'openimported') { closeDialog(); toast('Opens the imported script in the writing window'); }
+  if (a === 'rename') { closeMenu(); renameDialog(i); }
+  if (a === 'dorename') { S.projects[i].title = $('#rn-title').value.trim() || S.projects[i].title; closeDialog(); render(); toast('Renamed'); }
+  if (a === 'delete') { closeMenu(); deleteDialog(i); }
+  if (a === 'dodelete') { const p = S.projects.splice(i, 1)[0]; closeDialog(); render(); toast(`Deleted "${p.title}". GitHub's history still has it.`); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (!$('#dlg').hidden) closeDialog(); else closeMenu(); return; }
+  if (e.key === 'Enter' && e.target.matches('#np-title, #np-draft')) { e.preventDefault(); $('[data-act="create"]').click(); return; }
+  if (e.key === 'Enter' && e.target.id === 'rn-title') { e.preventDefault(); $('[data-act="dorename"]').click(); return; }
+  if (e.target.matches('input, textarea, select') || !$('#dlg').hidden) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const k = Object.keys(LAYOUTS);
+    S.layout = k[(k.indexOf(S.layout) + (e.key === 'ArrowRight' ? 1 : -1) + k.length) % k.length];
+    render();
+  }
+});
+render();
+})();
+</script>
+</body>
+</html>
