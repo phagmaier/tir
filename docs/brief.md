@@ -230,11 +230,17 @@ intact.
 - **The look is settled** for the writing window:
   [look.css](prototype/look.css) holds the final colours and chrome for the
   remaining pieces and, later, the app.
-- **Awaiting the user's review:** [piece 5](prototype/05-writing-window.html),
-  the finished writing window with the title page form and the backup
-  panel; and [piece 6](prototype/06-projects.html), the Projects screen in
-  two layouts (list or shelf of title-page thumbnails) with the import
-  flow.
+- **The finished writing window** ([piece 5](prototype/05-writing-window.html)),
+  approved by the user: the paper switch in the sidebar footer; a "Title
+  page" row at the top of the sidebar opening the title page form beside a
+  live preview; the saved/backed-up indicator opening a backup panel for
+  each state (backed up, saving, offline, paused, not connected) and the
+  one-time GitHub connection, which warns about a public or unreachable
+  repository.
+- **Awaiting the user's choice:** the Projects screen's layout
+  ([piece 6](prototype/06-projects.html)), a list or a shelf of title-page
+  thumbnails. Its import flow, new project, rename and delete are the same
+  in both.
 
 ## Page parity
 
