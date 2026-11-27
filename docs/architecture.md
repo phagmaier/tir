@@ -36,16 +36,18 @@ The user delegated these technical choices during planning.
 docs/         brief, architecture, findings, plan; prototype/ (design pieces; index.html marks the chosen ones)
 src/core/     pure TypeScript: format.ts holds every Final Draft format value; the model, draft file,
               Fountain, FDX, line layout, pagination, autocomplete's suggestions (suggestions.ts),
-              the clipboard's forms (clipping.ts) and checks join it
+              the clipboard's forms (clipping.ts), the scenes and where each page starts
+              (script-map.ts) and checks join it
 src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/prototype/look.css),
               fonts/ (Courier Prime, IBM Plex Sans, Newsreader and their licences); editor-model.ts
               maps the model to and from ProseMirror, projection.ts turns the engine's pages into
-              decorations, paragraph styles and sheets edit by edit, editor.ts is the ProseMirror
-              view, commands.ts its keys and commands, undo.ts how undo groups changes,
-              clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete popup, sheets.ts
-              draws the sheets of paper behind it, toolbar.ts the top bar's element buttons,
-              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and editor-harness.ts runs
-              the editor's state and keys for tests
+              decorations, paragraph styles, sheets and the script map edit by edit, editor.ts is
+              the ProseMirror view, commands.ts its keys and commands, undo.ts how undo groups
+              changes, clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete popup,
+              sheets.ts draws the sheets of paper behind it, toolbar.ts the top bar's element
+              buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to page,
+              jump.ts the caret and scroll for both, dev-fixtures.ts holds the scripts
+              `?fixture=NAME` opens, and editor-harness.ts runs the editor's state and keys for tests
 src-tauri/    Rust: the Tauri shell; tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
@@ -184,6 +186,16 @@ which WebKitGTK keeps in a clipboard entry of its own that other
 applications are not offered. Tests drive the editor's state and key
 plugins without a browser through `editor-harness.ts`, which keeps
 `editor.ts`'s plugin order.
+
+The sidebar's scene list and the top bar's page position are view plugins
+that `mountEditor` hands the projection, so they read its `ScriptMap`
+(`src/core/script-map.ts`: each scene's heading and starting page, the
+page of any place, each page's first line) as the engine computed it for
+the edit, never the screen. They are in the typing path, so each touches
+the page only where what it shows changed, and the scene list applies an
+edit's changes just after the edit's frame is drawn (findings, "Editor").
+The list scrolls on its own inside the fixed sidebar. A jump, from a scene
+or Go to page, sets the caret and scrolls to the engine's page and row.
 
 ## Working here
 

@@ -10,7 +10,7 @@
  * each character whose capital is longer as typed, as the engine does. What
  * a sheet prints that no element holds (page numbers, (MORE), repeated cues
  * and the automatic (CONT'D)) is in `sheets`, for drawing outside the
- * editable text.
+ * editable text, and `map` holds the scenes and where each page starts.
  *
  * `apply` follows each edit: the engine paginates the whole script again
  * (reusing unchanged elements' layouts), and only elements whose lines or
@@ -31,6 +31,7 @@ import {
 import { keepsCase, LayoutCache } from "../core/layout.ts";
 import type { ElementType } from "../core/model.ts";
 import { type Page, pageLabel, paginate } from "../core/paginate.ts";
+import { ScriptMap } from "../core/script-map.ts";
 import { fromDocument } from "./editor-model.ts";
 
 export const ROW_PX = 96 / LINES_PER_INCH;
@@ -91,6 +92,8 @@ export class Projection {
   height = 0;
   /** Each page's sheet, in order. */
   sheets: Sheet[] = [];
+  /** The scenes, and where each page starts. */
+  map!: ScriptMap;
   private placements!: Placement[];
   private positions!: number[];
   private readonly layouts = new LayoutCache();
@@ -174,6 +177,17 @@ export class Projection {
     return indexAt(this.positions, pos);
   }
 
+  /** The page holding document position `pos`. */
+  pageAt(pos: number): number {
+    const element = indexAt(this.positions, pos);
+    return this.map.pageAt(element, Math.max(0, pos - (this.positions[element] as number) - 1));
+  }
+
+  /** The scene holding document position `pos`, as an index into `map.scenes`; -1 before the first. */
+  sceneAt(pos: number): number {
+    return this.map.sceneAt(indexAt(this.positions, pos));
+  }
+
   positionOf(index: number): number | undefined {
     return this.positions[index];
   }
@@ -190,9 +204,11 @@ export class Projection {
   }
 
   private place(doc: Node): Placement[] {
-    const pages = paginate(fromDocument(doc), { layouts: this.layouts });
+    const elements = fromDocument(doc);
+    const pages = paginate(elements, { layouts: this.layouts });
     this.height = Math.max(1, pages.length) * PITCH_PX - GUTTER_PX;
     this.sheets = pages.map(sheetOf);
+    this.map = new ScriptMap(elements, pages);
     return place(pages, doc.childCount);
   }
 }

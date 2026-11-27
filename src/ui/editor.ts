@@ -142,8 +142,12 @@ function directInput(view: EditorView, event: InputEvent): boolean {
 }
 
 export interface EditorOptions {
-  /** View plugins for interface parts that follow the editor, such as the element toolbar. */
-  readonly plugins?: readonly Plugin[];
+  /**
+   * View plugins for interface parts that follow the editor, such as the
+   * element toolbar and the scene sidebar, given the projection, which is
+   * up to date whenever they update.
+   */
+  readonly plugins?: (projection: Projection) => readonly Plugin[];
   /**
    * Pixels at the window's top and left that fixed bars cover over the
    * scrolling document; scrolling the caret into view keeps clear of them.
@@ -155,7 +159,7 @@ export interface EditorOptions {
 export function mountEditor(
   place: HTMLElement,
   elements: readonly Element[],
-  { plugins = [], covered = { top: 0, left: 0 } }: EditorOptions = {},
+  { plugins = () => [], covered = { top: 0, left: 0 } }: EditorOptions = {},
 ): EditorView {
   const state = EditorState.create({
     schema,
@@ -185,7 +189,7 @@ export function mountEditor(
     { mount: root },
     {
       state,
-      plugins,
+      plugins: plugins(projection),
       attributes: () => ({
         class: "script-editor",
         "aria-label": "Script",

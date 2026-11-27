@@ -7,6 +7,8 @@ import { layoutElement } from "../core/layout.ts";
 import type { Element } from "../core/model.ts";
 import { paginate } from "../core/paginate.ts";
 import { paste } from "./clipboard.ts";
+import { screenplayKeys } from "./commands.ts";
+import { action, heading, stateOf } from "./editor-harness.ts";
 import { fromDocument, schema, toDocument } from "./editor-model.ts";
 import { type Block, Projection } from "./projection.ts";
 import { undoHistory } from "./undo.ts";
@@ -328,5 +330,83 @@ describe("following edits", () => {
       }
       expect(styles, name).toEqual(blocks(fresh));
     }
+  });
+});
+
+describe("the scene list and page position following edits", () => {
+  it("follows headings typed, retyped, moved, deleted and pasted, and the caret", () => {
+    // Pages come only from forced breaks, so each is worked out by hand.
+    let state = stateOf([
+      heading("int. lamp room - night"),
+      action("The lamp turns."),
+      action("|"),
+      heading("EXT. CLIFF - DAY", { pageBreakBefore: true }),
+      action("Wind."),
+    ]);
+    const projection = new Projection(state.doc);
+    const step = (tr: Transaction) => {
+      state = state.apply(tr);
+      if (tr.docChanged) projection.apply(tr);
+    };
+    const key = (combo: string) => step(transactionOf(state, screenplayKeys[combo] as Command));
+    const caretAt = (pos: number) =>
+      step(state.tr.setSelection(TextSelection.create(state.doc, pos)));
+    const list = () => projection.map.scenes.map((scene) => `${scene.heading} p${scene.page}`);
+    const caret = () => [
+      projection.sceneAt(state.selection.head),
+      projection.pageAt(state.selection.head),
+      projection.map.pageCount,
+    ];
+    expect(list()).toEqual(["INT. LAMP ROOM - NIGHT p1", "EXT. CLIFF - DAY p2"]);
+    expect(caret()).toEqual([0, 1, 2]);
+
+    // The empty action becomes a heading (Ctrl+1) and is typed into.
+    key("Mod-1");
+    expect(list()).toEqual(["INT. LAMP ROOM - NIGHT p1", " p1", "EXT. CLIFF - DAY p2"]);
+    for (const char of "ext. pier - dusk") step(state.tr.insertText(char));
+    expect(list()).toEqual([
+      "INT. LAMP ROOM - NIGHT p1",
+      "EXT. PIER - DUSK p1",
+      "EXT. CLIFF - DAY p2",
+    ]);
+    expect(caret()).toEqual([1, 1, 2]);
+
+    // A forced break before it (Ctrl+Enter) moves it, and the scene after, a page on.
+    key("Mod-Enter");
+    expect(list()).toEqual([
+      "INT. LAMP ROOM - NIGHT p1",
+      "EXT. PIER - DUSK p2",
+      "EXT. CLIFF - DAY p3",
+    ]);
+    expect(caret()).toEqual([1, 2, 3]);
+
+    // The cliff's heading becomes action (Ctrl+2); its forced break stays.
+    caretAt(startOf(state.doc, 3) + 1);
+    key("Mod-2");
+    expect(list()).toEqual(["INT. LAMP ROOM - NIGHT p1", "EXT. PIER - DUSK p2"]);
+    expect(caret()).toEqual([1, 3, 3]);
+
+    // The pier's heading is deleted whole, its forced break with it.
+    step(state.tr.delete(startOf(state.doc, 2), startOf(state.doc, 3)));
+    expect(list()).toEqual(["INT. LAMP ROOM - NIGHT p1"]);
+    expect(projection.map.pageCount).toBe(2);
+
+    // Two scenes pasted after "The lamp turns.", then the paste undone.
+    caretAt(startOf(state.doc, 2) - 1);
+    const elements: Element[] = [
+      heading("INT. HOLD - NIGHT"),
+      action("Dark."),
+      heading("EXT. DECK - NIGHT"),
+    ];
+    step(transactionOf(state, paste({ elements, openStart: false, openEnd: false })));
+    expect(list()).toEqual([
+      "INT. LAMP ROOM - NIGHT p1",
+      "INT. HOLD - NIGHT p1",
+      "EXT. DECK - NIGHT p1",
+    ]);
+    expect(caret()).toEqual([2, 1, 2]);
+    step(transactionOf(state, undo));
+    expect(list()).toEqual(["INT. LAMP ROOM - NIGHT p1"]);
+    expect(caret()).toEqual([0, 1, 2]);
   });
 });

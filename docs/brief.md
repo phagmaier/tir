@@ -46,7 +46,8 @@ V1 must have:
   of day, and common transitions.
 - **Copy and paste**, as [Copy and paste](#copy-and-paste) describes, and
   undo and redo.
-- **Page position**: "Page 14 of 108" in the top bar, and Go to page.
+- **Page position**: "Page 14 of 108" in the top bar, and Go to page, as
+  [Page position](#page-position) describes.
 - **Focus mode**: one key hides the sidebar and top bar.
 - **Zoom** for the page.
 - **Dark and light themes**, dark by default. Both keep the same dark
@@ -217,6 +218,32 @@ heading and the page it starts on. The scene containing the cursor is
 highlighted, and clicking a scene jumps to it. The sidebar collapses, and
 focus mode hides it.
 
+*(agent-selected)* Every Scene Heading element is a scene, an empty one
+included, which shows only its number and page; elements before the first
+heading belong to no scene. Headings show in capitals, as they print. A
+click puts the caret at the start of the heading, keeps focus in the
+script, and scrolls the heading to where page 1's first line sits when the
+script opens. A long list scrolls on its own and keeps the current scene in
+view.
+
+## Page position
+
+"Page N of M" sits at the right of the top bar: N is the page the caret is
+on, M the script's page count *(the user's choice, 2026-11-26: like the
+element buttons and the sidebar highlight, it follows the caret; scrolling
+leaves it until the caret moves)*.
+
+**Go to page**: Ctrl+G *(agent-selected: Final Draft's key,
+[findings](findings.md#final-drafts-keys))*, or a click on "Page N of M",
+turns N into a field in place holding the current page
+([piece 7](prototype/07-go-to-page.html), A; the user's choice,
+2026-11-26). Enter puts the caret at the start of that page's first line
+and scrolls the page's top to where page 1's sits when the script opens;
+Esc goes back to the script with the caret where it was. *(agent-selected:
+a number past the last page goes to the last page; anything but a number
+leaves the field open; clicking elsewhere closes it without moving;
+switching to another window leaves it open for the return.)*
+
 ## Find and replace
 
 Works within the active draft, with match case and whole word options,
@@ -320,6 +347,9 @@ intact.
   recent first; New project and Import at the top; Rename and Delete from
   each row's menu; the import dialog, its report and the empty library as
   that piece shows them.
+- **Go to page** ([piece 7](prototype/07-go-to-page.html)): "Page N of M"
+  turns into a field in place, chosen over a popover under it
+  (2026-11-26).
 - **The design is complete.** The prototype pieces are the reference for
   every screen; [the plan](plan.md) builds them.
 
@@ -425,5 +455,5 @@ No product decision is open. The facts still to establish are tasks in
 [the plan](plan.md): Final Draft's remaining pagination details and the
 page-number style (0.8), the calibration set (0.8), the draft file's
 structure (0.2), the Nix development shell (0.1), and the keys for zoom,
-focus mode, Go to page and the next finding (1.7, 1.8). None needs the
-user unless it turns out to change behaviour described above.
+focus mode and the next finding (1.8). None needs the user unless it turns
+out to change behaviour described above.

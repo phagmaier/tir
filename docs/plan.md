@@ -34,10 +34,10 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; stopped after 1.6 as the user asked
+- Active: none; stopped after 1.7 as the user asked
 - Blockers: none
-- Next: 1.7 Scene sidebar, page position, Go to page, when the user says to
-  continue
+- Next: 1.8 Zoom, focus mode, the paper switch, and settings, when the user
+  says to continue
 
 ## Stages
 
@@ -694,15 +694,71 @@ saving arrive in Stage 2.
     changed). Not checked: drag and drop, and middle-click paste (Known
     gaps).
 
-- [ ] 1.7 — Scene sidebar, page position, Go to page
-  - Status: todo
+- [x] 1.7 — Scene sidebar, page position, Go to page
+  - Status: done
   - Depends on: 1.3
-  - Spec: brief "Scene sidebar", "Scope" (Page position)
+  - Spec: brief "Scene sidebar", "Page position"
   - Do: The sidebar lists scenes with number, heading and starting page,
     highlights the scene holding the cursor, and jumps on click. The top bar
     shows "Page N of M". Go to page has a key, recorded in brief.md.
   - Done when: tests check the scene list and page numbers against the
     engine, and the sidebar and Go to page work in the app.
+  - Decision (2026-11-26): asked with prototype piece 7 (new), the user chose
+    Go to page in the top bar ("Page N of M" turns into a field, A) over a
+    popover, and "Page N of M" following the caret over the scrolled view
+    the earlier pieces simulated. Recorded in brief "Page position".
+  - Evidence: 2026-11-26. `src/core/script-map.ts` maps the engine's pages:
+    each scene's heading (in capitals) and the page and row it starts on,
+    the page of any place, each page's first line; the projection builds it
+    with every edit. `src/ui/sidebar.ts` and `src/ui/page-position.ts` are
+    view plugins handed the projection; `src/ui/jump.ts` sets the caret and
+    scrolls to the engine's page and row. Go to page is Ctrl+G, Final
+    Draft's Go To (findings, "Final Draft's keys"); the other details are
+    agent-selected in brief "Scene sidebar" and "Page position". Tests,
+    expected results worked by hand or read from `paginate`'s pages:
+    `src/core/script-map.test.ts` (scenes in order with a forced break and
+    one mid-page, capitals keeping "ß", a heading that would fall on a
+    page's last line starting the next page, an empty heading, no scenes
+    and an empty script, the scene holding each element, an action split
+    across pages, a split speech whose page starts at its dialogue and not
+    the repeated cue, and every line of `featureScript(150)` and
+    `everyFormat` against the engine); `src/ui/projection.test.ts` (the
+    list, the caret's scene and page and the page count following Ctrl+1
+    and a heading typed, Ctrl+Enter, Ctrl+2, a heading deleted, two scenes
+    pasted and the paste undone). Native, through the Hyprland dispatcher
+    and `wlrctl`, on the 120-page fixture: Ctrl+G reached the page and
+    opened the field on the current page; 57 and Enter put the caret at
+    page 57's first line (the engine's: element 1,064, offset 0), scrolled
+    to 56 × 1,086 px, with focus back in the editor and the next key typed
+    there; 999 went to page 120; Esc, and Enter on letters, kept the caret;
+    leaving the window kept the field open; real clicks on scenes 7 and 30
+    put the caret at their headings with focus kept, highlighted them and
+    scrolled to their pages; Down and Up moved the highlight between
+    scenes 1 and 2 of `?fixture=sample`, and Down across page 1's gap gave
+    "Page 2 of 120"; "Page N of M" read 1 of 120 after Ctrl+Home, 60 of 120
+    after a real click on page 60 (the engine's page for that caret) and
+    120 of 120 after Ctrl+End; a letter typed in a heading reached its row;
+    a MutationObserver saw no write to the sidebar or the top bar in five
+    letter-and-Backspace pairs. The dead acute then `e` and Compose `o` `c`
+    entered "é©" in a cue and in an action. `mise run editor-timing`, two
+    full runs plus alternating runs with parts removed: typing as in task
+    1.6 except the page added on the forced-break fixture, 15 ms layout
+    against 13, where every later scene's page number changes; the first
+    build's 35–38 ms for that edit was traced to the list's rows and cut
+    (flex rows, the list's writes after the frame; findings, "Editor"). A
+    real click on a scene took 2–2.5 ms to layout and 13.5 ms to the next
+    frame, Go to page 4.5–5 ms and 14.5–16.5 ms. `mise run
+    editor-placement` on `every`, `feature` (5,040 lines, 83 marks) and
+    `spike` (4,200 lines): every line in place. Screenshots at 1440×900
+    beside piece 5 on Night and white paper: the scene list's pixels equal
+    piece 5's at 2% tolerance once moved up by the Title page row it lacks
+    (2.5); "Page 1 of 5" reads alike, at the bar's right end until the
+    findings count and saved indicator come (Stage 5, 1.9, 2.2). Reviewed
+    with user-code-review at HEAD `ebce3b8` plus uncommitted changes: fixed
+    the field closing when the window lost focus, a scene click reading the
+    list as it was before an edit, and two comments; no other findings.
+    `mise run check` passed (497 Vitest tests, both type checks, Biome and
+    Rust checks).
 
 - [ ] 1.8 — Zoom, focus mode, the paper switch, and settings
   - Status: todo
@@ -715,6 +771,10 @@ saving arrive in Stage 2.
     settings in the user's config directory, not in the library.
   - Done when: each works in the app, survives a restart, and the brief
     lists the keys.
+  - Note (from 1.7): `jumpTo` (`src/ui/jump.ts`) scrolls by the engine's
+    page and row at 96 px to the inch, and the sidebar is a flex column
+    whose scene list takes the space above the footer; zoom must scale the
+    jump.
 
 - [ ] 1.9 — Open and save a draft file
   - Status: todo
@@ -727,6 +787,9 @@ saving arrive in Stage 2.
     and an interrupted save never leaves a damaged file (tested).
   - Note (from 1.2): the projection follows transactions; opening a
     script replaces the document, so the projection must be rebuilt then.
+  - Note (from 1.7): the sidebar and page position read the projection in
+    their plugin views' `update`; a document put in place without a
+    transaction must rebuild the projection before the view updates.
 
 - [ ] 1.10 — Review: Stage 1
   - Status: todo
@@ -757,6 +820,9 @@ saving arrive in Stage 2.
     `aria-expanded` or `aria-activedescendant` on the editable root), so a
     screen reader is not told of suggestions. Attributes on the root change
     with every popup update; measure typing before adding them.
+  - Note (from 1.7): a click on a scene keeps focus in the editor, and Tab
+    never leaves the script, so no key reaches the scene list's buttons; Go
+    to page has Ctrl+G.
 
 - [ ] 1.11 — User check: Stage 1
   - Status: todo

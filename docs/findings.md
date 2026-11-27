@@ -77,10 +77,17 @@ numbers and apostrophes: the calibration PDFs (see "Calibration").
   there removes it.
 - When a parenthetical is added, Final Draft "automatically enters both the
   left and right parentheses and positions the cursor between them".
+- **Go To** is Ctrl+G on Windows and Cmd+G on a Mac: a window where a page
+  number is typed, or picked from a list, then Return; it also goes to a
+  scene, a bookmark and other divisions. The status bar's "Page X of Y"
+  gives "the number of the displayed page and the total page count", and on
+  a Mac a double-click on it opens Go To.
 - Evidence: Final Draft's knowledge base, "What keyboard shortcuts can I use
-  in Final Draft?" (2024), and the Final Draft 13 user guide for Windows
-  (Dual Dialogue, Alignment, Page Break, the sample script tutorial, the
-  status bar, SmartType options, Element Shortcuts, Tab key), both from
+  in Final Draft?" (2024; Go To in both Edit tables) and "What info can I
+  see in the Status Bar at the bottom of the screen?" (2025), Final Draft's
+  blog "Tech Tips: Go To" (2025), and the Final Draft 13 user guide for
+  Windows (Dual Dialogue, Alignment, Page Break, the sample script tutorial,
+  the status bar, SmartType options, Element Shortcuts, Tab key), all from
   finaldraft.com; the Final Draft 11 Windows guide (Reformatting). Read
   2026-11-26.
 
@@ -466,6 +473,41 @@ time, above task 1.5's 18–19 ms, measured the same in 40-pair runs with the
 plugin removed (23 ms) and restored (24 ms), as every other row did: it is
 the day's.
 
+**The scene sidebar and the page position leave typing as it was, once the
+list waits for the frame** (task 1.7). Both follow the projection's map of
+scenes and pages and touch the page only when what they show changes. Two
+full runs gave ordinary typing 11 ms layout (p95 14–21), 18 ms frame,
+16–21 ms busy; a line added or removed 11–12 ms (13–26), 18–20 ms,
+21–22 ms; a page added 15 ms (20–22), 22–23 ms, 29–30 ms, and the Backspace
+removing it 58–59 ms (62–63), 64 ms, 60–65 ms; the `feature` line change
+15–17 ms (18–23), 23–25 ms, 27–29 ms; typing in a cue with the popup open
+11 ms (12–19), 18–19 ms, 15–21 ms. Only the page added differs from task
+1.6's, by 2 ms of layout and 7 ms of busy time: on this fixture every later
+scene's page number changes then (and the page count), and alternating
+20-pair runs measured 15–16 ms layout with the sidebar and 13 ms with it
+and the page position removed. As first built, writing those 119 rows with
+the keystroke took that edit to 35–38 ms layout, 46–48 ms frame. Removing
+parts in turn placed all of it in the list's rows: the list as a scroll
+container added 4–6 ms, and the rows' layout the rest. In the page, setting
+120 page numbers and laying the list out took 9–10 ms with the prototype's
+grid rows and 4–5 ms with flex rows, which draw the same pixels, so the
+rows are flex. Flex rows with `content-visibility: auto` brought the
+keystroke to 18–22 ms, still above, and any layout of the fixed sidebar
+took about 2 ms even for one changed row. So the list applies an edit's
+changes in a timeout set in the next animation frame, after that frame is
+drawn, without `content-visibility`; with nothing but the caret moving,
+the highlight moves at once.
+
+**A jump to a scene or a page takes a frame** (task 1.7, real clicks
+through `wlrctl` and keys through the dispatcher, timed as above from the
+`click` or the Enter `keydown`, busy over 150 ms; two runs of twelve jumps
+back and forth across the 120-page fixture): a click on a scene 2–2.5 ms
+to layout (at most 4), 13.5 ms to the frame (at most 23), 14.5–15 ms busy
+(at most 33); Go to page 4.5–5 ms (at most 7), 14.5–16.5 ms (at most 26),
+16–17 ms (at most 27). Every jump landed on the engine's scroll position,
+(page − 1) × 1,086 px plus the row. WebKitGTK and Tauri deliver Ctrl+G to
+the page's `keydown`.
+
 **Pasting 120 pages and undoing it take a third and a tenth of a second**
 (task 1.6, timed from the key's `keydown` as above, three runs): the
 120-page fixture's Fountain (195,866 characters, 2,281 elements, its title
@@ -581,8 +623,10 @@ sequences.
 
 - `document.body.offsetHeight` did not lay out a `position: fixed`
   subtree, so expensive layouts there read as 0–2 ms; the editor's own
-  `getBoundingClientRect()` gave the true 45–80 ms. Force layout on the
-  element being measured.
+  `getBoundingClientRect()` gave the true 45–80 ms. Likewise, with text
+  changed in the fixed sidebar, the editor's `getBoundingClientRect()` took
+  0 ms and a sidebar element's 2–4 ms. Force layout on the element being
+  measured.
 - Key events sent by the Hyprland dispatcher carry an unusable
   `event.timeStamp` (about 2⁶⁴); take `performance.now()` in a capturing
   `keydown` listener instead. `performance.now()` resolves to 1 ms here.

@@ -88,6 +88,8 @@ button {
   bottom: 0;
   left: 0;
   width: 264px;
+  display: flex;
+  flex-direction: column;
   background: var(--chrome);
   border-right: 1px solid var(--rule);
 }
@@ -146,6 +148,130 @@ button {
   .elements .short {
     display: inline;
   }
+}
+.bar-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.bar-right > * {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.bar-right > [hidden] {
+  display: none;
+}
+.bar-right > button:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.bar-right .pg {
+  font-variant-numeric: tabular-nums;
+}
+/* Go to page: "Page N of M" with N as a field (prototype piece 7, A). */
+.bar-right .pg.editing {
+  padding-top: 0;
+  padding-bottom: 0;
+  color: var(--fg);
+}
+.pg-field {
+  width: 5ch;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.pg-field:focus-visible {
+  outline: none;
+}
+
+/* ===== The scene sidebar (prototype piece 5). The list scrolls on its own:
+   the sidebar is fixed over the scrolling document. Rows are flex rather
+   than the prototype's grid: laid out alike, at half the cost, which counts
+   when an edit moves every later scene's page number (findings,
+   "Editor"). ===== */
+.scenes-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 18px 18px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.scenes-head span + span {
+  color: var(--faint);
+  font-weight: 450;
+}
+.scenes {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 0 8px 8px;
+  list-style: none;
+}
+.scene {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+.scene:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.scene[aria-current] {
+  color: var(--fg);
+  background: var(--hover);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.scenes .no,
+.scenes .pg {
+  color: var(--faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.scenes .no {
+  flex: none;
+  width: 20px;
+  text-align: right;
+}
+.scenes .pg {
+  flex: none;
+}
+.scenes [aria-current] .no {
+  color: var(--accent);
+}
+.scenes .hd {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
 }
 
 /* ===== The script: sheets of paper with the editor's text over them ===== */

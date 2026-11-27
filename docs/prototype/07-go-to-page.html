@@ -1,0 +1,175 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Go to page (docs/brief.md, Scope: Page position) in
+  the settled writing window of piece 5. Ctrl+G, as in Final Draft, or a
+  click on "Page N of M" opens it; Enter goes to the page typed, putting the
+  caret at the page's first line, and Esc goes back to the script. Two
+  places for the page number to be typed:
+
+    A  In the top bar   "Page N of M" turns into a field in place
+    B  Popover          a small panel under the page position, as the find
+                        bar and backup panel open
+
+  The script is piece 5's four pages; nothing else differs from piece 5.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tir prototype: Go to page</title>
+<link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="look.css">
+<style>
+.a-tp { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 12px 8px 0; padding: 8px 10px; border-radius: 7px; color: var(--muted); font-size: 12.5px; text-align: left; }
+.a-tp:hover { background: var(--hover); color: var(--fg); }
+.a-foot .paper { display: flex; align-items: center; gap: 7px; padding: 5px 8px; margin-left: -8px; border-radius: 6px; }
+
+/* A: the page position becomes a field in place. */
+.a-right .pg.editing { padding-top: 0; padding-bottom: 0; color: var(--fg); }
+.pg-field { width: 5ch; height: 26px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--accent); background: var(--field); color: var(--fg); font: inherit; font-variant-numeric: tabular-nums; text-align: center; outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.a-right .pg-field:focus-visible, #goto input:focus-visible { outline: none; }
+
+/* B: a popover under the page position. */
+#goto { width: 236px; padding: 6px 6px 4px; }
+#goto .g-h { padding: 6px 8px 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+#goto .g-row { display: flex; align-items: center; gap: 8px; padding: 0 6px; }
+#goto input { width: 64px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--accent); background: var(--field); color: var(--fg); font: inherit; font-variant-numeric: tabular-nums; outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+#goto .g-of { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+#goto .g-go { padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-weight: 500; }
+#goto .g-keys { padding: 9px 8px 5px; font-size: 11px; color: var(--muted); opacity: 0.8; }
+</style>
+</head>
+<body data-variant="A" data-theme="dark">
+<div id="app">
+  <header id="topbar"></header>
+  <aside id="sidebar" aria-label="Scenes"></aside>
+  <main id="canvas"><div id="pages"></div></main>
+</div>
+
+<div id="goto" class="pop" hidden role="dialog" aria-label="Go to page">
+  <div class="g-h">Go to page</div>
+  <div class="g-row"><input id="g-in" inputmode="numeric" aria-label="Page number" spellcheck="false"><span class="g-of" id="g-of"></span><button class="g-go" data-act="go">Go</button></div>
+  <div class="g-keys">Enter goes · Esc closes</div>
+</div>
+
+<div id="proto" role="region" aria-label="Prototype controls">
+  <span class="tag">PROTOTYPE</span>
+  <button data-p="variant" id="p-variant"></button>
+  <button data-p="open" id="p-open">Go to page (Ctrl+G)</button>
+  <button data-p="theme" id="p-theme"></button>
+</div>
+
+<script src="script.js"></script>
+<script>
+(function () {
+'use strict';
+const P = window.TirProto;
+const $ = (s) => document.querySelector(s);
+const ICON = {
+  chev: '<path d="M4.5 6.5 8 10l3.5-3.5"/>',
+  branch: '<circle cx="4.5" cy="3.5" r="1.4"/><circle cx="4.5" cy="12.5" r="1.4"/><circle cx="11.5" cy="5" r="1.4"/><path d="M4.5 4.9v6.2M11.5 6.4c0 2.6-2.2 3.1-4.2 3.5-1.6.3-2.8 1-2.8 1.2"/>',
+  alert: '<path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/>',
+  cloudok: '<path d="M4.6 12.6h6.7a2.9 2.9 0 0 0 .3-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .7 4.9Z"/><path d="m6.4 9.7 1.2 1.2 2.3-2.5"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  minus: '<path d="M3.5 8h9"/>',
+  page: '<path d="M4 1.8h5.2L12 4.6v9.6H4z"/><path d="M9 1.8v3h3M6 8.5h4M6 11h3"/>',
+  moon: '<path d="M13 9.6A5.4 5.4 0 0 1 6.4 3 5.4 5.4 0 1 0 13 9.6Z"/>',
+  sun: '<circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>',
+};
+const svg = (name, size = 15) => `<svg viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+
+const params = new URLSearchParams(location.search);
+const els = P.parse(P.SAMPLE);
+const S = {
+  variant: params.get('v') === 'B' ? 'B' : 'A',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  els,
+  cur: els.findIndex((e) => e.t === 'dialogue'),
+  page: 1,
+  open: params.get('open') === '1',
+  lay: null,
+};
+const curType = () => { const e = S.els[S.cur]; return e ? e.t : null; };
+const curScene = () => (S.lay ? S.lay.sceneOf[S.cur] : 0);
+const pageCount = () => (S.lay ? S.lay.pages.length : 0);
+
+function top() {
+  const editing = S.open && S.variant === 'A';
+  const pg = editing
+    ? `<span class="pg editing">Page <input class="pg-field" id="pg-in" inputmode="numeric" aria-label="Go to page" value="${S.page}" spellcheck="false"> of ${pageCount()}</span>`
+    : `<button class="pg" data-act="goto" title="Go to page · Ctrl+G">Page ${S.page} of ${pageCount()}</button>`;
+  return `<div class="a-left">
+      <button class="a-proj" title="Projects · Ctrl+O">Salt Line</button>
+      <span class="a-slash">/</span>
+      <button class="a-draft">${svg('branch', 14)}<span>Rewrite, Nov 2026</span>${svg('chev', 14)}</button>
+    </div>
+    <div class="a-mid" role="toolbar" aria-label="Element">${P.ORDER.map((t) => `<button class="elb${t === curType() ? ' on' : ''}" aria-pressed="${t === curType()}"><span class="f">${P.LABELS[t]}</span><span class="s">${P.SHORT[t]}</span></button>`).join('')}</div>
+    <div class="a-right">
+      ${pg}
+      <span class="sep"></span>
+      <button class="warn">${svg('alert', 15)}<span>${S.lay.findings.length}</span></button>
+      <span class="sep"></span>
+      <button><span>Saved</span><span style="opacity:.5">·</span>${svg('cloudok', 16)}<span>Backed up</span></button>
+    </div>`;
+}
+function side() {
+  const sc = S.lay.scenes;
+  return `<button class="a-tp">${svg('page', 15)}<span>Title page</span></button><div class="a-head"><span>Scenes</span><span>${sc.length}</span></div>
+    <ol class="a-scenes">${sc.map((s) => `<li class="${s.n === curScene() ? 'on' : ''}" title="${s.heading}"><span class="no">${s.n}</span><span class="hd">${s.heading}</span><span class="pg">${s.page}</span></li>`).join('')}</ol>
+    <div class="a-foot"><button class="paper">${svg(S.theme === 'dark' ? 'moon' : 'sun', 14)}<span>${S.theme === 'dark' ? 'Dark paper' : 'White paper'}</span></button><span class="z"><button aria-label="Zoom out">${svg('minus', 14)}</button><span>100%</span><button aria-label="Zoom in">${svg('plus', 14)}</button></span></div>`;
+}
+
+function render() {
+  S.lay = P.layout(S.els);
+  P.renderPages($('#pages'), S.lay, { cur: S.cur });
+  chrome();
+}
+function chrome() {
+  document.body.dataset.theme = S.theme;
+  $('#topbar').innerHTML = top();
+  $('#sidebar').innerHTML = side();
+  $('#p-variant').textContent = S.variant === 'A' ? 'A: in the top bar' : 'B: popover';
+  $('#p-theme').textContent = S.theme === 'dark' ? 'Paper: dark' : 'Paper: white';
+  const pop = $('#goto');
+  pop.hidden = !(S.open && S.variant === 'B');
+  if (!pop.hidden) {
+    $('#g-of').textContent = `of ${pageCount()}`;
+    const r = document.querySelector('.a-right .pg').getBoundingClientRect();
+    pop.style.top = `${r.bottom + 8}px`;
+    pop.style.left = `${Math.min(window.innerWidth - pop.offsetWidth - 12, r.right - pop.offsetWidth)}px`;
+  }
+  const field = S.variant === 'A' ? $('#pg-in') : $('#g-in');
+  if (S.open && field) { if (S.variant === 'B') field.value = S.page; field.focus(); field.select(); }
+}
+function open(on) { S.open = on; chrome(); }
+function go(value) {
+  const n = Math.min(pageCount(), Math.max(1, Math.round(Number(value))));
+  S.open = false;
+  if (!Number.isFinite(n)) { chrome(); return; }
+  S.page = n;
+  S.cur = S.lay.pages[n - 1][0].i;
+  render();
+  document.querySelector(`.sheet[data-page="${n}"]`).scrollIntoView({ block: 'start' });
+  $('#canvas').scrollTop -= 40;
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act],[data-p]');
+  if (!t) { if (S.open && !e.target.closest('#goto, .pg')) open(false); return; }
+  if (t.dataset.act === 'goto') { open(true); return; }
+  if (t.dataset.act === 'go') { go($('#g-in').value); return; }
+  if (t.dataset.p === 'variant') { S.variant = S.variant === 'A' ? 'B' : 'A'; open(S.open); return; }
+  if (t.dataset.p === 'open') { open(true); return; }
+  if (t.dataset.p === 'theme') { S.theme = S.theme === 'dark' ? 'light' : 'dark'; chrome(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && !e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); open(true); return; }
+  if (!S.open) return;
+  if (e.key === 'Escape') { e.preventDefault(); open(false); return; }
+  if (e.key === 'Enter') { e.preventDefault(); go(e.target.value); }
+});
+render();
+})();
+</script>
+</body>
+</html>
