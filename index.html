@@ -8,12 +8,77 @@
   </head>
   <body data-theme="dark">
     <header id="topbar">
-      <div class="bar-left" id="bar-left"><button type="button" class="title" id="title" title="Projects · Ctrl+O" aria-keyshortcuts="Control+O"></button></div>
+      <div class="bar-left" id="bar-left">
+        <button type="button" class="title" id="title" title="Projects · Ctrl+O" aria-keyshortcuts="Control+O"></button>
+        <span class="draft-slash" aria-hidden="true">/</span>
+        <button type="button" id="draft" hidden></button>
+      </div>
       <div class="elements" id="elements" role="toolbar" aria-label="Element"></div>
+      <div id="title-page-status">
+        <strong>Title page</strong> <span class="title-status-draft">of <span data-title-draft></span></span>
+        <kbd>Esc</kbd> <span class="title-status-return">back to the script</span>
+      </div>
       <div class="bar-right" id="bar-right"></div>
     </header>
-    <aside id="sidebar" aria-label="Scenes"><div class="side-foot" id="side-foot"></div></aside>
-    <main id="canvas"><div id="pages"></div></main>
+    <aside id="sidebar" aria-label="Script navigation">
+      <button type="button" id="title-page-row" aria-pressed="false" aria-controls="title-page">
+        <svg class="title-page-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2.5h5l3 3v8H4zM9 2.5v3h3M6 8h4M6 10.5h4" /></svg>
+        <span>Title page</span>
+      </button>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+    <main id="canvas">
+      <div id="pages"></div>
+      <section id="title-page" aria-labelledby="tp-heading" hidden>
+        <div class="title-layout">
+          <form class="title-form" aria-labelledby="tp-heading">
+            <h2 id="tp-heading">Title page</h2>
+            <p class="title-note">Belongs to <span data-title-draft></span>. Forking copies it to the new draft. The layout is fixed, so it always prints correctly.</p>
+            <div class="field">
+              <label for="tp-title">Title</label>
+              <textarea id="tp-title" name="title" rows="1"></textarea>
+            </div>
+            <div class="field">
+              <label for="tp-credit">Credit</label>
+              <textarea id="tp-credit" name="credit" rows="1"></textarea>
+            </div>
+            <div class="field">
+              <label for="tp-authors">Author(s)</label>
+              <textarea id="tp-authors" name="authors" rows="2" aria-describedby="tp-authors-help"></textarea>
+              <span class="help" id="tp-authors-help">One per line. Use “&amp;” between writers who wrote as a team.</span>
+            </div>
+            <div class="field">
+              <label for="tp-source">Source <span class="title-optional">optional</span></label>
+              <textarea id="tp-source" name="source" rows="1" placeholder="Based on the novel by …"></textarea>
+            </div>
+            <div class="field">
+              <label for="tp-contact">Contact</label>
+              <textarea id="tp-contact" name="contact" rows="3" aria-describedby="tp-contact-help"></textarea>
+              <span class="help" id="tp-contact-help">Bottom left. Your own details, or your agent’s or manager’s.</span>
+            </div>
+            <label class="title-toggle">
+              <input id="tp-show-draft-date" type="checkbox" aria-controls="tp-draft-field" />
+              Show draft and date
+            </label>
+            <div class="field" id="tp-draft-field" hidden>
+              <label for="tp-draft-date">Draft and date</label>
+              <textarea id="tp-draft-date" name="draftDate" rows="2" aria-describedby="tp-draft-help"></textarea>
+              <span class="help" id="tp-draft-help">Bottom right. Spec scripts usually leave this off.</span>
+            </div>
+          </form>
+          <section class="title-preview" aria-label="Title page preview">
+            <div class="title-preview-centre">
+              <div data-print="title"></div>
+              <div data-print="credit"></div>
+              <div data-print="authors"></div>
+              <div data-print="source"></div>
+            </div>
+            <div data-print="contact"></div>
+            <div data-print="draftDate"></div>
+          </section>
+        </div>
+      </section>
+    </main>
     <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/ui/main.ts"></script>
   </body>

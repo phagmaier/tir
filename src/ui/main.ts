@@ -2,15 +2,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Desk } from "./desk.ts";
 import { devScript } from "./dev-fixtures.ts";
+import { DraftMenu } from "./draft-menu.ts";
+import { changeDraft, type DraftAction } from "./drafts.ts";
 import { mountEditor } from "./editor.ts";
 import {
+  createDraft,
   createProject,
+  deleteDraft,
   deleteProject,
   libraryPlace,
   listLibrary,
   readDraftText,
+  renameDraft,
   renameProject,
   saveDraft,
+  setActiveDraft,
 } from "./library.ts";
 import {
   emptyScript,
@@ -26,9 +32,17 @@ import { pagePosition } from "./page-position.ts";
 import { PageCounter, Projects } from "./projects.ts";
 import { ProjectsScreen } from "./projects-screen.ts";
 import { savedIndicator } from "./saved-indicator.ts";
-import { closer, Saver, type SaveState, savingPlugin, textsInWorker } from "./saving.ts";
+import {
+  closer,
+  type Place,
+  Saver,
+  type SaveState,
+  savingPlugin,
+  textsInWorker,
+} from "./saving.ts";
 import { loadSettings, settingsSaver } from "./settings-file.ts";
 import { sceneSidebar } from "./sidebar.ts";
+import { TitlePageView } from "./title-page.ts";
 import { elementToolbar } from "./toolbar.ts";
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
@@ -52,6 +66,7 @@ let showSaved: (state: SaveState, problem: string | null) => void = () => {};
 // The saved state as last heard, for the Projects screen's top bar.
 let lastSaved: { state: SaveState; problem: string | null } = { state: "saved", problem: null };
 let screen: ProjectsScreen | undefined;
+let draftMenu: DraftMenu | undefined;
 let desk: Desk | undefined;
 const saver = new Saver(
   {
@@ -71,8 +86,10 @@ const saver = new Saver(
     },
     failed: (why) =>
       void tell(`Tir could not save “${projectShown()}”`, `${why} Tir tries again in a moment.`),
-    placed: ({ project }) => {
+    placed: (place) => {
+      const { project } = place;
       title.textContent = project.info.name;
+      showDraft(place);
       desk?.set({ project: project.folder });
     },
   },
@@ -83,11 +100,17 @@ const editor = mountEditor(byId("pages"), (opening?.script ?? emptyScript()).ele
   zoom: settings.zoom,
   plugins: (projection, zoom) => [
     elementToolbar(byId("elements")),
-    sceneSidebar(byId("sidebar"), projection, zoom),
-    pagePosition(byId("bar-right"), projection, zoom),
+    sceneSidebar(byId("sidebar"), projection, zoom, () => titlePage.close()),
+    pagePosition(byId("bar-right"), projection, zoom, () => titlePage.close()),
     savingPlugin(saver),
   ],
 });
+const titlePage = new TitlePageView(
+  byId("title-page"),
+  byId("pages"),
+  (page) => saver.editTitlePage(page),
+  () => editor.view.focus(),
+);
 // After the page position, at the top bar's right end.
 showSaved = savedIndicator(byId("bar-right"));
 const settingsFile = settingsSaver();
@@ -100,16 +123,82 @@ desk = new Desk(editor, settings, settingsFile.save, {
   toast: byId("toast"),
 });
 
+const draftTrigger = byId("draft") as HTMLButtonElement;
+const writingWindow = [byId("topbar"), byId("sidebar"), byId("canvas")];
+const draftSide = {
+  texts,
+  read: readDraftText,
+  create: createDraft,
+  rename: renameDraft,
+  remove: deleteDraft,
+  activate: setActiveDraft,
+  exportFountain: (name: string, text: string) => invoke<void>("export_fountain", { name, text }),
+  tell,
+};
+let draftAction: Promise<void> | null = null;
+let closing = false;
+function runDraftAction(action: DraftAction): void {
+  if (draftAction || closing || screen?.shown) return;
+  for (const part of writingWindow) part.inert = true;
+  draftAction = changeDraft(saver, draftSide, action)
+    .catch((error: unknown) => {
+      console.error(error);
+      return null;
+    })
+    .then((result) => {
+      for (const part of writingWindow) part.inert = false;
+      draftAction = null;
+      if (result && "opening" in result) {
+        showOpening(result.opening);
+        return;
+      }
+      if (result) {
+        saver.move(result.moved);
+        showDraft(result.moved);
+      }
+      if (titlePage.focus()) return;
+      // WebKit scrolls to the old selection when focus returns to it.
+      const scroll = scrollY;
+      editor.view.focus();
+      scrollTo(0, scroll);
+    });
+}
+
+draftMenu = new DraftMenu(draftTrigger, {
+  place: () => (closing ? null : saver.where),
+  list: listLibrary,
+  run: runDraftAction,
+});
+
+function showDraft(place: Place | null): void {
+  draftMenu?.setPlace(place);
+  const draft = place?.project.info.drafts.find(({ file }) => file === place.file);
+  titlePage.nameDraft(draft?.name ?? FIRST_DRAFT);
+}
+
 /** Shows what `opening` holds, as the editor now does. */
 const shown = ({ script, place, name }: Opening) => {
   saver.show(place, script.titlePage, editor.view.state.doc);
+  titlePage.load(script.titlePage);
   title.textContent = name;
+  showDraft(place);
   if (place) desk?.set({ project: place.project.folder });
 };
 /** Whether a script is open in the writing window, for the Projects screen to go back to. */
 let scriptOpen = opening !== null;
 if (opening) shown(opening);
 else saver.show(null, emptyScript().titlePage, editor.view.state.doc);
+
+function showOpening(next: Opening): void {
+  // The writing window shows first, so the script opens at its top
+  // with the caret in it.
+  const keepTitle = titlePage.close();
+  screen?.hide();
+  editor.open(next.script.elements);
+  shown(next);
+  scriptOpen = true;
+  if (keepTitle) titlePage.open();
+}
 
 const projects = new Projects(
   saver,
@@ -118,22 +207,18 @@ const projects = new Projects(
     read: readDraftText,
     texts,
     create: createProject,
+    createDraft,
+    activate: setActiveDraft,
     rename: renameProject,
     remove: deleteProject,
-    pick: () => invoke("open_script"),
+    pick: () => invoke("open_fountain"),
     tell,
   },
   {
-    show(next) {
-      // The writing window shows first, so the script opens at its top
-      // with the caret in it.
-      screen?.hide();
-      editor.open(next.script.elements);
-      shown(next);
-      scriptOpen = true;
-    },
+    show: showOpening,
     moved(place) {
       title.textContent = place.project.info.name;
+      showDraft(place);
       desk?.set({ project: place.project.folder });
     },
     closed() {
@@ -141,6 +226,7 @@ const projects = new Projects(
       editor.open(empty.elements);
       saver.show(null, empty.titlePage, editor.view.state.doc);
       title.textContent = "";
+      showDraft(null);
       desk?.set({ project: null });
       scriptOpen = false;
     },
@@ -161,7 +247,12 @@ screen = new ProjectsScreen({
     return true;
   },
 });
-const showProjects = () => void screen?.show(lastSaved.state, lastSaved.problem);
+const showProjects = () => {
+  if (draftAction || closing || draftMenu?.dialogOpen) return;
+  draftMenu?.dismiss();
+  titlePage.close();
+  void screen?.show(lastSaved.state, lastSaved.problem);
+};
 title.addEventListener("click", showProjects);
 
 if (problem) void tell(problem.title, problem.message);
@@ -172,6 +263,7 @@ else showProjects();
 
 listenForFileKeys((action) => {
   if (action === "open") showProjects();
+  else if (draftAction || closing || draftMenu?.dialogOpen) return;
   else
     void saver.settle().then(async (saved) => {
       if (!saved) await tell(`Tir could not save “${projectShown()}”`, saver.failure ?? "");
@@ -179,8 +271,7 @@ listenForFileKeys((action) => {
 });
 
 // Closing the window saves first (`src-tauri/src/closing.rs`), the
-// settings too, which name the project to open next time, once the
-// Projects screen's action under way has finished.
+// settings too, which name the project to open next time.
 const close = closer(
   saver,
   {
@@ -192,10 +283,21 @@ const close = closer(
     },
     ask: (heading, question, yes) => invoke("ask", { title: heading, question, yes }),
   },
-  (on) => editor.view.setProps({ editable: () => on }),
+  (on) => {
+    closing = !on;
+    if (closing) draftMenu?.dismiss();
+    editor.view.setProps({ editable: () => on });
+    titlePage.setEditable(on);
+    screen?.setEditable(on);
+  },
   projectShown,
 );
-await listen("tir://close", () => void close());
+await listen("tir://close", () => {
+  // A draft action can change the saver target; close settles that target,
+  // even when showing the action's result failed.
+  if (draftAction) void draftAction.then(close, close);
+  else void close();
+});
 await invoke("hold_close");
 
 if (import.meta.env.DEV) {

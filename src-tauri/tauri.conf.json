@@ -15,7 +15,8 @@
         "label": "main",
         "title": "Tir",
         "width": 1440,
-        "height": 900
+        "height": 900,
+        "create": false
       }
     ],
     "security": {

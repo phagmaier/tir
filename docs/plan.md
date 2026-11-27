@@ -34,14 +34,14 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; 2.3 is done
+- Active: none; Stage 2 is finished (2.8 passed)
 - Blockers: none. The four questions 1.10 asked the user (Known gaps:
   drag and drop and middle click, Backspace across elements, closing with
   changes, keys for the paper switch, sidebar toggle and scene list) are
   still unanswered; since 2.2 closing saves first, so the third matters
-  only when a save fails. None blocks 2.4, and an answer becomes a task
+  only when a save fails. None blocks 3.1, and an answer becomes a task
   where it fits
-- Next: 2.4 Drafts
+- Next: 3.1 PDF export
 
 ## Stages
 
@@ -1381,39 +1381,33 @@ saving arrive in Stage 2.
     library in the home folder on this machine; `shown`'s test covers it),
     a screen reader.
 
-- [ ] 2.4 — Drafts
-  - Status: todo
+- [x] 2.4 — Drafts
+  - Status: done
   - Depends on: 2.3
-  - Spec: brief "Drafts"; prototype piece 1 (draft menu)
+  - Spec: brief "Drafts"; prototype pieces 1 and 5 (draft menu)
   - Do: The draft menu: fork (copies the active draft's current state and
     title page), switch, rename and delete (with confirmation; the last
     draft cannot be deleted). Remember each project's active draft.
   - Done when: tests show a fork is independent of its original, and the
     menu works in the app.
-  - Note (from 2.1): `createDraft` (with `active` for a fork),
-    `renameDraft`, `deleteDraft` and `setActiveDraft` in
-    `src/ui/library.ts`. The core refuses deleting a project's last draft,
-    and deleting the active draft makes the one before it, or else after
-    it, active (`withoutDraft`); the menu may choose otherwise.
-  - Note (from 2.2): `createDraft` now takes a draft's texts (`DraftTexts`,
-    made by `texts` in `main.ts`, the save worker) and writes the draft
-    with its Fountain copy. Switch drafts as 2.3's note says for projects;
-    a fork's texts come from the editor's document at the fork, after
-    `saver.settle()`. Renaming or deleting the draft on screen must update
-    the saver's `Place` (`saver.show` with the new place after settling).
-  - Note (from 2.3): `Saver.move(place)` moves the saver to a renamed
-    draft's file after settling, as the Projects screen does for a renamed
-    project (`Projects.rename` in `src/ui/projects.ts`). The listing gives
-    each draft file's modification time (`Project.edited`), for the menu's
-    dates (piece 5's "Now", "Nov 3"); `rename_draft` copies the draft to a
-    new file, so a renamed draft takes the rename's time unless the copy
-    keeps the old one (`File::set_modified`), and the Projects screen's
-    last edit with it. `Editor.open` focuses the editor before the new
-    state, since WebKit, given focus back after a click on a button such as
-    a menu item, scrolls to the editor's old selection (findings, "Editor").
+  - Evidence: 2026-11-27. Five focused Vitest files passed (59 tests),
+    including a fork of pending edits and its title page, independent saves
+    after switching, failed saves and an unreadable replacement. TypeScript
+    and changed-file Biome checks passed. Rustfmt and 28 focused Rust tests
+    passed; rename preserves the last-save time and cleanup errors after
+    deletion do not keep the saver on the old file.
+    In the Tauri/WebKit app with a temporary library, the menu showed
+    dates and dismissed on Escape, fork copied the script and title page,
+    switching kept each draft's own edits, rename retargeted both saved
+    files, and reloading opened the renamed draft. Cancel kept both files;
+    confirmed delete removed them and made the other draft active; the last
+    draft's Delete was disabled. Reviewed with user-code-review; tightened
+    the compact toolbar so both names were visible at 931 px and verified
+    the menu was clickable over the sidebar. See architecture, "Saving and
+    opening".
 
-- [ ] 2.5 — Title page form
-  - Status: todo
+- [x] 2.5 — Title page form
+  - Status: done
   - Depends on: 2.4
   - Spec: brief "Title page"; findings "Title page conventions"; prototype
     piece 5 (title page)
@@ -1422,13 +1416,18 @@ saving arrive in Stage 2.
     belongs to the draft.
   - Done when: edits save with the draft and survive a fork, and the view
     matches prototype piece 5.
-  - Note (from 2.2): the saver sees only the editor's document
-    (`savingPlugin`): it saves the title page it was shown with
-    (`Saver.show`), so the form must give the saver each change to the
-    title page and count it as a change waiting to be saved.
+  - Evidence: 2026-11-27. Four focused Vitest files passed (47 tests),
+    including title-page-only saves, an edit during a write, and a fork
+    with unsaved title-page changes. TypeScript and Biome passed. In
+    Tauri/WebKitGTK with a temporary library, the form matched prototype
+    piece 5. Native input verified the live preview, date toggle, paper
+    and zoom, Esc restoring the caret and page count, autosave to disk,
+    and switching back to the original after editing the fork.
+    Reviewed with user-code-review; corrected preview whitespace that
+    moved the title down two lines in WebKitGTK.
 
-- [ ] 2.6 — Fountain import and export
-  - Status: todo
+- [x] 2.6 — Fountain import and export
+  - Status: done
   - Depends on: 2.5
   - Spec: brief "Projects" (Import; Tir edits only files it owns), "Scope"
     (Import report); prototype piece 6 (import)
@@ -1438,15 +1437,19 @@ saving arrive in Stage 2.
   - Done when: tests show an import leaves the source byte-for-byte
     unchanged with the same modification time, the report lists what was
     left out, and export then import gives the same script.
-  - Note (from 1.9, 2.2, 2.3): Import… on the Projects screen
-    (`Projects.importFile` in `src/ui/projects.ts`, at the top of the list
-    and in the empty library) already reads a Tir draft or Fountain file
-    without writing it and makes a new project of it, but drops
-    `readFountain`'s `leftOut`, so notes, boneyard and the like vanish
-    without a report; the import dialog and report replace it.
+  - Evidence: 2026-11-27. Focused Biome and TypeScript checks passed,
+    along with 151 Vitest tests and 30 Rust tests; `cargo fmt --check`
+    passed. In an isolated Tauri run, imported a Fountain file as a new
+    project and saw all six kinds of omissions in the report. Exported
+    through the native Save dialog, then reimported into the same project
+    as an independent draft; both drafts held the same script and title
+    page. Both sources kept their bytes and modification times. Rust tests
+    also verified that export refuses existing files and symlinks.
+    Reviewed the 2.6 working-tree changes over `db8aaef` with
+    user-code-review; no unresolved in-scope findings.
 
-- [ ] 2.7 — Review: Stage 2
-  - Status: todo
+- [x] 2.7 — Review: Stage 2
+  - Status: done
   - Depends on: 2.6
   - Scope: everything changed since 1.10's recorded state.
   - Check (data safety first):
@@ -1464,13 +1467,75 @@ saving arrive in Stage 2.
     - Tests never touch `~/Screenplays`.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-27, reviewed with user-code-review at HEAD
+    `db8aaeff91340a6ac5e6fec4dc460fac33ccf1a8` plus uncommitted changes
+    (2.4–2.6 and four untracked files: `drafts.ts`, `drafts.test.ts`,
+    `draft-menu.ts`, `title-page.ts`), scope `git diff 30f8d14` (1.10's
+    fixes), with three read-only reviewers (the Rust side and Tauri's
+    configuration; saving, closing, opening and the Projects screen;
+    drafts, the title page, import and export) whose findings were checked
+    against the code or the app before acting. The checklist: every write
+    goes through `files::replace`, `publish` or `create_new` (a hard link,
+    so an export never replaces a file or link), and only an export the
+    writer picked lands outside the library; an import source is read with
+    `fs::read` only (its test now makes the source read-only first); names
+    cannot leave the library (`entry`, `lstat` on every folder and file);
+    a draft or project is deleted only after a confirmation with Cancel
+    focused, the last draft never; a fork shares only immutable elements
+    and title page; closing waits for the draft action, the Projects
+    action and the settings, apart from the five-second fallback; damaged
+    and newer files are refused, never written; no test reaches
+    `~/Screenplays` or the real settings (Rust tests take paths as
+    arguments or use `TempDir`; page tests use fakes or `mkdtemp`;
+    `~/Screenplays` does not exist after `mise run check`). Found and
+    fixed: a second Tir on the same library could save its older script
+    over the first's newer work (nothing stopped a second process, by
+    Tauri's source, and `write_draft` takes no `was`), so Tir now locks
+    its config directory and makes its window only then (`instance.rs`,
+    `"create": false`; brief "Saving and backup", findings "Desktop stack"
+    and "Rejected designs"); renaming the draft on screen moved the saver
+    to the project's active draft rather than the renamed one, so when
+    they differed its next save went into the other draft (a reviewer's
+    scratch test), now `renameDraft` gives the new file; a project file in
+    place whose folder then failed to sync was reported not changed for a
+    switch, fork, import as a draft, a rename keeping its name and a
+    project rename, leaving the page's reading stale (`publish_project`);
+    "ẞ" counted apart from "ß" and "ss" in names; a relative
+    `TIR_CONFIG_DIR` failed the first project; a close request dropped
+    when showing a draft action's result threw; the Projects screen able
+    to start an action while closing (now inert). The capability went
+    from `core:default` to `core:event:allow-listen` and the debug build's
+    devtools key (architecture, "File access"). Tests added: one Tir per
+    config directory (Rust), deleting projects holding links out of the
+    library leaves what they reach, a draft renamed while another is
+    active saves to its new file, a delete removes only the draft on
+    screen and never the last, "ẞ" names. Native, with `TIR_CONFIG_DIR`
+    temporary: a second Tir on it showed "Tir is already open" with no
+    window and exited on OK (screenshot), one on another directory ran
+    beside; with the narrowed capability, a project's draft forked, renamed
+    "Polish" (saver and menu on `Polish.tir`, copy renamed), text typed and
+    the window closed 33 ms later left the text in `Polish.tir`, the
+    settings naming the project and no `.tmp` file. Deferred to Known
+    gaps: export to drives without hard links, a foreign `project.json`
+    deletable when `library` names a broad folder, projects with the same
+    name looking alike, a failed folder move in a project rename, the
+    draft menu and Title page row without keys; to 6.2: saves not checking
+    what they replace on disk. Dismissed: the link checks' gap between
+    check and use, reachable only by another program changing the library
+    during a command; an export reported failed when only removing its
+    temporary name failed. `mise run check` passed (593 Vitest tests, both
+    type checks, Biome, rustfmt, clippy, 38 Rust tests). Not checked: the
+    laptop, a release build, an export to a FAT drive.
 
-- [ ] 2.8 — User check: Stage 2
-  - Status: todo
+- [x] 2.8 — User check: Stage 2
+  - Status: done
   - Depends on: 2.7
   - Check: the user exports one of their Story Architect scripts as
     Fountain and imports it, forks a draft, edits both drafts, switches
     between them, restarts the app, and finds everything as they left it.
+  - Evidence: 2026-11-27, the user: "just did that and wow i'm impressed it
+    looks good, it feels good and everything appears to be working i'm very
+    pleased." No notes, so no tasks were added before Stage 3.
 
 ## Stage 3: PDF
 
@@ -1654,6 +1719,14 @@ saving arrive in Stage 2.
   - Done when: tests against a local bare repository cover a normal push,
     an unreachable remote and later recovery, and a remote that is ahead
     (paused, nothing merged); no test touches the network.
+  - Note (from 2.7): a save does not check whether its draft changed on
+    disk since Tir read it (`write_draft` takes no `was`; only project
+    file changes do), so a draft or project file another program changes
+    while Tir shows it, such as a `git pull` the writer runs to bring in
+    the other machine's work, is written over at the next save without a
+    word. Since 2.7 a second Tir cannot (`instance.rs`). Decide with the
+    pause how the other machine's work arrives: with Tir closed, or with
+    saves checking what they replace.
 
 - [ ] 6.3 — Connect dialog and backup panel
   - Status: todo
@@ -1803,9 +1876,11 @@ that will close it.
   asked the user (2026-11-27) whether to ask before closing with changes
   not saved; since 2.2 a close leaves none unless a save fails.
 - The paper switch, the sidebar's toggle and the scene list have no key,
-  and Tab never leaves the script (brief, "Elements and keys"), so no key
-  reaches them; zoom, focus mode and Go to page have keys (1.10). 1.10
-  asked the user (2026-11-27) how they should be reached.
+  nor, since 2.4 and 2.5, the draft menu and the Title page row (2.7
+  review), and Tab never leaves the script (brief, "Elements and keys"),
+  so no key reaches them from the script; Shift+Tab from the title page's
+  form reaches the last two. Zoom, focus mode and Go to page have keys
+  (1.10). 1.10 asked the user (2026-11-27) how they should be reached.
 - A screen reader is not told of autocomplete suggestions: the popup is a
   named listbox, but the editor's root names no active option (1.5, 1.10).
   Attributes on the root change with every popup update, so measure typing
@@ -1815,11 +1890,11 @@ that will close it.
   decorations and an extra row (1.10 review, from the source). The editor
   selects whole graphemes, so only an opened or pasted script could hold
   one.
-- Until 2.6, each Import… makes a new project, so importing the same file
-  twice makes "Salt Line" and "Salt Line 2", and a project made by
-  Import… whose switch then fails, because the script on screen could not
-  be saved, stays in the library, listed on the Projects screen (2.2
-  review, 2.3); 2.6's import dialog replaces it.
+- Projects with the same name, such as one Fountain file imported twice
+  as a new project (folders "Salt Line" and "Salt Line 2"), look the same
+  in the Projects screen's list, its Delete confirmation and Import's
+  choice of project; only their order and last edit tell them apart (2.7
+  review). Each action takes the row chosen.
 - After a save wrote the draft but failed on its Fountain copy, the copy
   stays a save behind the draft until a save succeeds; the indicator shows
   "Not saved" meanwhile (2.2, by design: the draft is written first).
@@ -1832,6 +1907,23 @@ that will close it.
   then fails to sync is reported as not made, though it is there and the
   Projects screen lists it; making it again makes "Name 2" (2.3 review).
   A rename or delete is reported done once its folder has moved, since
-  the saver must follow it; a new project leaves the saver as it was, so
-  only the message is wrong. Rare: syncing a folder fails only on a disk
+  the saver must follow it, and any other change once its project file is
+  in place (2.7); a new project leaves the saver as it was, so only the
+  message is wrong. A project rename whose folder move fails after its
+  project file took the new name leaves the project in its old folder
+  under the new name, and the next change from the screen refused as made
+  from an older reading until it is opened again (2.7 review). Rare:
+  syncing a folder or moving one within the library fails only on a disk
   error.
+- Export publishes its file with a hard link, so it fails, with the
+  system's "Operation not permitted", on drives without hard links (FAT
+  and exFAT USB sticks, some network mounts); exporting to the computer's
+  own disk and copying works (2.6; 2.7 review). A fallback that writes the
+  new file in place (`OpenOptions::create_new`, which also never replaces
+  a file or link) would lose only the all-or-nothing write.
+- `delete_project` takes any folder with a `project.json` file as a
+  project, readable or not, so damaged ones can go. With `library` set to
+  a folder holding other things (such as the home folder), a folder with
+  another program's `project.json` lists as a project Tir cannot read and
+  Delete removes it after its confirmation (2.7 review). The default
+  library, `~/Screenplays`, holds only Tir's projects.

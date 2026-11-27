@@ -236,7 +236,7 @@ pub fn create_project(
 pub fn write_project(root: &Path, folder: &str, was: &str, project: &str) -> io::Result<()> {
     let dir = project_dir(root, folder)?;
     unchanged(&dir, was)?;
-    files::replace(&dir.join(PROJECT), project.as_bytes())
+    publish_project(&dir, project)
 }
 
 /// Moves the project `folder` to the folder `to`, with `project` as its
@@ -252,11 +252,11 @@ pub fn rename_project(
     let moved = root.join(entry(to)?);
     unchanged(&dir, was)?;
     if folder == to {
-        return files::replace(&dir.join(PROJECT), project.as_bytes());
+        return publish_project(&dir, project);
     }
     claim_dir(&moved)?;
     // The project is whole in either folder, with either name.
-    let renamed = files::replace(&dir.join(PROJECT), project.as_bytes())
+    let renamed = publish_project(&dir, project)
         // Over the empty folder just claimed, which a rename may replace.
         .and_then(|()| fs::rename(&dir, &moved));
     if renamed.is_err() {
@@ -321,10 +321,9 @@ pub fn create_draft(
         let _ = fs::remove_file(&file);
         return Err(error);
     }
-    // From here the draft stays, even if naming it fails: the project file
-    // may be in place when an error comes, and a draft it does not name
-    // harms nothing.
-    files::replace(&dir.join(PROJECT), project.as_bytes())
+    // From here the draft stays, even if naming it fails: a draft the
+    // project file does not name harms nothing.
+    publish_project(&dir, project)
 }
 
 /// The text of the project `folder`'s draft `draft`.
@@ -380,24 +379,31 @@ pub fn rename_draft(
     let moved = drafts.join(draft_entry(to)?);
     unchanged(&dir, was)?;
     if draft == to {
-        return files::replace(&dir.join(PROJECT), project.as_bytes());
+        return publish_project(&dir, project);
     }
     // Copied, and the old file removed only once the project names the new
     // one, so the file it names is there throughout.
-    let bytes = fs::read(regular_file(&from)?)?;
+    let mut source = fs::File::open(regular_file(&from)?)?;
+    let modified = source.metadata()?.modified()?;
     claim_draft(&moved)?;
-    if let Err(error) = files::replace(&moved, &bytes) {
+    let published = files::replace_with(&moved, |file| {
+        io::copy(&mut source, file)?;
+        file.set_modified(modified)
+    })
+    .and_then(|()| files::publish(&dir.join(PROJECT), project.as_bytes()));
+    if let Err(error) = published {
         let _ = fs::remove_file(&moved);
         return Err(error);
     }
-    files::replace(&dir.join(PROJECT), project.as_bytes())?;
-    fs::remove_file(&from)?;
-    // `claim_draft` found the new copy's name free.
-    match fs::rename(copy_of(&from), copy_of(&moved)) {
-        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-        _ => {}
+    // Done: the page must save to the new file. Keep the old files until
+    // the project file's rename is durable, so a crash cannot strand it.
+    if files::sync_dir(&dir).is_ok() {
+        let _ = fs::remove_file(&from);
+        // `claim_draft` found the new copy's name free.
+        let _ = fs::rename(copy_of(&from), copy_of(&moved));
+        let _ = files::sync_dir(&drafts);
     }
-    files::sync_dir(&drafts)
+    Ok(())
 }
 
 /// Deletes the project `folder`'s draft `draft` and its Fountain copy, with
@@ -414,15 +420,15 @@ pub fn delete_draft(
     let drafts = drafts_dir(&dir)?;
     let file = drafts.join(draft_entry(draft)?);
     unchanged(&dir, was)?;
-    // First the project stops naming it.
-    files::replace(&dir.join(PROJECT), project.as_bytes())?;
-    for path in [copy_of(&file), file] {
-        match fs::remove_file(&path) {
-            Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(error),
-            _ => {}
-        }
+    // Commit by publishing the project file, then remove the old files
+    // only once it is durable. Cleanup errors cannot undo the deletion.
+    files::publish(&dir.join(PROJECT), project.as_bytes())?;
+    if files::sync_dir(&dir).is_ok() {
+        let _ = fs::remove_file(copy_of(&file));
+        let _ = fs::remove_file(file);
+        let _ = files::sync_dir(&drafts);
     }
-    files::sync_dir(&drafts)
+    Ok(())
 }
 
 /// `name`, refused unless it is one entry of a folder and not hidden: never
@@ -516,6 +522,16 @@ fn unchanged(dir: &Path, was: &str) -> io::Result<()> {
             name_of(dir)
         )))
     }
+}
+
+/// Replaces the project file in `dir` with `project`. The change is done
+/// once the file is in place: a failure to sync the folder after must not
+/// report it undone, or the page would keep a reading the file no longer
+/// holds and every later change would be refused.
+fn publish_project(dir: &Path, project: &str) -> io::Result<()> {
+    files::publish(&dir.join(PROJECT), project.as_bytes())?;
+    let _ = files::sync_dir(dir);
+    Ok(())
 }
 
 /// Makes the library's folder, and any folder above it that is missing, so
@@ -1205,6 +1221,12 @@ mod tests {
             REWRITE_COPY
         );
         assert_eq!(trial.read("Salt Line/project.json"), TIDE);
+        OpenOptions::new()
+            .write(true)
+            .open(trial.root.join("Salt Line/drafts/Rewrite.tir"))
+            .unwrap()
+            .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000))
+            .unwrap();
 
         rename_draft(
             &trial.root,
@@ -1227,6 +1249,10 @@ mod tests {
         assert_eq!(trial.read("Salt Line/drafts/Polish.tir"), REWRITE);
         assert_eq!(trial.read("Salt Line/drafts/Polish.fountain"), REWRITE_COPY);
         assert_eq!(trial.read("Salt Line/project.json"), LOW);
+        assert_eq!(
+            list(&trial.root).unwrap().projects[0].edited["Polish.tir"],
+            1_700_000_000_000.0
+        );
         // A name that keeps the file changes only the project file.
         rename_draft(
             &trial.root,
@@ -1242,6 +1268,29 @@ mod tests {
         delete_draft(&trial.root, "Salt Line", "Polish.tir", TIDE, SALT).unwrap();
         trial.assert_salt_line_untouched();
         trial.assert_outside_untouched();
+    }
+
+    #[test]
+    fn a_draft_is_deleted_even_if_its_copy_cannot_be_removed() {
+        let trial = Trial::new();
+        create_draft(
+            &trial.root,
+            "Salt Line",
+            "Rewrite.tir",
+            REWRITE,
+            REWRITE_COPY,
+            SALT,
+            TIDE,
+        )
+        .unwrap();
+        let copy = trial.root.join("Salt Line/drafts/Rewrite.fountain");
+        fs::remove_file(&copy).unwrap();
+        fs::create_dir(&copy).unwrap();
+
+        delete_draft(&trial.root, "Salt Line", "Rewrite.tir", TIDE, SALT).unwrap();
+        assert_eq!(trial.read("Salt Line/project.json"), SALT);
+        assert!(!trial.root.join("Salt Line/drafts/Rewrite.tir").exists());
+        assert!(copy.is_dir());
     }
 
     #[test]
@@ -1664,6 +1713,11 @@ mod tests {
             ["First Draft.fountain", "First Draft.tir", "Linked.tir"]
         );
         assert_eq!(trial.read("Salt Line/project.json"), SALT);
+        trial.assert_outside_untouched();
+        // Deleting a project removes the links in it, never what they reach.
+        delete_project(&trial.root, "Tide Line").unwrap();
+        delete_project(&trial.root, "Salt Line").unwrap();
+        assert_eq!(trial.names(""), ["Linked"]);
         trial.assert_outside_untouched();
     }
 }

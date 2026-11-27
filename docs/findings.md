@@ -285,7 +285,7 @@ StudioBinder guides, read 2026-11-26.
   thread; its `blocking_*` calls must not be made from the main thread, so
   Tir's commands that call them are `async`. Its permissions gate only the
   page's calls to its own commands; Rust calls need none, and Tir's
-  capability stays `core:default`. It injects a script that replaces
+  capability grants none of them. It injects a script that replaces
   `window.alert` and `window.confirm` with calls to its `message` command,
   which the capability refuses. Its Save dialog asks before replacing the
   file named in it (`gtk_file_chooser_set_do_overwrite_confirmation`). A
@@ -325,6 +325,17 @@ StudioBinder guides, read 2026-11-26.
   reports as `WindowEvent::CloseRequested`, as the writer's own close key
   does (`hl.bind(... hl.dsp.window.close())` in this desktop's
   configuration). Evidence: task 2.2's native checks, 2026-11-27.
+- Tauri 2.12.7 lets any number of the same app run at once, and makes the
+  windows `tauri.conf.json` lists before the `setup` hook runs; a window
+  with `"create": false` is made only when the app builds it
+  (`WebviewWindowBuilder::from_config`). `std::fs::File::try_lock` (Rust
+  1.89 and later) takes `flock` on a directory opened read-only, and two
+  opens of one directory in one process exclude each other, so a test can
+  check the lock in one process. Tir locks its config directory
+  (architecture, "Settings"). Evidence: tauri 2.12.7 `src/app.rs`
+  (`setup`), `instance.rs`'s test, and task 2.7's native check: a second
+  Tir on the same `TIR_CONFIG_DIR` showed "Tir is already open" with no
+  window and exited on OK; one on another ran beside, 2026-11-27.
 
 ## Library on disk
 
@@ -1071,3 +1082,14 @@ Observed 2026-11-26.
   written or heavily adapted for typed paragraphs, which means weeks of
   cursor, selection, undo and input-method work before any screenwriting
   feature. A web editor library already provides that.
+- **One Tir through GTK's application ID or the single-instance plugin**
+  (task 2.7). Tauri's `enableGTKAppId` registers the identifier
+  `dev.tir.desktop` on the session bus, so a second launch passes to the
+  first and exits; while the installed Tir runs, every development or
+  trial run with its own `TIR_CONFIG_DIR` would be refused too.
+  `tauri-plugin-single-instance` does the same over D-Bus, keyed on the
+  identifier unless its builder is given another bus name, and can bring
+  the first window forward, but it is a new dependency (zbus). Tir locks
+  its config directory instead. Evidence: tauri-utils 2.10.4
+  `enable_gtk_app_id`'s documentation; the plugin's README and
+  `platform_impl/linux.rs` (Context7), read 2026-11-27.

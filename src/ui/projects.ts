@@ -5,12 +5,11 @@
  * Tir cannot read as a project, with why. Opening, making or importing a
  * project shows it in the writing window once the script on screen is
  * saved, and the script stays when it cannot be; renaming or deleting the
- * project on screen first waits for its saves. Until task 2.6, Import…
- * opens a Tir draft or a Fountain file as a new project, as Ctrl+O did
- * before this screen took the key.
+ * project on screen first waits for its saves. Imports make a copy in the
+ * library and let the writer open it from the report.
  */
 import { type ReadResult, readDraft } from "../core/draft-file.ts";
-import { readFountain } from "../core/fountain/read.ts";
+import { type FountainRead, readFountain } from "../core/fountain/read.ts";
 import type { Script } from "../core/model.ts";
 import { paginate } from "../core/paginate.ts";
 import type { DraftTexts } from "./draft-texts.ts";
@@ -142,11 +141,17 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 /** `text` ending as a sentence: the Rust side's messages for system errors end without a full stop. */
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
-/** A file picked in the Open dialog: its name, whether it is a Tir draft (else Fountain), its text. */
+/** A Fountain source picked in the native dialog, without its path. */
 export interface Opened {
   readonly name: string;
-  readonly draft: boolean;
   readonly text: string;
+}
+
+export interface FountainImport extends FountainRead {
+  readonly fileName: string;
+  readonly projectName: string;
+  readonly draftName: string;
+  readonly targets: readonly Project[];
 }
 
 /** What the screen's actions need outside the page (`library.ts`, the dialogs). */
@@ -155,9 +160,11 @@ export interface ProjectsSide {
   read(project: Project, file: string): Promise<string>;
   texts(script: Script): Promise<DraftTexts>;
   create(library: Library, name: string, draftName: string, texts: DraftTexts): Promise<Project>;
+  createDraft(project: Project, name: string, texts: DraftTexts, active: boolean): Promise<Project>;
+  activate(project: Project, file: string): Promise<Project>;
   rename(library: Library, project: Project, name: string): Promise<Project>;
   remove(project: { readonly folder: string }): Promise<void>;
-  /** Asks for a file and reads it; null when the dialog is closed or the file unreadable, which the Rust side says itself. */
+  /** Picks and reads a Fountain source; null when the dialog is cancelled. */
   pick(): Promise<Opened | null>;
   tell(title: string, message: string): Promise<void>;
 }
@@ -193,12 +200,11 @@ export class Projects {
     this.name = name;
   }
 
-  /** Opens `project` on its active draft. */
-  open(project: Project): Promise<boolean> {
+  /** Opens a project on its active draft, or activates a draft opened from the import report. */
+  open(project: Project, file = project.info.activeDraft): Promise<boolean> {
     return this.queue(async () => {
       const name = project.info.name;
       if (!(await this.saved(`“${name}” was not opened.`))) return false;
-      const file = project.info.activeDraft;
       let read: ReadResult;
       try {
         read = readDraft(await this.side.read(project, file));
@@ -208,6 +214,14 @@ export class Projects {
       if (!read.ok) {
         await this.side.tell(`Tir could not open “${name}”`, read.error);
         return false;
+      }
+      if (file !== project.info.activeDraft) {
+        try {
+          project = await this.side.activate(project, file);
+        } catch (error) {
+          await this.side.tell(`Tir could not open “${name}”`, message(error));
+          return false;
+        }
       }
       const opening = { script: read.script, place: { project, file }, name };
       return this.showWhenSaved(opening, `“${name}”`);
@@ -292,48 +306,54 @@ export class Projects {
     return this.last.then(() => {});
   }
 
-  /**
-   * Import… until task 2.6: opens a picked file as a new project, named
-   * from its title or else its file's name, with one draft. A draft is
-   * refused whole when damaged or newer; Fountain reads whatever it holds,
-   * and what it leaves out goes unreported until 2.6. The file itself is
-   * never written.
-   */
-  importFile(): Promise<boolean> {
-    return this.queue(async () => {
-      const opened = await this.side.pick().catch((error: unknown) => {
-        console.error(error);
-        return null;
-      });
-      if (!opened) return false;
-      const failed = `Tir could not open “${opened.name}”`;
-      const read: ReadResult = opened.draft
-        ? readDraft(opened.text)
-        : { ok: true, script: readFountain(opened.text).script };
-      if (!read.ok) {
-        await this.side.tell(failed, read.error);
-        return false;
-      }
-      if (!(await this.saved(`“${opened.name}” was not opened.`))) return false;
-      let project: Project;
-      try {
-        const texts = await this.side.texts(read.script);
-        const stem = opened.name.replace(/\.[^.]*$/, "");
-        const name = projectName(read.script.titlePage, stem || UNTITLED);
-        project = await this.side.create(await this.side.list(), name, FIRST_DRAFT, texts);
-      } catch (error) {
-        await this.side.tell(failed, message(error));
-        return false;
-      }
-      const opening = {
-        script: read.script,
-        place: { project, file: project.info.activeDraft },
-        name: project.info.name,
+  /** Picks and reads the source before asking where to put it. No files are written. */
+  async pickFountain(): Promise<FountainImport | null> {
+    try {
+      const picked = await this.side.pick();
+      if (!picked) return null;
+      const read = readFountain(picked.text);
+      const stem = picked.name.slice(0, -".fountain".length).trim() || UNTITLED;
+      return {
+        ...read,
+        fileName: picked.name,
+        projectName: projectName(read.script.titlePage, stem),
+        draftName: stem,
+        targets: (await this.side.list()).projects,
       };
-      return this.showWhenSaved(
-        opening,
-        `“${opened.name}”, now the project “${project.info.name}” in the library,`,
-      );
+    } catch (error) {
+      await this.side.tell("Tir could not import Fountain", message(error));
+      return null;
+    }
+  }
+
+  /** Copies the source into the library, without switching away from the draft on screen. */
+  importFile(source: FountainImport, folder: string | null): Promise<Place | false> {
+    return this.queue<Place>(async () => {
+      const { fileName, script } = source;
+      if (!(await this.saved(`“${fileName}” was not imported.`))) return false;
+      try {
+        const library = await this.side.list();
+        const texts = await this.side.texts(script);
+        if (folder === null) {
+          const project = await this.side.create(library, source.projectName, FIRST_DRAFT, texts);
+          return { project, file: project.info.activeDraft };
+        }
+        const target = library.projects.find((project) => project.folder === folder);
+        if (!target) throw new Error("The chosen project is no longer available.");
+        const project = await this.side.createDraft(target, source.draftName, texts, false);
+        // A new draft is appended without replacing or activating any existing draft.
+        const added = project.info.drafts.at(-1) as (typeof project.info.drafts)[number];
+        const current = this.saver.where;
+        if (current?.project.folder === project.folder) {
+          const place = { project, file: current.file };
+          this.saver.move(place);
+          this.window.moved(place);
+        }
+        return { project, file: added.file };
+      } catch (error) {
+        await this.side.tell(`Tir could not import “${fileName}”`, message(error));
+        return false;
+      }
     });
   }
 
@@ -341,10 +361,10 @@ export class Projects {
     return this.saver.where?.project.folder === folder;
   }
 
-  private queue(action: () => Promise<boolean>): Promise<boolean> {
+  private queue<T>(action: () => Promise<T | false>): Promise<T | false> {
     const next = this.last.then(action).catch((error: unknown) => {
       console.error(error);
-      return false;
+      return false as const;
     });
     this.last = next;
     return next;

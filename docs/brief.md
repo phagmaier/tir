@@ -236,21 +236,16 @@ screenplay convention, shows no number.
   cannot read as a project is listed last, with why, and its menu offers
   only Delete. A new project's title page starts empty. Deleting the
   project on screen leaves the screen up with no script open.)*
-- **Until import arrives** (task 2.6), Import… on the Projects screen
-  opens a Tir draft or a Fountain file picked in the system's Open dialog
-  as a new project, named from its title page's title, or else its file's
-  name, with one draft, "First Draft", and shows it; the file itself is
-  never written. The script on screen is saved first, and stays when it
-  cannot be *(the user's choice for Ctrl+O until this screen, 2026-11-27;
-  agent-selected: it moved to Import… when the screen took Ctrl+O; a
-  Fountain file that is not UTF-8 text is refused, not guessed at, and a
-  damaged or newer draft is refused whole)*.
+- **Import…** uses the system's Open dialog. A Fountain file that is not
+  UTF-8 text is refused, not guessed at.
 - **Import** reads a Fountain or FDX file into either a new project (the
-  default) or a new draft of the current project, for example when a
-  co-writer sends back an edited `.fdx`.
+  default) or a new draft of a chosen project (the current project is
+  preselected), for example when a co-writer sends back an edited `.fdx`.
 - **Tir edits only files it owns.** An import makes Tir's own copy in the
   library; the original file is never modified, moved or deleted. Exports
   likewise write new files and never overwrite an import's source.
+- **Export Fountain…** in the draft menu writes the draft on screen to a
+  new file chosen in the system's Save dialog.
 - Scripts come over from Story Architect by exporting each one as FDX there
   and importing it into Tir as a new project.
 
@@ -472,6 +467,10 @@ three.
   request to close, five or more seconds after the first, closes Tir even
   if it has not saved, so a Tir that stops answering can still be closed
   *(the user's choice, 2026-11-27)*.
+- **Tir runs once on a machine.** Starting it again while it runs shows a
+  message, "Tir is already open", and no second window, since two windows
+  on one library could each save over the other's work *(agent-selected,
+  task 2.7)*.
 - **One private GitHub repository** holds the whole library. Tir runs the
   system `git` with the user's existing GitHub login and stores no tokens.
   The user gives Tir the repository URL once.

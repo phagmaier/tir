@@ -181,8 +181,15 @@ export async function saveDraft(
   });
 }
 
-/** Renames the draft in `file` `name`; its file, and its Fountain copy, take the new name too. */
-export async function renameDraft(project: Project, file: string, name: string): Promise<Project> {
+/**
+ * Renames the draft in `file` `name`; its file, and its Fountain copy, take
+ * the new name too. Gives the project as renamed and the draft's new file.
+ */
+export async function renameDraft(
+  project: Project,
+  file: string,
+  name: string,
+): Promise<{ project: Project; file: string }> {
   const renamed = withDraftRenamed(project.info, file, name, project.files);
   const to = renamed.file;
   const text = writeProject(renamed.project);
@@ -195,7 +202,8 @@ export async function renameDraft(project: Project, file: string, name: string):
   });
   const moved = (entry: string) =>
     entry === file ? to : entry === copyOf(file) ? copyOf(to) : entry;
-  return { ...project, info: renamed.project, text, files: project.files.map(moved) };
+  const files = project.files.map(moved);
+  return { project: { ...project, info: renamed.project, text, files }, file: to };
 }
 
 /** Deletes the draft in `file`, and its Fountain copy; never a project's last draft. */

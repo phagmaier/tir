@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeDraft } from "../core/draft-file.ts";
+import { readDraft, writeDraft } from "../core/draft-file.ts";
 import { newTitlePage, type ProjectInfo, type Script } from "../core/model.ts";
-import { newProject, writeProject } from "../core/project-file.ts";
+import { newProject, withActiveDraft, withNewDraft, writeProject } from "../core/project-file.ts";
 import { devScript } from "./dev-fixtures.ts";
 import { type DraftTexts, draftTexts } from "./draft-texts.ts";
 import { scriptState } from "./editor.ts";
@@ -154,11 +154,9 @@ describe("the screen's actions", () => {
   function screen({
     saves = true,
     picked = null as Opened | null,
-    typing = false,
   }: {
     saves?: boolean;
     picked?: Opened | null;
-    typing?: boolean;
   } = {}) {
     const did: string[] = [];
     const shown: Opening[] = [];
@@ -211,9 +209,17 @@ describe("the screen's actions", () => {
       create: async (shelf, name, draftName, texts) => {
         did.push(`made “${name}” with “${draftName}” beside ${shelf.names.join(", ")}`);
         made.push(texts);
-        if (typing) typeOnScreen("y");
-        return project(name);
+        const madeProject = project(name, {}, newProject(name, draftName));
+        drafts[`${madeProject.folder}/${madeProject.info.activeDraft}`] = texts.draft;
+        return madeProject;
       },
+      createDraft: async (from, name, texts, active) => {
+        const added = withNewDraft(from.info, name, from.files);
+        drafts[`${from.folder}/${added.file}`] = texts.draft;
+        const info = active ? withActiveDraft(added.project, added.file) : added.project;
+        return project(from.folder, {}, info);
+      },
+      activate: async (from, file) => project(from.folder, {}, withActiveDraft(from.info, file)),
       rename: async (_shelf, from, name) => {
         did.push(`renamed “${from.folder}” “${name}”`);
         const info = { ...from.info, name };
@@ -433,69 +439,81 @@ describe("the screen's actions", () => {
     });
   });
 
-  describe("Import…, until task 2.6", () => {
-    it("opens a Fountain file as a new project named from its title, after saving the script on screen", async () => {
-      const fountain = "Title: Harbor Lights\n\nEXT. QUAY - DAWN\n\nThe tide is out.\n";
-      const picked = { name: "harbor.fountain", draft: false, text: fountain };
-      const { did, shown, made, projects } = screen({ picked });
-      expect(await projects.importFile()).toBe(true);
+  describe("Fountain import", () => {
+    it("copies the script to a new project and preserves the omissions for the report", async () => {
+      const picked = {
+        name: "harbor.fountain",
+        text: "Title: Harbor Lights\nRevision: Green\n\nEXT. QUAY - DAWN #14#\n\n[[Check tide table]]\n\nThe tide is out.\n",
+      };
+      const { did, shown, drafts, projects } = screen({ picked });
+      const source = await projects.pickFountain();
+      if (!source) throw new Error("Expected the picked Fountain file");
+      expect(source.leftOut).toEqual([
+        expect.objectContaining({ kind: "titlePageField", text: "Revision" }),
+        expect.objectContaining({ kind: "sceneNumber", text: "14" }),
+        expect.objectContaining({ kind: "note", text: "Check tide table" }),
+      ]);
+      expect(did).toEqual([]);
+      const place = await projects.importFile(source, null);
+      if (!place) throw new Error("Expected a new project");
       expect(did).toEqual([
         "saved “Salt Line”",
         "made “Harbor Lights” with “First Draft” beside Salt Line, Tide Line",
       ]);
-      expect(shown).toHaveLength(1);
-      expect(shown[0]?.name).toBe("Harbor Lights");
-      expect(shown[0]?.place?.file).toBe("First Draft.tir");
-      // The new project holds the script shown.
-      expect(made).toEqual([draftTexts(shown[0]?.script as Script)]);
-      expect(shown[0]?.script.elements).toEqual([
-        { type: "sceneHeading", text: "EXT. QUAY - DAWN" },
-        { type: "action", text: "The tide is out." },
-      ]);
-    });
-
-    it("names the project from the file when the script has no title", async () => {
-      const picked = { name: "night.shoot.tir", draft: true, text: writeDraft(station) };
-      const { did, shown, projects } = screen({ picked });
-      await projects.importFile();
-      expect(did.at(-1)).toBe("made “night.shoot” with “First Draft” beside Salt Line, Tide Line");
-      expect(shown[0]?.script).toEqual(station);
-    });
-
-    it("saves what is typed while the project is made before showing it", async () => {
-      const picked = { name: "night.tir", draft: true, text: writeDraft(station) };
-      const { did, shown, projects } = screen({ picked, typing: true });
-      await projects.importFile();
-      expect(did).toEqual([
-        "saved “Salt Line”",
-        "made “night” with “First Draft” beside Salt Line, Tide Line",
-        "saved “Salt Line”",
-      ]);
-      expect(shown).toHaveLength(1);
-    });
-
-    it("refuses a damaged draft whole, making nothing", async () => {
-      const picked = { name: "night.tir", draft: true, text: writeDraft(station).slice(0, 40) };
-      const { did, shown, projects } = screen({ picked });
-      expect(await projects.importFile()).toBe(false);
-      expect(did).toHaveLength(1);
-      expect(did[0]).toMatch(/^told Tir could not open “night.tir”: The draft file is damaged/);
       expect(shown).toEqual([]);
+      expect(readDraft(drafts["Harbor Lights/First Draft.tir"] ?? "")).toEqual({
+        ok: true,
+        script: {
+          titlePage: { ...station.titlePage, title: "Harbor Lights", credit: "" },
+          elements: [
+            { type: "sceneHeading", text: "EXT. QUAY - DAWN" },
+            { type: "action", text: "The tide is out." },
+          ],
+        },
+      });
+      expect(await projects.open(place.project, place.file)).toBe(true);
+      expect(shown[0]?.place).toEqual(place);
     });
 
-    it("keeps the script on screen, making nothing, when it cannot be saved", async () => {
-      const picked = { name: "q.fountain", draft: false, text: "EXT. QUAY - DAWN\n" };
+    it("adds an independent draft to the open project without activating it until Open it", async () => {
+      const picked = { name: "night.shoot.FOUNTAIN", text: "INT. STATION - NIGHT\n" };
+      const { drafts, shown, projects, saver, salt } = screen({ picked });
+      const before = drafts["Salt Line/First Draft.tir"];
+      const source = await projects.pickFountain();
+      if (!source) throw new Error("Expected the picked Fountain file");
+      expect(source.projectName).toBe("night.shoot");
+      const place = await projects.importFile(source, salt.folder);
+      if (!place) throw new Error("Expected a new draft");
+      expect(readDraft(drafts["Salt Line/night.shoot.tir"] ?? "")).toEqual({
+        ok: true,
+        script: { ...station, titlePage: { ...station.titlePage, credit: "" } },
+      });
+      expect(drafts["Salt Line/First Draft.tir"]).toBe(before);
+      expect(shown).toEqual([]);
+      expect(saver.where?.file).toBe("First Draft.tir");
+      expect(saver.where?.project.info.drafts.map((draft) => draft.name)).toEqual([
+        "First Draft",
+        "night.shoot",
+      ]);
+      expect(await projects.open(place.project, place.file)).toBe(true);
+      expect(saver.where?.file).toBe("night.shoot.tir");
+      expect(saver.where?.project.info.activeDraft).toBe("night.shoot.tir");
+    });
+
+    it("does not copy the source when the current draft cannot be saved", async () => {
+      const picked = { name: "q.fountain", text: "EXT. QUAY - DAWN\n" };
       const { did, shown, projects } = screen({ picked, saves: false });
-      expect(await projects.importFile()).toBe(false);
-      expect(did).toEqual(["saved “Salt Line”", cannotSave("“q.fountain” was not opened.")]);
+      const source = await projects.pickFountain();
+      if (!source) throw new Error("Expected the picked Fountain file");
+      expect(await projects.importFile(source, null)).toBe(false);
+      expect(did).toEqual(["saved “Salt Line”", cannotSave("“q.fountain” was not imported.")]);
       expect(shown).toEqual([]);
     });
 
-    it("does nothing when the dialog is closed", async () => {
-      const { did, shown, projects } = screen();
-      expect(await projects.importFile()).toBe(false);
+    it("does nothing when the file chooser is cancelled", async () => {
+      const { did, projects } = screen();
+      expect(await projects.pickFountain()).toBeNull();
       expect(did).toEqual([]);
-      expect(shown).toEqual([]);
     });
   });
 });

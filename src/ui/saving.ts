@@ -61,6 +61,7 @@ export class Saver {
   private readonly listener: SaveListener;
   private place: Place | null = null;
   private titlePage!: TitlePage;
+  private savedTitlePage!: TitlePage;
   /** The editor's document, as last heard. */
   private doc!: Node;
   /** The document as the draft holds it. */
@@ -85,6 +86,11 @@ export class Saver {
     return this.place;
   }
 
+  /** The script on screen, including its title page, for saving or forking. */
+  snapshot(): Script {
+    return { titlePage: this.titlePage, elements: fromDocument(this.doc) };
+  }
+
   /** Why the last save failed, while it is the last. */
   get failure(): string | null {
     return this.problem;
@@ -100,7 +106,7 @@ export class Saver {
     this.timer = undefined;
     this.shown++;
     this.place = place;
-    this.titlePage = titlePage;
+    this.titlePage = this.savedTitlePage = titlePage;
     this.doc = this.saved = doc;
     this.problem = null;
     this.told = false;
@@ -120,6 +126,16 @@ export class Saver {
   /** The editor's document is now `doc`: it is saved once typing pauses. */
   changed(doc: Node): void {
     this.doc = doc;
+    this.schedule();
+  }
+
+  /** The form has changed the title page of the draft on screen. */
+  editTitlePage(titlePage: TitlePage): void {
+    this.titlePage = titlePage;
+    this.schedule();
+  }
+
+  private schedule(): void {
     if (this.state === "saved") this.setState("saving");
     this.wait(SAVE_DELAY_MS);
   }
@@ -171,7 +187,7 @@ export class Saver {
     const shown = this.shown;
     const doc = this.doc;
     const place = this.place;
-    const script = { titlePage: this.titlePage, elements: fromDocument(doc) };
+    const script = this.snapshot();
     try {
       const texts = await this.side.texts(script);
       if (place) {
@@ -184,6 +200,7 @@ export class Saver {
       }
       if (shown !== this.shown) return true;
       this.saved = doc;
+      this.savedTitlePage = script.titlePage;
       this.problem = null;
       this.told = false;
       this.setState(this.isSaved() ? "saved" : "saving");
@@ -208,7 +225,11 @@ export class Saver {
    * until a save succeeds.
    */
   private isSaved(): boolean {
-    return this.problem === null && (this.doc === this.saved || this.doc.eq(this.saved));
+    return (
+      this.problem === null &&
+      sameTitlePage(this.titlePage, this.savedTitlePage) &&
+      (this.doc === this.saved || this.doc.eq(this.saved))
+    );
   }
 
   private markSaved(): void {
@@ -222,6 +243,19 @@ export class Saver {
     this.state = state;
     this.listener.state(state, this.problem);
   }
+}
+
+function sameTitlePage(a: TitlePage, b: TitlePage): boolean {
+  return (
+    a === b ||
+    (a.title === b.title &&
+      a.credit === b.credit &&
+      a.authors === b.authors &&
+      a.source === b.source &&
+      a.contact === b.contact &&
+      a.draftDate === b.draftDate &&
+      a.showDraftDate === b.showDraftDate)
+  );
 }
 
 /** Tells `saver` of each change to the editor's document. */

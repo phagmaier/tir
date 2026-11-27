@@ -195,9 +195,11 @@ describe("saving after a pause", () => {
   });
 
   it("writes nothing when the script is back as it was saved", async () => {
-    const { side, heard, typed, undo } = editing(harbour);
+    const { side, heard, saver, typed, undo } = editing(harbour);
     typed("x");
     undo();
+    saver.editTitlePage({ ...harbour.titlePage, title: "The Breakwater" });
+    saver.editTitlePage({ ...harbour.titlePage });
     await pass(SAVE_DELAY_MS);
     expect(side.writes).toEqual([]);
     expect(heard.last).toBe("saved");
@@ -217,6 +219,31 @@ describe("saving after a pause", () => {
     expect(side.writes).toHaveLength(2);
     expect(side.mostAtOnce).toBe(1);
     expect(side.onDisk().draft).toEqual(script());
+    expect(heard.last).toBe("saved");
+  });
+
+  it("saves title-page-only changes and does not mark a newer title page saved during a write", async () => {
+    const { side, heard, saver } = editing(harbour);
+    const firstPage = {
+      ...harbour.titlePage,
+      authors: "Ada Shaw\nBen Rivers",
+      draftDate: "Revised draft\nNovember 27",
+      showDraftDate: true,
+    };
+    const open = gate(side);
+    saver.editTitlePage(firstPage);
+    expect(heard.last).toBe("saving");
+    await pass(SAVE_DELAY_MS);
+    expect(side.writing).toBe(1);
+    saver.editTitlePage({ ...firstPage, showDraftDate: false });
+    open();
+    await pass(0);
+    expect(side.onDisk().draft.titlePage).toEqual(firstPage);
+    expect(heard.last).toBe("saving");
+    await pass(SAVE_DELAY_MS);
+    const { draft, copy } = side.onDisk();
+    expect(draft).toEqual({ ...harbour, titlePage: { ...firstPage, showDraftDate: false } });
+    expect(copy).toEqual(draft);
     expect(heard.last).toBe("saved");
   });
 

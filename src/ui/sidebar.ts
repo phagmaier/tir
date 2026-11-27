@@ -24,10 +24,14 @@ interface Row {
  * laying those rows out in the edit's frame made a page-adding keystroke
  * about 10 ms slower on 120 scenes (findings, "Editor").
  *
- * The heading and list go before what `dom` already holds, the sidebar's
- * footer.
+ * The heading and list go after the Title page row and before the footer.
  */
-export function sceneSidebar(dom: HTMLElement, projection: Projection, zoom: () => number): Plugin {
+export function sceneSidebar(
+  dom: HTMLElement,
+  projection: Projection,
+  zoom: () => number,
+  showScript: () => void,
+): Plugin {
   const head = document.createElement("div");
   head.className = "scenes-head";
   const title = document.createElement("span");
@@ -37,7 +41,8 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection, zoom: () 
   head.append(title, count);
   const list = document.createElement("ol");
   list.className = "scenes";
-  dom.prepend(head, list);
+  dom.insertBefore(head, dom.lastElementChild);
+  head.after(list);
 
   const rows: Row[] = [];
   let shown: readonly Scene[] = [];
@@ -99,7 +104,10 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection, zoom: () 
     const button = event.target instanceof Element ? event.target.closest("button") : null;
     // The scene as it is now, should the list still show the edit before.
     const scene = projection.map.scenes[rows.findIndex((row) => row.button === button)];
-    if (scene && editor) jumpTo(editor, projection, scene, zoom());
+    if (scene && editor) {
+      showScript();
+      jumpTo(editor, projection, scene, zoom());
+    }
   });
 
   return new Plugin({

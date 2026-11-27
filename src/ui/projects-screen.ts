@@ -6,8 +6,8 @@
  * undo as they were. Its own top bar holds Tir's name and the saved state;
  * under it the projects, most recent first, with New project and Import…
  * at the top and Rename and Delete in each row's menu, or, with none, the
- * empty library. Dialogs ask for a name or confirm a delete in the page,
- * as the prototype's do; failures come in message boxes, as elsewhere.
+ * empty library. Dialogs ask for a name, confirm a delete, or choose and
+ * report an import. Failures come in message boxes, as elsewhere.
  *
  * Nothing here runs while the writing window shows: its key listener is
  * added only while the screen shows, so a keystroke in the script costs no
@@ -15,11 +15,15 @@
  * (zoom, focus mode) do nothing, and Esc closes the menu or dialog open,
  * else goes back.
  */
+import type { LeftOutKind } from "../core/fountain/read.ts";
+import { paginate } from "../core/paginate.ts";
+import { usesOf } from "../core/suggestions.ts";
 import { deskKey } from "./desk.ts";
 import type { Library, Project } from "./library.ts";
 import { FIRST_DRAFT } from "./opening.ts";
 import {
   draftsText,
+  type FountainImport,
   type PageCounter,
   type Projects,
   pagesText,
@@ -28,7 +32,7 @@ import {
   whenEdited,
 } from "./projects.ts";
 import { savedIndicator } from "./saved-indicator.ts";
-import type { SaveState } from "./saving.ts";
+import type { Place, SaveState } from "./saving.ts";
 
 /** What the screen needs from the window. */
 export interface ScreenSide {
@@ -48,6 +52,17 @@ export interface ScreenSide {
 /** A new project's name until the writer gives one (prototype piece 6). */
 const NEW_TITLE = "Untitled Screenplay";
 
+const LEFT_OUT: Record<LeftOutKind, string> = {
+  note: "Note",
+  boneyard: "Boneyard",
+  section: "Section",
+  synopsis: "Synopsis",
+  sceneNumber: "Scene number",
+  titlePageField: "Title page field",
+};
+
+const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 // Icons from prototype piece 6, on a 16-unit grid.
 const ICONS = {
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',
@@ -57,6 +72,8 @@ const ICONS = {
     '<circle cx="4.5" cy="3.5" r="1.4"/><circle cx="4.5" cy="12.5" r="1.4"/><circle cx="11.5" cy="5" r="1.4"/><path d="M4.5 4.9v6.2M11.5 6.4c0 2.6-2.2 3.1-4.2 3.5-1.6.3-2.8 1-2.8 1.2"/>',
   clock: '<circle cx="8" cy="8" r="5.6"/><path d="M8 4.8V8l2.2 1.4"/>',
   alert: '<path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/>',
+  file: '<path d="M4 2h5l3 3v9H4Z"/><path d="M9 2v3h3"/>',
+  info: '<circle cx="8" cy="8" r="5.6"/><path d="M8 7.5v3M8 5.3v.1"/>',
 };
 
 const svg = (name: keyof typeof ICONS, size: number) =>
@@ -217,6 +234,15 @@ export class ProjectsScreen {
   }
 
   /**
+   * While Tir closes the screen takes no action, so none starts after
+   * closing waited for the last; it works again if the writer keeps Tir open.
+   */
+  setEditable(on: boolean): void {
+    this.root.inert = !on;
+    if (on && this.shownNow) this.root.focus({ preventScroll: true });
+  }
+
+  /**
    * While the screen shows, the writing window's keys do nothing, and Esc
    * closes the menu, or goes back once nothing is open; an open dialog
    * closes itself on Esc. Up and Down move through an open menu.
@@ -247,8 +273,8 @@ export class ProjectsScreen {
   /** Import… and New project, for the top of the list and the empty library. */
   private actions(): HTMLButtonElement[] {
     const imports = button("btn", "Import…", "import");
-    imports.title = "Open a Tir draft or a Fountain file as a new project";
-    imports.addEventListener("click", () => void this.act(() => this.side.projects.importFile()));
+    imports.title = "Import a Fountain file";
+    imports.addEventListener("click", () => void this.importFountain());
     const create = button("btn primary", "New project", "plus");
     create.dataset.create = "";
     create.addEventListener("click", () => this.newProject());
@@ -259,13 +285,14 @@ export class ProjectsScreen {
    * Runs `action`, one at a time, then lists the library again if the
    * screen still shows; the rows take no other action until then.
    */
-  private async act(action: () => Promise<boolean>): Promise<void> {
+  private async act<T>(action: () => Promise<T>, refresh = true): Promise<T | undefined> {
     if (this.busy) return;
     this.busy = true;
     this.root.setAttribute("aria-busy", "true");
     try {
-      await action();
-      if (this.shownNow) await this.refresh(false);
+      const result = await action();
+      if (refresh && this.shownNow) await this.refresh(false);
+      return result;
     } finally {
       this.busy = false;
       this.root.removeAttribute("aria-busy");
@@ -453,6 +480,169 @@ export class ProjectsScreen {
         void this.act(() => this.side.projects.create(name, draft.trim() || FIRST_DRAFT));
       },
     });
+  }
+
+  private async importFountain(): Promise<void> {
+    const source = await this.act(() => this.side.projects.pickFountain(), false);
+    if (!source || !this.shownNow) return;
+
+    const form = el("form", "import-dialog");
+    const heading = el("h2", "", "Import a script");
+    heading.id = "dialog-title";
+    const file = el("div", "import-file");
+    file.innerHTML = svg("file", 18);
+    const fileName = el("div", "", source.fileName);
+    fileName.append(el("small", "", "Fountain file"));
+    file.append(fileName);
+
+    const choices = el("div", "import-choices");
+    choices.setAttribute("role", "radiogroup");
+    choices.setAttribute("aria-label", "Where it goes");
+    const choice = (title: string, detail: string, checked = false) => {
+      const radio = el("input");
+      radio.type = "radio";
+      radio.name = "import-destination";
+      radio.checked = checked;
+      const label = el("label");
+      const text = el("span");
+      text.append(el("b", "", title), el("small", "", detail));
+      label.append(radio, text);
+      return { label, radio };
+    };
+    const create = choice("As a new project", `“${source.projectName}”`, true);
+    const newProjectCard = el("div");
+    newProjectCard.append(create.label);
+    choices.append(newProjectCard);
+    const target = el("select");
+    if (source.targets.length > 0) {
+      const add = choice("As a new draft of a project", `Draft name: “${source.draftName}”`);
+      const card = el("div");
+      target.setAttribute("aria-label", "Project");
+      target.disabled = true;
+      for (const project of source.targets) {
+        const option = el("option", "", project.info.name);
+        option.value = project.folder;
+        target.append(option);
+      }
+      const open = this.side.openFolder();
+      if (open !== null && source.targets.some((project) => project.folder === open)) {
+        target.value = open;
+      }
+      card.append(add.label, target);
+      choices.append(card);
+      choices.addEventListener("change", () => {
+        target.disabled = !add.radio.checked;
+      });
+    }
+
+    const note = el("div", "import-note");
+    note.innerHTML = svg("info", 16);
+    note.append(
+      "Tir makes its own copy in your library. The file you picked is never changed, moved or deleted.",
+    );
+    const cancel = button("btn quiet", "Cancel");
+    cancel.addEventListener("click", () => this.dialog.close());
+    const confirm = button("btn primary", "Import");
+    confirm.type = "submit";
+    const actions = el("div", "actions");
+    actions.append(cancel, confirm);
+    form.append(heading, file, choices, note, actions);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.dialog.close();
+      void this.finishImport(source, create.radio.checked ? null : target.value);
+    });
+    this.dialog.replaceChildren(form);
+    this.dialog.showModal();
+    create.radio.focus();
+  }
+
+  private async finishImport(source: FountainImport, folder: string | null): Promise<void> {
+    const place = await this.act(() => this.side.projects.importFile(source, folder));
+    if (place && this.shownNow) this.importReport(source, place, folder === null);
+  }
+
+  private importReport(
+    source: FountainImport,
+    { project, file }: Place,
+    newProject: boolean,
+  ): void {
+    const report = el("div", "import-dialog");
+    const heading = el("h2", "", "Imported");
+    heading.id = "dialog-title";
+    const name = project.info.drafts.find((draft) => draft.file === file)?.name ?? file;
+    const destination = newProject
+      ? `a new project, “${project.info.name}”`
+      : `a new draft, “${name}”, in “${project.info.name}”`;
+    report.append(heading, el("p", "", `${source.fileName} is now ${destination}.`));
+
+    const { elements, titlePage } = source.script;
+    let scenes = 0;
+    const characters = new Set<string>();
+    for (const { type, text } of elements) {
+      if (type === "sceneHeading") scenes++;
+      if (type === "character") {
+        const character = usesOf(type, text).find((use) => use.source === "character");
+        if (character) characters.add(character.text.toUpperCase());
+      }
+    }
+    const fields = [
+      [titlePage.title, "Title"],
+      [titlePage.credit, "Credit"],
+      [titlePage.authors, "Author"],
+      [titlePage.source, "Source"],
+      [titlePage.contact, "Contact"],
+      [titlePage.draftDate, "Draft date"],
+    ] as const;
+    const summary = el("dl", "import-summary");
+    summary.append(
+      el("dt", "", "Script"),
+      el(
+        "dd",
+        "",
+        `${pagesText(paginate(elements).length)}, ${counted(scenes, "scene")}, ${counted(characters.size, "character")}`,
+      ),
+      el("dt", "", "Title page"),
+      el(
+        "dd",
+        "",
+        fields
+          .filter(([value]) => value.trim())
+          .map(([, label]) => label)
+          .join(", ") || "None",
+      ),
+    );
+    report.append(summary);
+
+    if (source.leftOut.length > 0) {
+      const omissions = el("div", "import-omissions");
+      const list = el("ul");
+      for (const { kind, text } of source.leftOut) {
+        const item = el("li");
+        item.append(el("b", "", LEFT_OUT[kind]));
+        if (text) item.append(": ", el("span", "import-omission-text", text));
+        list.append(item);
+      }
+      omissions.append(
+        el("div", "import-omission-heading", "Left out, because Tir doesn't keep them:"),
+        list,
+      );
+      report.append(omissions);
+    } else report.append(el("p", "", "Nothing was left out."));
+
+    const done = button("btn quiet", "Done");
+    done.addEventListener("click", () => this.dialog.close());
+    const open = button("btn primary", "Open it");
+    open.addEventListener("click", () => {
+      this.dialog.close();
+      void this.act(() => this.side.projects.open(project, file));
+    });
+    const actions = el("div", "actions");
+    actions.append(done, open);
+    report.append(actions);
+    this.dialog.replaceChildren(report);
+    this.dialog.showModal();
+    open.focus();
   }
 
   private renameProject(project: Project): void {

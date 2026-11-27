@@ -59,12 +59,15 @@ src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/proto
               worker) makes a save's texts, saved-indicator.ts shows the top bar's saved state,
               opening.ts what Tir opens at launch and the file keys, projects-screen.ts the
               Projects screen and projects.ts its rows and what it does (open, make, rename,
-              delete, import), dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
+              delete, import), draft-menu.ts the draft picker and drafts.ts its actions,
+              title-page.ts the title page form and its preview over the mounted editor,
+              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
               editor-harness.ts runs the editor's state and keys for tests
 src-tauri/    Rust: the Tauri shell; src/files.rs writes a file whole or not at all,
               src/settings.rs reads and replaces the settings file, src/library.rs keeps the
-              library's folders and files, src/dialogs.rs shows the Open dialog and message boxes,
-              src/closing.rs holds the window open on closing until the page has saved;
+              library's folders and files, src/dialogs.rs opens native import, export and message dialogs,
+              src/closing.rs holds the window open on closing until the page has saved,
+              src/instance.rs keeps a second Tir from opening the same settings and library;
               tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
@@ -133,7 +136,8 @@ library or ambient types, so `document`, `window` or `process` fail.
   Windows' device names gain `_`; at most 120 bytes; "Untitled" when
   nothing is left (findings, "Library on disk"). A name already in the
   folder, ignoring capitals and how accents are encoded (compared through
-  capitals and back, so Greek "σ" and "ς" meet), gets " 2", " 3" and so
+  small letters, capitals and back, so Greek "σ" and "ς" meet, as do "ß",
+  "ẞ" and "ss"), gets " 2", " 3" and so
   on; a draft's file is free only when its Fountain copy's name is too.
   Renaming a project or draft renames its folder or file.
 - **Who does what.** `src/ui/library.ts` makes every name and every
@@ -160,24 +164,29 @@ library or ambient types, so `document`, `window` or `process` fail.
   project's `project.json` is written last, after its draft and copy, and
   a project that fails to be made is removed whole; a new draft and its
   copy are written before the project names it, both removed if either
-  fails, and kept if naming it fails, since the project file may be in
-  place when the error comes; a save writes the draft, then its copy, so
+  fails, and kept if naming it fails; a save writes the draft, then its
+  copy, so
   the copy is never newer than the draft; a renamed draft is copied to
-  its new file before the project names that, and the old file goes
-  after; a deleted draft goes after the project stops naming it; a
-  project folder is renamed over an empty folder claimed first, and a
+  its new file with its last-save time before the project names that.
+  Renaming or deleting a draft publishes the project file first, then
+  cleans up the old files once the new project file is durable. Cleanup
+  failures cannot undo a published change: the saver must use the new place.
+  A project folder is renamed over an empty folder claimed first, and a
   deleted project is first moved to a hidden `.deleting.<pid>-<n>.tmp`
   folder, then removed. Once a renamed project is in its new folder, or a
   deleted one has left the library, the change is reported done even if
   syncing the library's folder or removing the files fails after, since
-  the page would otherwise keep saving to a folder that is gone. A draft
+  the page would otherwise keep saving to a folder that is gone; and once
+  a new project file is in place (`publish_project`), the change it makes
+  is reported done even if syncing its folder fails, since the page would
+  otherwise keep a reading the file no longer holds. A draft
   the project does not name harms nothing: its name stays taken.
 - **Listing** (`list_library`) gives every entry's name that is not
   hidden, and for each folder that is not a link its `project.json` text,
   the entries of its `drafts/`, and when each draft file there was last
-  written (`edited`, the file's modification time, for the Projects
-  screen's last edit); `listLibrary` reads each, and a folder whose
-  project file is missing, damaged, newer or a link comes back with the
+  written (`edited`, the file's modification time, for the draft menu's
+  dates and the Projects screen's last edit); `listLibrary` reads each.
+  A folder whose project file is missing, damaged, newer or a link comes back with the
   reason, never silently dropped. After a change fails, listing again
   shows what is there.
 
@@ -236,23 +245,30 @@ rename reaches the disk. A file Tir did not make is never opened, replaced
 or removed. A write that fails removes its temporary file; a crash
 between the two can leave one behind, which no later save replaces or
 removes. The settings file and the library's files are written this way.
+Exports publish the synced temporary file with a hard link instead of a
+rename, so an existing name, including a symlink, cannot be replaced.
+The destination filesystem must support hard links.
 A script's file is read as UTF-8 and refused, rather than read with
 replacement characters, when it is not.
 
 ## File access
 
-The page has Tauri's `core:default` capability and nothing more: no file
-system plugin is registered, the asset protocol is off, and none of the
-dialog plugin's commands is granted. So every file Tir reads or writes
+The page's capability (`src-tauri/capabilities/default.json`) grants two
+of Tauri's core commands and nothing more: `core:event:allow-listen`, for
+`tir://close`, and `core:webview:allow-internal-toggle-devtools`, which
+only a debug build's Ctrl+Shift+I uses. The commands Tir defines need no
+permission. No file system plugin is registered, the asset protocol is
+off, and none of the dialog plugin's commands is granted. So every file
+Tir reads or writes
 goes through its own Rust commands, which reach three places only: the
 settings file in Tir's config directory or `TIR_CONFIG_DIR`
 (`read_settings`, `write_settings`); the library, by the folder and file
 names `library.rs` checks ([Library on disk](#library-on-disk)); and a
-file the writer picks in the system's Open dialog, which is only read
-(`dialogs.rs`; Fountain and FDX import and export later). The page never
-names a path, and the Rust side keeps every path it uses; it tells the
-page the library's place only to show it (`library_place`, "~/Screenplays"
-for the empty library), and no command takes one back. Nor can the
+file the writer picks in the system's Open dialog, which is only read,
+or the new file picked in its Save dialog (`dialogs.rs`).
+The page never names a path, and the Rust side keeps every path it uses;
+it tells the page the library's place only to show it (`library_place`,
+"~/Screenplays" for the empty library), and no command takes one back. Nor can the
 page move the library: `write_settings` refuses settings that name a
 library other than the one the file named when Tir started.
 
@@ -260,16 +276,18 @@ library other than the one the file named when Tir started.
 
 The script on screen is saved to its draft automatically (brief, "Saving
 and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
-(`savingPlugin`) tells of every change to the editor's document:
+(`savingPlugin`) tells of changes to the editor document and
+`title-page.ts` tells of changes to the title page:
 
 - **When.** A second after the last change (`SAVE_DELAY_MS`), and at once
   through `settle`, which waits for the save under way, then saves until
   the draft holds what is on screen: before another script takes the
   screen, on Ctrl+S and before the window closes. Saves go one at a time,
   each writing the script as it is when it starts. The script is saved
-  when its document equals (`Node.eq`) the one last written, so undoing
-  back writes nothing; after a failed save it counts as not saved until
-  one succeeds, since the draft may hold a newer text than its copy.
+  when both its editor document (`Node.eq`) and its title page equal
+  those last written, so reverting a change before saving writes
+  nothing. After a failed save it counts as not saved until one
+  succeeds, since the draft may hold a newer text than its copy.
 - **Off the interface thread.** A save takes the model from the document
   on the interface thread (`fromDocument`, which reuses unchanged
   elements), then `draft-texts.worker.ts` writes the draft and its
@@ -291,7 +309,8 @@ and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
   (`settle(true)`, the Projects screen's).
 - **Closing.** Once the page can save, it calls `hold_close`, and the Rust
   side (`closing.rs`) then holds each request to close the window and
-  passes it to the page as `tir://close`. The page stops typing (the
+  passes it to the page as `tir://close`. The page waits for any draft
+  action to finish so it settles the correct draft, stops typing (the
   editor is made read-only), settles, waits for the Projects screen's
   action under way and the settings file's writes, and calls
   `close_window`. When a save fails it asks, in a
@@ -302,8 +321,8 @@ and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
   over a window only killing Tir closes). Tir exits only once the library's
   command under way has finished (`finish_commands`). Tauri's own
   close-requested event was not used: its listener outlives a page load,
-  and closing from the page needs a permission beyond `core:default`
-  (findings, "Desktop stack").
+  and closing from the page needs `core:window:allow-destroy`, which the
+  capability does not grant (findings, "Desktop stack").
 
 What Tir opens is `src/ui/opening.ts`'s. At launch (`openAtLaunch`) it is
 the active draft of the project the settings file's `project` names, else
@@ -328,22 +347,34 @@ after the list shows, and kept until the draft's file time changes
 (`PageCounter`); its last edit is the newest of its drafts' file times.
 
 What the screen does is `projects.ts`'s `Projects`, one action at a time.
-Opening, making or importing a project first settles the saver (`false`
-keeps the script on screen and says why), then shows the new script with
-nothing awaited in between (`Editor.open`, `Saver.show`, the settings
-file's `project`). Renaming the project on screen settles first, then
+Opening or making a project first settles the saver (`false` keeps the
+script on screen and says why), then shows the new script (`Editor.open`,
+`Saver.show`, the settings file's `project`). Renaming the project on
+screen settles first, then
 moves the saver to the new folder (`Saver.move`) and records it in the
 settings. Deleting the project on screen waits for its save under way or
 waiting, then leaves no script open: the editor gets an empty script not
 in the library, the settings name no project, and the screen offers no
-way back. Until task 2.6, Import… (`importFile`) asks for a Tir draft or
-a Fountain file in the system's Open dialog, which the Rust side
-(`dialogs.rs`, through `tauri-plugin-dialog` called from Rust only) shows
-and reads, refusing a file that is not UTF-8; the page refuses a damaged
-or newer draft whole, saves the script on screen, makes a project from
-the file's script, saves again, and shows it. The file itself is never
-written. Dialogs that ask for a name or confirm a delete are `<dialog>`
-elements in the page (prototype piece 6); failures are message boxes.
+way back. Import… opens the native file chooser via `dialogs.rs`, then
+the Projects screen's destination and report dialogs. `Projects` commits
+the parsed script as a new project or inactive draft of a selected
+project; Open it reads that draft and makes it active. Failures are
+message boxes.
+
+The draft menu (`draft-menu.ts`) takes dates from the library listing.
+While an action (`drafts.ts`) settles and commits, the writing window
+cannot edit or open another script. Switch and delete read the draft
+that will take the screen before changing the project file, so an
+unreadable replacement leaves the draft on screen and the library
+unchanged. Fork uses the saver's current script and title page. Rename
+moves the saver without replacing the editor state, keeping the caret
+and undo history. Export Fountain… serializes the saver's current script
+and title page; it does not depend on a successful library save.
+
+The title page's form and preview scroll in a fixed layer over the
+mounted script. Hiding the script without unmounting it leaves its
+selection and undo history alone. The preview does not use the
+editor's page projection.
 
 ## Settings
 
@@ -390,6 +421,14 @@ and trial runs use for a temporary directory.
 - `src/ui/settings-file.ts` loads the settings before the editor mounts,
   so the script opens at its zoom, and saves each change, one write at a
   time and the last change last; closing waits for its writes.
+- **One Tir for each config directory** (`src-tauri/src/instance.rs`): at
+  start Tir makes the directory and locks it (`flock`, let go when the
+  process ends, however it ends), then makes its window
+  (`"create": false` in `tauri.conf.json`). A second Tir finding the lock
+  taken makes no window, says "Tir is already open" and exits, so two
+  windows never save over each other's drafts (brief, "Saving and
+  backup"). A trial run with its own `TIR_CONFIG_DIR` runs beside. When
+  the lock cannot be taken for another reason, Tir runs without it.
 
 ## Fountain
 

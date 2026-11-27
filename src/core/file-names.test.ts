@@ -70,6 +70,9 @@ describe("unique names", () => {
     // Both small sigmas have one capital, as a case-blind file system compares them.
     expect(uniqueName("Οδυσσευς", ["ΟΔΥΣΣΕΥΣ"])).toBe("Οδυσσευς 2");
     expect(uniqueName("Οδυσσευς", ["οδυσσευσ"])).toBe("Οδυσσευς 2");
+    // A capital sharp s has a small one, which has the capitals "SS".
+    expect(uniqueName("STRAẞE", ["straße"])).toBe("STRAẞE 2");
+    expect(uniqueName("ẞ", ["ss"])).toBe("ẞ 2");
     expect(uniqueName("..", ["Untitled"])).toBe("Untitled 2");
     expect(uniqueName("Con", ["con_"])).toBe("Con_ 2");
   });

@@ -78,12 +78,12 @@ export function isSafeName(name: string): boolean {
 
 /**
  * What two names are compared by: macOS and Windows ignore capitals and
- * accents' encoding. Through capitals and back, letters with two small
- * forms (Greek "σ" and "ς") meet; "ß" meets "ss", which errs towards a
- * name taken.
+ * accents' encoding. Through small letters, capitals and back, letters
+ * with two small forms (Greek "σ" and "ς") meet, as do "ß", "ẞ" and "ss",
+ * which errs towards a name taken.
  */
 function nameKey(name: string): string {
-  return name.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
+  return name.normalize("NFC").toLowerCase().toUpperCase().toLowerCase().normalize("NFC");
 }
 
 /** `name` cut to `bytes`, without trailing dots or spaces, which Windows drops, and not reserved. */

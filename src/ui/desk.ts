@@ -219,6 +219,7 @@ export class Desk {
       if (next.focus && !was?.focus) this.toast("Focus mode · Ctrl+Shift+F or Esc to leave");
     }
     if (next.zoom !== was?.zoom) {
+      body.style.setProperty("--desk-zoom", String(next.zoom));
       this.editor.setZoom(next.zoom);
       this.zoomShown.data = `${Math.round(next.zoom * 100)}%`;
     }

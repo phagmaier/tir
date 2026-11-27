@@ -1,6 +1,5 @@
 //! Reading and writing Tir's files (architecture, "Writing files"): the
-//! settings file, and the library's project files and drafts. A write never
-//! leaves a file damaged.
+//! settings file, the library and exports. A write never leaves a file damaged.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -17,20 +16,61 @@ pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// `replace`, with `write` filling the temporary file.
-fn replace_with(path: &Path, write: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<()> {
-    let (temporary, mut file) = create_temporary(path)?;
-    let written = write(&mut file)
-        .and_then(|()| file.sync_all())
-        .and_then(|()| fs::rename(&temporary, path));
-    if let Err(error) = written {
-        // The old file was not touched; leave nothing of this write beside it.
-        let _ = fs::remove_file(&temporary);
-        return Err(error);
-    }
+pub(crate) fn replace_with(
+    path: &Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
+    publish_with(path, write, |temporary| fs::rename(temporary, path))?;
+    sync_parent(path)
+}
+
+/// Replaces `path` like `replace`, but leaves the directory sync to the
+/// caller. An error means the new file has not been published.
+pub(crate) fn publish(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    publish_with(
+        path,
+        |file| file.write_all(bytes),
+        |temporary| fs::rename(temporary, path),
+    )
+}
+
+/// Publishes a complete new file without replacing even a symlink at `path`.
+/// A link, unlike a check followed by a rename, cannot overwrite a file
+/// that appeared while writing. The temporary file is on the same filesystem.
+pub fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    publish_with(
+        path,
+        |file| file.write_all(bytes),
+        |temporary| {
+            fs::hard_link(temporary, path)?;
+            fs::remove_file(temporary)
+        },
+    )?;
+    sync_parent(path)
+}
+
+fn sync_parent(path: &Path) -> io::Result<()> {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => sync_dir(parent),
         _ => sync_dir(Path::new(".")),
     }
+}
+
+fn publish_with(
+    path: &Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+    publish: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
+    let (temporary, mut file) = create_temporary(path)?;
+    let written = write(&mut file)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| publish(&temporary));
+    if let Err(error) = written {
+        // Leave nothing of this write beside the destination.
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Syncs the directory `dir`, so that a file made, renamed or removed in it

@@ -6,18 +6,21 @@
 mod closing;
 mod dialogs;
 mod files;
+mod instance;
 mod library;
 mod settings;
 
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent};
 
 /// `TIR_CONFIG_DIR`, which tests and trial runs set to a temporary
-/// directory, for the settings and, unless they name one, the library.
+/// directory, for the settings and, unless they name one, the library;
+/// made absolute, so the library's folders are found and synced.
 fn sandbox() -> Option<PathBuf> {
     std::env::var_os("TIR_CONFIG_DIR")
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
+        .map(|dir| std::path::absolute(&dir).unwrap_or(dir))
 }
 
 /// Where Tir keeps its settings: Tir's config directory
@@ -74,6 +77,28 @@ pub fn run() {
         .manage(closing::Closing::default())
         .setup(|app| {
             app.manage(find_library(app.handle()));
+            // The window (`create: false` in tauri.conf.json) is made only
+            // once no other Tir has this settings file and library open.
+            match settings_dir(app.handle())
+                .and_then(|dir| instance::claim(&dir).map_err(|error| error.to_string()))
+            {
+                Ok(Some(instance)) => {
+                    app.manage(instance);
+                }
+                Ok(None) => {
+                    dialogs::already_open(app.handle());
+                    return Ok(());
+                }
+                // Tir still runs, as it would without the lock.
+                Err(error) => eprintln!("Tir could not check for another Tir: {error}"),
+            }
+            let window = app
+                .config()
+                .app
+                .windows
+                .first()
+                .ok_or("No window to open.")?;
+            WebviewWindowBuilder::from_config(app.handle(), window)?.build()?;
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -97,7 +122,8 @@ pub fn run() {
             library::commands::write_draft,
             library::commands::rename_draft,
             library::commands::delete_draft,
-            dialogs::open_script,
+            dialogs::open_fountain,
+            dialogs::export_fountain,
             dialogs::ask,
             dialogs::tell,
             closing::hold_close,
