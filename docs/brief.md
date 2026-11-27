@@ -397,9 +397,8 @@ intact.
   switches only the paper: Night in the dark theme, white (#fdfcf8) with
   black text in the light theme. The page's on-screen marks (find
   highlights, squiggles, caret) follow the paper.
-- **The look is settled** for the writing window:
-  [look.css](prototype/look.css) holds the final colours and chrome for the
-  remaining pieces and, later, the app.
+- [look.css](prototype/look.css) holds the chosen prototype colours and
+  chrome. The app uses those colours in [theme.css](../src/ui/theme.css).
 - **The finished writing window** ([piece 5](prototype/05-writing-window.html)),
   approved by the user: the paper switch in the sidebar footer; a "Title
   page" row at the top of the sidebar opening the title page form beside a
@@ -453,11 +452,10 @@ three.
 
 ## Saving and backup
 
-- **Saving is automatic**, a moment after the user pauses typing. There is
-  never unsaved work; Ctrl+S is harmless. *(agent-selected: a second after
-  the last change, and at once before another script takes the screen and
-  before the window closes, each save writing the draft and its Fountain
-  copy.)*
+- **Saving is automatic**, a moment after the user pauses typing. Ctrl+S
+  requests an immediate save. *(agent-selected: a second after the last
+  change, and at once before another script takes the screen and before
+  the window closes, each save writing the draft and its Fountain copy.)*
 - **The saved half of the indicator** reads "Saved", "Saving…" from the
   first change until the draft holds it, or "Not saved" in the warning
   colour when a save failed, with why in its tooltip. A save that fails is
@@ -467,10 +465,10 @@ three.
   request to close, five or more seconds after the first, closes Tir even
   if it has not saved, so a Tir that stops answering can still be closed
   *(the user's choice, 2026-11-27)*.
-- **Tir runs once on a machine.** Starting it again while it runs shows a
-  message, "Tir is already open", and no second window, since two windows
-  on one library could each save over the other's work *(agent-selected,
-  task 2.7)*.
+- **One Tir at a time per settings directory.** A second launch with the
+  same settings shows "Tir is already open" and no second window, so it
+  cannot save over another instance's work. An isolated trial with its
+  own settings and library can run beside it *(agent-selected, task 2.7)*.
 - **One private GitHub repository** holds the whole library. Tir runs the
   system `git` with the user's existing GitHub login and stores no tokens.
   The user gives Tir the repository URL once.
@@ -538,11 +536,3 @@ The user accepted this as the agent's recommendation.
   Heading, Action, Character or Dialogue.
 - **Saved** means written to the draft file on this machine. **Backed up**
   means pushed to GitHub. The indicator shows them separately.
-
-## Still to settle
-
-No product decision is open. The facts still to establish are tasks in
-[the plan](plan.md): Final Draft's remaining pagination details and the
-page-number style (0.8), the calibration set (0.8), the draft file's
-structure (0.2) and the Nix development shell (0.1). None needs the user
-unless it turns out to change behaviour described above.

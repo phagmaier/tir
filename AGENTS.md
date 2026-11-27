@@ -10,7 +10,7 @@ Read only what the task needs.
 
 | Document | Holds | Read when |
 | --- | --- | --- |
-| [Plan](docs/plan.md) | The ordered task list with progress, reviews, user checks and known gaps | First: "Current status", then the task you are taking |
+| [Plan](docs/plan.md#current-status) | Active tasks, reviews, user checks and known gaps | For planned implementation: read "Current status", then the assigned task |
 | [Product brief](docs/brief.md) | Intended behaviour, the user's decisions, and shared terms | When working on product behaviour or terminology; read the relevant sections |
 | [Architecture](docs/architecture.md) | Design rules, where things live, the library on disk, and how to run and check things | Before touching a part you have not read; "Working here" before running anything |
 | [Findings](docs/findings.md) | Outside-world facts the code depends on (Final Draft's format, Fountain, the toolchain) and rejected designs | When touching that topic, or before trying an approach that may have been rejected |
@@ -27,35 +27,13 @@ or documents.
 - Check Context7 before adding or debugging library, framework or CLI
   calls (Tauri, ProseMirror, the PDF and spell-check libraries).
 
-## How to work a task
+## Planned implementation
 
-`docs/plan.md` is the task list, and the implement skill works from it
-directly. Its "How to work this plan" section is the procedure; in short:
-
-1. Take the first unchecked task in `docs/plan.md`, unless the user names
-   another. Set its status to `in progress` and update "Current status".
-2. Do that task only. If it turns out to be too large, split it in the
-   plan (keeping IDs, adding `0.4a` and so on) and finish the first part.
-3. Verify the task's "Done when" with observed evidence. Use the smallest
-   check that covers the change; see architecture.md's
-   [Running and checking](docs/architecture.md#running-and-checking) for
-   when to run the full gate.
-4. Review the change, code and tests, with the user-code-review skill
-   before calling it done. The plan's "Review: …" tasks add a deeper,
-   scheduled review with their own checklists.
-5. Update the documents, as "Keeping the documents" says.
-6. Check the task off in the plan with an `Evidence:` line, and update
-   "Current status".
-7. Report what you checked and what you could not check. Continue to the
-   next task only if the user asked for more than one. Always stop at a
-   "User check: …" task and ask the user to run it.
-
-If a task's premise is wrong (a library behaves differently, a design rule
-does not hold), stop, record the finding in `docs/findings.md`, update the
-plan, and tell the user. Do not build around a design rule silently.
-
-A stage is finished only when the user has passed its user check. Do not
-start the next stage before that.
+Use the implement skill and follow [How to work this plan](docs/plan.md#how-to-work-this-plan)
+for task selection, status, evidence, and the stage gates. A question,
+audit, or standalone maintenance request does not start a plan task.
+Use the adopted `code-review` method for implementation reviews (named
+`user-code-review` in Claude Code, not its bundled `/code-review`).
 
 ## Keeping the documents
 
@@ -63,9 +41,8 @@ Write what a later agent needs and cannot get more cheaply from the code.
 
 | What you learned | Where it goes |
 | --- | --- |
-| How the system behaves | nowhere: the code and its tests say it |
-| Why a piece of code is the way it is | a short comment beside that code |
-| A new module, folder, or way of running and checking things | `architecture.md`, in place |
+| Implementation details | Code and tests; put local rationale beside the code |
+| Design rules, subsystem boundaries, disk formats, build or check workflows | `architecture.md` |
 | Product behaviour or a choice the user made | `brief.md`, in the present tense |
 | An outside-world fact found by experiment, or a rejected design costly to retry | `findings.md`, under its heading |
 | A gap left open | the plan, on the task or stage that will close it, otherwise "Known gaps" |
@@ -84,14 +61,12 @@ to the user as a new prototype piece.
 
 ## Project rules
 
-- **Tests and trial runs never use the real library (`~/Screenplays`), the
-  real settings file or a real GitHub repository.** Use temporary
-  directories (`TIR_CONFIG_DIR` for the settings; it also puts the library
-  in `$TIR_CONFIG_DIR/Screenplays` unless those settings name another) and
-  a local bare git repository.
-- **Tir writes only inside the library**, apart from its own settings file
-  in its config directory (architecture, design rule 4). A file opened or
-  imported is never written to; exports never overwrite an import's source.
+- **Tests and trial runs never use the real library, real settings, or a
+  real GitHub repository.** Use the [isolated launch](docs/architecture.md#running-and-checking),
+  temporary test directories, and a local bare git repository.
+- **Tir writes inside the library or its own settings file.** An export
+  may also create a new file at a destination picked in the native Save
+  dialog; it never replaces an existing file. Import sources are read-only.
 - **`src/core/` imports nothing from the DOM, ProseMirror or Tauri.**
 - **The browser never wraps script text**; the layout engine places every
   line and page break (architecture, design rule 1).
@@ -101,15 +76,21 @@ to the user as a new prototype piece.
   propose changes instead.
 - Do not add a dependency without saying why in your report.
 
+## Commits and pushes
+
+The user gives agents standing permission to commit verified, in-scope
+work and push it to the current Tir branch's configured upstream on
+GitHub. Commit and push at useful checkpoints or at completion, at your
+discretion. Neither is required, and no separate approval is needed.
+
+Keep unrelated edits, credentials, private scripts, and real settings out
+of commits. Preserve other people's staged work. Push normally, without
+force or unrelated commits. If there is no configured upstream or a
+normal push is rejected, leave the commit local and report why.
+
 ## Tooling
 
-- Two machines: the user works on a NixOS desktop (often remotely) and a
-  NixOS laptop, and moves work between them through GitHub, often pulling
-  onto the laptop for visual checks. A clone plus "Setting up a machine" in
-  architecture.md must be enough to build, run and check Tir.
-
-- NixOS: system libraries come from the Nix development shell; runtimes and
-  tools from `mise.toml`. Run commands with `mise exec -- <command>`
-  inside the shell. "Working here" in architecture.md gives the commands.
-- pnpm for JavaScript; keep the supply-chain settings and commit
-  `pnpm-lock.yaml` and `Cargo.lock`.
+- [Working here](docs/architecture.md#working-here) covers the Nix shell,
+  mise, setup on both machines, and focused checks.
+- Keep the pnpm supply-chain settings and both lockfiles (`pnpm-lock.yaml`
+  and `Cargo.lock`).

@@ -46,7 +46,7 @@ description = "Measure median pagination time for a feature-length draft"
 run = "node tools/pagination-timing.ts"
 
 [tasks.editor-timing]
-description = "Time typing in the running dev app (start it with WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev)"
+description = "Time typing in an isolated dev app (see Measuring the editor in docs/architecture.md)"
 run = "node tools/editor-timing/main.ts"
 
 [tasks.editor-placement]

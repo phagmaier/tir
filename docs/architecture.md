@@ -3,8 +3,9 @@
 A short map of how Tir is built: the rules the design rests on, where
 things live, and how to run and check things. Product behaviour and its
 terms are in [brief.md](brief.md); outside-world facts the code depends on
-are in [findings.md](findings.md). Where this map and the code disagree,
-the code is right: fix the map.
+are in [findings.md](findings.md). Correct stale descriptions of the
+implementation, but do not treat a violation of a design rule as a
+change to the rule.
 
 ## Design rules
 
@@ -23,58 +24,26 @@ The user delegated these technical choices during planning.
    Tauri imports, so they test quickly in Node. The interface is
    TypeScript with ProseMirror. The Rust side only reads and writes files,
    runs git and opens system dialogs.
-4. **Tir writes only inside the library**, with one exception: its own
-   settings file, kept for each machine in its config directory
-   ([Settings](#settings); the user's choice, 2026-11-26). A file opened
-   or imported is read and never written to; an export writes a new file.
-   The Rust side holds the rule ([File access](#file-access)). WebKitGTK
-   keeps its cache and storage for Tir in `~/.local/share/dev.tir.desktop/`,
-   which Tir itself never writes.
+4. **Tir writes inside the library or its own settings file.** An export
+   may also create a new file at the destination the writer picks in the
+   native Save dialog; it never replaces an existing file. Import sources
+   are read-only. The Rust side enforces the boundary ([File access](#file-access)).
+   WebKitGTK keeps its own cache and storage for Tir under
+   `~/.local/share/dev.tir.desktop/`.
 5. **Tests never touch the real library, the real settings file or
    GitHub.** They use temporary directories and a local bare git
    repository.
 
 ## Repository layout
 
-```
-docs/         brief, architecture, findings, plan; prototype/ (design pieces; index.html marks the chosen ones)
-src/core/     pure TypeScript: format.ts holds every Final Draft format value; the model, draft file,
-              project file (project-file.ts), the library's names (file-names.ts), Fountain, FDX,
-              line layout, pagination, autocomplete's suggestions (suggestions.ts), the
-              clipboard's forms (clipping.ts), the scenes and where each page starts
-              (script-map.ts), the settings file's text and the zoom steps (settings.ts) and checks
-              join it
-src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/prototype/look.css),
-              fonts/ (Courier Prime, IBM Plex Sans, Newsreader and their licences); editor-model.ts
-              maps the model to and from ProseMirror, projection.ts turns the engine's pages into
-              decorations, paragraph styles, sheets and the script map edit by edit, editor.ts is
-              the ProseMirror view and the zoom, commands.ts its keys and commands, undo.ts how undo
-              groups changes, clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete
-              popup, sheets.ts draws the sheets of paper behind it, toolbar.ts the top bar's
-              element buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to
-              page, jump.ts the caret and scroll for both, desk.ts the window's settings (paper,
-              zoom, focus mode, the sidebar's toggle) and their keys, settings-file.ts loads and
-              saves them, library.ts reaches the library through the Rust side, saving.ts saves
-              the script and holds closing for it, draft-texts.ts (with draft-texts.worker.ts, its
-              worker) makes a save's texts, saved-indicator.ts shows the top bar's saved state,
-              opening.ts what Tir opens at launch and the file keys, projects-screen.ts the
-              Projects screen and projects.ts its rows and what it does (open, make, rename,
-              delete, import), draft-menu.ts the draft picker and drafts.ts its actions,
-              title-page.ts the title page form and its preview over the mounted editor,
-              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
-              editor-harness.ts runs the editor's state and keys for tests
-src-tauri/    Rust: the Tauri shell; src/files.rs writes a file whole or not at all,
-              src/settings.rs reads and replaces the settings file, src/library.rs keeps the
-              library's folders and files, src/dialogs.rs opens native import, export and message dialogs,
-              src/closing.rs holds the window open on closing until the page has saved,
-              src/instance.rs keeps a second Tir from opening the same settings and library;
-              tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
-tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
-              rebuild.ts (script from positions), compare.ts (page starts against paginate),
-              write-pdf.ts (test PDFs in Final Draft's layout), main.ts (the command)
-index.html    the page Vite serves and Tauri loads: the Desk's top bar, sidebar and canvas
-flake.nix     the Nix development shell (system libraries); mise.toml pins runtimes and holds the tasks
-```
+| Path | Responsibility |
+| --- | --- |
+| `src/core/` | Pure TypeScript script model, disk formats, layout and pagination, and derived data such as the scene and page map |
+| `src/ui/`, `index.html` | The Desk, ProseMirror and the engine's page projection; saving, projects, drafts, and the bridge to the shell |
+| `src-tauri/` | Tauri and its capabilities; Rust owns settings, library access, native dialogs, and window closing |
+| `tools/` | Final Draft PDF parity and native editor placement and timing checks |
+| `docs/`, `docs/prototype/` | Product decisions, architecture, findings, active plan, and approved visual references |
+| `flake.nix`, `mise.toml` | System libraries, pinned runtimes, and development tasks |
 
 Tests sit beside the code they test as `*.test.ts`.
 
@@ -152,9 +121,11 @@ library or ambient types, so `document`, `window` or `process` fail.
   folder where a copy goes, so nothing it reads, writes, moves or deletes
   lies outside the library. It never makes a folder or draft over an
   entry already there: it claims the name first (a new folder, or a new
-  empty file, and the copy's name must be free). It deletes only a folder
-  with a project file, readable or not, so never a folder of the writer's
-  own. Each change to a project carries `was`, the project file's text
+  empty file, and the copy's name must be free). Deletion requires a
+  `project.json` file, even if unreadable, so damaged projects can be
+  removed. Use a dedicated library folder: see the
+  [foreign `project.json` caveat](plan.md#known-gaps). Each change to a
+  project carries `was`, the project file's text
   the page made it from, and is refused when the file now differs, so a
   change made from an older reading never undoes a newer one; the
   commands run one at a time, and Tir does not exit while one runs
@@ -241,10 +212,10 @@ diff of a draft reads like the script:
 new: the bytes go to a temporary file beside it, `NAME.<pid>-<n>.tmp`
 created new (the first `n` with no file of that name), which is synced
 and renamed over the file, and then the directory is synced so that the
-rename reaches the disk. A file Tir did not make is never opened, replaced
-or removed. A write that fails removes its temporary file; a crash
-between the two can leave one behind, which no later save replaces or
-removes. The settings file and the library's files are written this way.
+rename reaches the disk. Existing files at candidate temporary names
+are never opened, replaced or removed. A failed write removes its own
+temporary file; a crash can leave it behind without a later save
+reusing it. Settings and library files use this replacement path.
 Exports publish the synced temporary file with a hard link instead of a
 rename, so an existing name, including a symlink, cannot be replaced.
 The destination filesystem must support hard links.
@@ -258,14 +229,13 @@ of Tauri's core commands and nothing more: `core:event:allow-listen`, for
 `tir://close`, and `core:webview:allow-internal-toggle-devtools`, which
 only a debug build's Ctrl+Shift+I uses. The commands Tir defines need no
 permission. No file system plugin is registered, the asset protocol is
-off, and none of the dialog plugin's commands is granted. So every file
-Tir reads or writes
-goes through its own Rust commands, which reach three places only: the
-settings file in Tir's config directory or `TIR_CONFIG_DIR`
-(`read_settings`, `write_settings`); the library, by the folder and file
-names `library.rs` checks ([Library on disk](#library-on-disk)); and a
-file the writer picks in the system's Open dialog, which is only read,
-or the new file picked in its Save dialog (`dialogs.rs`).
+off, and none of the dialog plugin's commands is granted. User data
+goes through Tir's Rust commands: the settings file (`read_settings`,
+`write_settings`); the library, by the names `library.rs` checks
+([Library on disk](#library-on-disk)); and paths picked through native
+dialogs (`dialogs.rs`). Open and import only read the source. Exports
+create a new file at the chosen path and refuse to replace anything
+already there, including a symlink.
 The page never names a path, and the Rust side keeps every path it uses;
 it tells the page the library's place only to show it (`library_place`,
 "~/Screenplays" for the empty library), and no command takes one back. Nor can the
@@ -545,6 +515,16 @@ also makes ProseMirror destroy and make again every plugin's view, so the
 toolbar, the scene list and the page position add their DOM listeners
 once, when the plugin is made, not in its view.
 
+### Desktop UI checks
+
+Use the approved [prototype](prototype/index.html) for composition and
+the existing CSS in `src/ui/` for implementation. In the native window,
+check the changed flow with the keyboard: controls have accessible names,
+focus is visible outside the script, dialogs contain and return focus as
+appropriate, and Escape reaches the innermost open popup or dialog
+first. Don't use colour alone to convey a state. Preserve the script's
+own shortcuts, caret, and engine-owned layout.
+
 ## Working here
 
 The Nix development shell supplies Tauri's system libraries (WebKitGTK,
@@ -577,9 +557,9 @@ Then, in a fresh clone:
 2. `mise install`: Node, pnpm, and Rust with clippy and rustfmt, at the
    versions in `mise.toml`.
 3. `mise run install`: the JavaScript packages in `pnpm-lock.yaml`.
-4. `mise run check`, then `mise run dev`. The first run downloads the
-   nixpkgs revision in `flake.lock` and the crates in `Cargo.lock`, and
-   builds the Rust side, which takes some minutes.
+4. `mise run check`, then [launch an isolated trial](#running-and-checking).
+   The first run downloads the nixpkgs revision in `flake.lock` and the
+   crates in `Cargo.lock`, and builds the Rust side.
 
 After a pull, repeat steps 2 and 3 if `mise.toml` or `pnpm-lock.yaml`
 changed. `flake.lock` pins nixpkgs to the desktop's NixOS revision, so
@@ -598,24 +578,27 @@ Not in git:
 - Things each machine fetches or generates: `node_modules/`,
   `src-tauri/target/`, `src-tauri/gen/` (Tauri's schemas, rewritten by each
   build) and `dist/`.
-- The implement and user-code-review skills that agents use come from the
-  user's setup repository (`~/.claude/skills`), not from this one.
 
 ### Running and checking
 
 - **Nix sees only files git knows.** A flake ignores untracked files, so
   `flake.nix` and `flake.lock` must be committed or at least added with
   `git add -N`.
-- **`mise run dev`** starts Vite on port 1420 and opens the Tauri window,
-  reloading on change.
+- **Launch an isolated trial** for every agent check:
+  `trial=$(mktemp -d) && TIR_CONFIG_DIR="$trial" mise run dev`.
+  This starts Vite on port 1420 and opens a window with new settings
+  and a library under `"$trial/Screenplays"`. Use files inside the trial
+  directory as export destinations, since exports are not confined to
+  the library. Use bare `mise run dev` only when the writer intends to
+  open their real settings and library.
 - **`mise run check`** runs, in order and stopping at the first failure:
   Biome (lint and format), the type check of the whole project, the type check
   of `src/core/` without the DOM, Vitest, `cargo fmt --check`, clippy with
   warnings as errors, and `cargo test`. Run it once at stage reviews and
   before completing a broad or cross-stack change.
 - **`mise run fmt`** formats the TypeScript and Rust and applies Biome's
-  safe fixes (import order and the like), which `check` only checks. Run it
-  after editing and before `check`; it needs no Nix shell.
+  safe fixes (import order and the like) across the repository; it needs
+  no Nix shell.
 - **`mise run parity [files…] [--lines N] [--all] [--show PAGE]`**
   compares Tir's page breaks with Final Draft PDFs (every PDF in the
   ignored `calibration/` folder by default; set-aside ones live in
@@ -644,79 +627,76 @@ Not in git:
 - **pnpm's supply-chain settings** are in `pnpm-workspace.yaml`. Install
   scripts are off; allow one by name under `allowBuilds` only when a package
   needs it.
-- **Seeing the window from an agent's shell:** the shell may lack
-  `HYPRLAND_INSTANCE_SIGNATURE`; set it to the folder name in
-  `$XDG_RUNTIME_DIR/hypr/`, and `hyprctl clients -j` lists a window titled
-  "Tir" with its position (`at`) and `size`. Screenshot it with
-  `nix shell nixpkgs#grim --command grim -g "X,Y WxH" shot.png`, which
-  installs nothing. Tiled beside another window it is too narrow for the
-  sidebar and a whole page; for a screenshot, float and size it with
-  Hyprland 0.57's dispatchers, then tile it again:
-  `hyprctl dispatch 'hl.dsp.window.float({action="enable",window="title:^Tir$"})'`,
-  then `hl.dsp.window.resize({x=1440,y=900,window="title:^Tir$"})` and
-  `hl.dsp.window.move({x=240,y=90,window="title:^Tir$"})` the same way, and
-  `action="disable"` afterwards. Prototype pieces open in the same webview
-  (and engine) at `http://localhost:1420/docs/prototype/`, for comparing
-  side by side. Stop the app with `pkill -x tir`: `pkill -f` also matches
-  the shell running it.
+- **Inspect the trial window:** if the shell lacks
+  `HYPRLAND_INSTANCE_SIGNATURE`, use the folder name in
+  `$XDG_RUNTIME_DIR/hypr/`. In `hyprctl clients -j`, match the trial
+  process by PID to get the window's `address`, `at` and `size`. Use
+  `address:0x…`, not the shared title "Tir", when targeting it.
+  Screenshot its rectangle with
+  `nix shell nixpkgs#grim --command grim -g "X,Y WxH" "$trial/shot.png"`.
+  If needed, float and resize that address for the screenshot and put
+  it back afterwards. Prototypes are served at
+  `http://localhost:1420/docs/prototype/`.
+  Close the trial window normally so it saves, then stop the dev
+  command you started; do not kill Tir processes by name.
 - **Rust** builds inside the shell only. The shell sets `RUSTFLAGS` to link
   without Rust's bundled LLD ([findings](findings.md#nixos-development-shell)),
   so a build outside it differs and rebuilds everything.
-- **Measuring the editor:** start the app with
-  `TIR_CONFIG_DIR=$(mktemp -d) WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`
-  (the temporary directory keeps the tools' settings changes out of the
-  real settings file, and gives the run a library of its own in
-  `$TIR_CONFIG_DIR/Screenplays`; `await import("/src/ui/library.ts")`
-  in the page reaches it), then `mise run editor-timing [--pairs N] [--zoom Z]
-  [--focus]` (`tools/editor-timing/`) prints the findings ("Editor") table
-  for the current code: layout, frame and busy times for each edit in it,
-  the last of them typing as automatic saves start and run, at the zoom
-  given (100% by default), then for a zoom step and focus mode on and off.
-  It sends keys through Hyprland, so it runs on a Hyprland
-  desktop with the window open. `mise run editor-placement [--fixture NAME]
-  [--zoom Z] [--focus]` checks design rule 1 in the same app, at the
-  window's zoom or the one given: every line the engine lays out must start
-  where the engine puts it, a click on a line's first or last character
-  must land before that character, a click in the blank part of a dual
-  dialogue column's row must land at that line's end,
-  each paragraph must show the engine's text (`innerText`, which applies
-  CSS capitals), and each sheet's page number and marks must sit where the
-  engine puts them; it exits 1 on a miss. Both put back the window's
-  settings they found, and both drive the page through
-  `tools/inspector.ts`. For other probes, connect to
-  `ws://127.0.0.1:9339/socket/1/1/WebPage` through that module
-  (`Page.evaluate` runs a script and awaits its promise; `ScriptProfiler`
-  messages sample JavaScript). In development, `globalThis.tirView` is the
-  editor's view, `globalThis.tirDesk` the window's settings
-  (`tirDesk.set({ zoom: 1.25 })`), `globalThis.tirSaver` the saver
-  (`tirSaver.where`, the draft it saves to) and `globalThis.tirScreen` the
-  Projects screen. The app opens the trial library's last project, or the
-  Projects screen; `?fixture=spike` opens a 120-page
-  script with a forced break before each scene, `?fixture=feature` one
-  without forced breaks, `?fixture=every` one with every element type and
-  format and some text typed in lower case where capitals apply, and
-  `?fixture=sample` prototype piece 5's script, "Salt Line"; a fixture
-  becomes a project in the trial library at its first save. For a real click, move the
-  pointer with `nix shell nixpkgs#wlrctl --command wlrctl pointer move DX
-  DY` (relative to `hyprctl cursorpos`; the window's `at` plus the
-  element's client position is its place on screen) and press with `wlrctl
-  pointer click left`. Dead-key and Compose sequences go through `wtype`
-  (findings, "Editor"): `nix shell nixpkgs#wtype --command wtype -k
-  dead_acute -k e` types "é" and `-k Multi_key -k o -k c` types "©".
-  `press` in `tools/inspector.ts` takes Hyprland's modifiers, such as
-  `press("z", "CTRL SHIFT")`. Read and set the system clipboard with
-  `nix shell nixpkgs#wl-clipboard --command wl-paste` (`--list-types`
-  lists what a copy offered) and `... wl-copy`. The system's dialogs are
-  windows of their own, titled "Open File" or a message box's
-  headline: send them keys through the dispatcher by title or by `address:`
-  from `hyprctl clients -j` (`wtype -k Return` did not reach a message box),
-  and in the Open dialog press Ctrl+L before typing a path with `wtype`.
-  Close the window as the writer does, which saves first, with
-  `hyprctl dispatch 'hl.dsp.window.close({window="title:^Tir$"})'`.
-  Findings ("Editor") lists measuring traps. For WebKit's own time, run the
-  binary under `perf` from the Nix shell:
-  `nix develop --command bash -c 'exec $(nix build --no-link --print-out-paths nixpkgs#perf)/bin/perf record -e task-clock:u -g --user-callchains -o /tmp/tir.perf -- src-tauri/target/debug/tir'`
-  (start Vite with `mise exec -- pnpm exec vite` first). Only user-space
-  events work with `perf_event_paranoid` at 2, and `perf -p` cannot attach
-  to a running WebKit process under Yama's ptrace scope 1, so launch the
-  app under `perf`; libwebkit2gtk carries its symbols.
+
+### Measuring the editor
+
+Launch an isolated trial with the inspector:
+
+```sh
+trial=$(mktemp -d) &&
+  TIR_CONFIG_DIR="$trial" WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev
+```
+
+Run the automated editor tools only when the trial is the only window
+titled "Tir" on that Hyprland desktop. Their focus and keyboard commands
+target that title, not the inspector's process. If the writer's app is
+open, leave it alone and use address-targeted manual checks instead.
+
+- `mise run editor-timing [--pairs N] [--zoom Z] [--focus]` measures
+  layout, frame and busy times while editing and as automatic saves
+  start and run. See the [dated baseline](findings.md#typing-baseline).
+- `mise run editor-placement [--fixture NAME] [--zoom Z] [--focus]`
+  checks engine line and mark positions, rendered text, and click
+  placement (including the blank part of a dual dialogue row). It exits
+  1 on a miss.
+
+Both tools restore the window settings they found. They use
+`tools/inspector.ts` at `ws://127.0.0.1:9339/socket/1/1/WebPage`.
+`globalThis.tirView`, `tirDesk`, `tirSaver` and `tirScreen` expose
+the dev app's editor, settings, saver and Projects screen. `?fixture=spike`
+opens a 120-page script with forced scene breaks, `feature` one without
+them, `every` every element type and format, and `sample` the prototype's
+"Salt Line". A fixture becomes a project in the trial library on its
+first save.
+
+For a real click, use `wlrctl pointer move DX DY` and `wlrctl pointer click left`;
+the window's `at` plus the element's client coordinates give its screen
+position. Use `wtype -k dead_acute -k e` for "é" or
+`wtype -k Multi_key -k o -k c` for "©", but use the Hyprland dispatcher
+for arrow keys. These tools, and `wl-copy` and `wl-paste` for clipboard
+checks, are available through `nix shell` (`wl-clipboard` for the latter
+two). Native dialogs have their own addresses in `hyprctl clients -j`;
+verify the trial's dialog before sending keys. In the Open dialog, press
+Ctrl+L before typing a path. Close only the trial window.
+
+See the [measuring traps](findings.md#measuring-traps). To profile
+WebKit with `perf`, start Vite with `mise exec -- pnpm exec vite`, then
+run the debug binary in a fresh trial from the Nix shell:
+
+```sh
+trial=$(mktemp -d) &&
+  TIR_CONFIG_DIR="$trial" nix develop --command bash -c '
+    perf=$(nix build --no-link --print-out-paths nixpkgs#perf) || exit
+    exec "$perf/bin/perf" record -e task-clock:u -g --user-callchains \
+      -o "$TIR_CONFIG_DIR/tir.perf" -- src-tauri/target/debug/tir
+  '
+```
+
+With `perf_event_paranoid` at 2, only user-space events work. With Yama's
+ptrace scope at 1, start the app under `perf` instead of attaching with
+`perf -p`. libwebkit2gtk carries its symbols.
