@@ -5,8 +5,6 @@
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "^2.6.9",
-    "@cantoo/fontkit": "^2.0.12",
-    "@cantoo/pdf-lib": "^2.11.1",
     "@tauri-apps/cli": "^2.12.6",
     "@types/node": "^24.19.4",
     "typescript": "^7.0.2",
@@ -15,6 +13,8 @@
     "vitest": "^5.1.2"
   },
   "dependencies": {
+    "@cantoo/fontkit": "2.0.12",
+    "@cantoo/pdf-lib": "2.11.1",
     "@tauri-apps/api": "2.12.5",
     "prosemirror-commands": "1.7.2",
     "prosemirror-history": "1.5.2",

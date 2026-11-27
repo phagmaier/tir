@@ -124,6 +124,7 @@ pub fn run() {
             library::commands::delete_draft,
             dialogs::open_fountain,
             dialogs::export_fountain,
+            dialogs::export_pdf,
             dialogs::ask,
             dialogs::tell,
             closing::hold_close,

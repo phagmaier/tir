@@ -9,10 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. [Stage 2](history.md#stage-2-library-projects-and-drafts)
-  is finished (user check 2.8 passed).
-- Next: [3.1 PDF export](#task-3-1). Stage 3 ends with
-  [review 3.3](#task-3-3) and [user check 3.4](#task-3-4).
+- Active: none. [3.1 PDF export](#task-3-1) is done.
+- Next: [3.2 PDF verified against the engine](#task-3-2). Stage 3 ends
+  with [review 3.3](#task-3-3) and [user check 3.4](#task-3-4).
 - Blockers: none. The four [open questions from 1.10](#known-gaps) do not
   block Stage 3.
 
@@ -72,8 +71,8 @@ anything else. V1 is done when 7.4 is checked.
 
 <a id="task-3-1"></a>
 
-- [ ] 3.1 — PDF export
-  - Status: todo
+- [x] 3.1 — PDF export
+  - Status: done
   - Depends on: 2.8
   - Spec: [PDF export](brief.md#pdf-export); findings on
     [Courier Prime](findings.md#courier-prime) and [PDF libraries](findings.md#pdf-libraries).
@@ -83,6 +82,41 @@ anything else. V1 is done when 7.4 is checked.
     whatever the paper setting.
   - Done when: tests check positions, page count, bookmarks and the
     embedded font on fixtures.
+  - Evidence: 2026-11-27. `src/core/pdf.ts` sets the engine's pages in
+    Courier Prime; Export PDF… in the draft menu asks whether to include
+    the title page (the user's choice, brief "PDF export"), makes the PDF
+    in a worker and `export_pdf` writes it as a new file. Eleven tests in
+    `src/core/pdf.test.ts` and `src/ui/pdf-export.test.ts` read PDFs back
+    with pdf.js and the PDF library against hand-worked points: lines at
+    exact points (1.5 in = 108 pt, dual cues centred in their columns, a
+    transition ending at 7.1 in, "2." ending at 7.5 in half an inch down,
+    numbering unchanged by the title page), every engine line, (MORE) and
+    (CONT’D) included, at its row with the engine's page count; styled
+    runs in the four faces on the 7.2 pt grid with underlines; only the
+    faces used, embedded as subsets; the title page at the preview's
+    places; bookmarks' titles, pages and tops; page labels; metadata; the
+    interface-thread fallback. `drafts.test.ts` covers the name, the
+    latest script and the title page choice. In an isolated trial the
+    dialog and Save dialog ("Salt Line - First Draft.pdf") wrote a PDF that
+    read back with three pages, labels, three bookmarks and metadata;
+    `pdffonts` listed four embedded subsets with Unicode maps, and
+    `pdftoppm` drew it as the editor shows it; unticked gave two pages.
+    The preview's trailing line break and baseline were measured there
+    (findings, "Courier Prime"). 121 pages took 564–597 ms in the worker,
+    the interface thread's longest pause 8 ms. Reviewed with
+    user-code-review and one independent reviewer: found italic "fi" and
+    "fl" ligatures pulling characters off the grid, fixed (`liga` off) with
+    a test shown failing without it; added the fallback test and an
+    unstyled automatic (CONT’D) check. `mise run check` passed (605 Vitest
+    tests, both type checks, Biome, rustfmt, clippy, 39 Rust tests);
+    `vite build` built the worker with the font files the CSS uses.
+    Dependencies: `percent-encoding` added to `Cargo.toml` for the name
+    header (already in the build through Tauri); `@cantoo/pdf-lib` and
+    `@cantoo/fontkit` moved from development to runtime dependencies. Not
+    checked: a release build, Firefox and a desktop viewer (3.2), the
+    laptop.
+
+<a id="task-3-2"></a>
 
 - [ ] 3.2 — PDF verified against the engine
   - Status: todo
@@ -92,6 +126,10 @@ anything else. V1 is done when 7.4 is checked.
     and fixtures.
     The [calibration PDFs](architecture.md#setting-up-a-machine) are
     machine-local and not in git.
+  - Note (from 3.1): `writePdf` runs in Node given the font files, as
+    `src/core/pdf.test.ts` reads them, so a tool can write Tir's PDF of
+    each rebuilt calibration script. pdf.js reads Tir's PDFs word by word
+    (findings, "PDF libraries").
   - Done when: every page of Tir's PDF starts on the same line as the
     editor's, the text can be selected and searched, and the PDF opens
     correctly in Firefox and in a desktop PDF viewer.
@@ -326,6 +364,10 @@ anything else. V1 is done when 7.4 is checked.
   - Note (from 1.8): the settings directory follows Tauri's identifier
     (`dev.tir.desktop` in `tauri.conf.json`); changing the identifier
     moves the settings, and WebKit's storage, to a new directory.
+  - Note (from 3.1): the save and PDF workers have run only in the
+    development build, and the PDF worker fetches Courier Prime from the
+    page's own origin (`pdf-fonts.ts`); check a save and Export PDF… in
+    the release build, under its content security policy.
 
 - [ ] 7.2 — Desktop entry, icon and release hardening
   - Status: todo
@@ -467,3 +509,7 @@ that will close it.
   another program's `project.json` lists as a project Tir cannot read and
   Delete removes it after its confirmation (2.7 review). The default
   library, `~/Screenplays`, holds only Tir's projects.
+- Courier Prime holds 384 characters: Latin, with no Greek, Cyrillic,
+  combining accents, "ẞ" or emoji. The screen draws those in a fallback
+  font; the PDF embeds only Courier Prime, so they print as its missing
+  glyph (3.1). Embedding a fallback font for them would close it.

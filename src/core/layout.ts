@@ -172,7 +172,8 @@ function graphemeStarts(text: string): number[] | null {
   return starts;
 }
 
-function graphemeCount(text: string): number {
+/** Characters in `text` as the engine counts them: graphemes, each one cell of the line. */
+export function graphemeCount(text: string): number {
   const starts = graphemeStarts(text);
   return starts ? starts.length - 1 : text.length;
 }

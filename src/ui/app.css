@@ -542,13 +542,15 @@ body.focus #title-page {
 .title-form textarea {
   resize: vertical;
 }
-.title-toggle {
+.title-toggle,
+.draft-toggle {
   display: flex;
   align-items: center;
   gap: 9px;
   cursor: pointer;
 }
-.title-toggle input {
+.title-toggle input,
+.draft-toggle input {
   width: 15px;
   height: 15px;
   margin: 0;
@@ -570,11 +572,12 @@ body.focus #title-page {
 .title-preview [data-print] {
   white-space: pre;
 }
+/* The places come from TITLE_PAGE and PAGE in src/core/format.ts, which the PDF uses too. */
 .title-preview-centre {
   position: absolute;
-  top: 3.5in;
-  left: 1.5in;
-  width: 6in;
+  top: var(--title-top);
+  left: var(--margin-left);
+  right: var(--margin-right);
   text-align: center;
 }
 .title-preview-centre > :not([hidden]) ~ :not([hidden]) {
@@ -589,13 +592,13 @@ body.focus #title-page {
 .title-preview [data-print="contact"],
 .title-preview [data-print="draftDate"] {
   position: absolute;
-  bottom: 1in;
+  bottom: var(--margin-bottom);
 }
 .title-preview [data-print="contact"] {
-  left: 1.5in;
+  left: var(--margin-left);
 }
 .title-preview [data-print="draftDate"] {
-  right: 1in;
+  right: var(--margin-right);
   text-align: right;
 }
 

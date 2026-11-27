@@ -38,7 +38,7 @@ The user delegated these technical choices during planning.
 
 | Path | Responsibility |
 | --- | --- |
-| `src/core/` | Pure TypeScript script model, disk formats, layout and pagination, and derived data such as the scene and page map |
+| `src/core/` | Pure TypeScript script model, disk formats and the PDF, layout and pagination, and derived data such as the scene and page map |
 | `src/ui/`, `index.html` | The Desk, ProseMirror and the engine's page projection; saving, projects, drafts, and the bridge to the shell |
 | `src-tauri/` | Tauri and its capabilities; Rust owns settings, library access, native dialogs, and window closing |
 | `tools/` | Final Draft PDF parity and native editor placement and timing checks |
@@ -338,13 +338,15 @@ that will take the screen before changing the project file, so an
 unreadable replacement leaves the draft on screen and the library
 unchanged. Fork uses the saver's current script and title page. Rename
 moves the saver without replacing the editor state, keeping the caret
-and undo history. Export Fountain… serializes the saver's current script
-and title page; it does not depend on a successful library save.
+and undo history. Export PDF… and Export Fountain… write the saver's
+current script and title page; neither depends on a successful library
+save.
 
 The title page's form and preview scroll in a fixed layer over the
 mounted script. Hiding the script without unmounting it leaves its
 selection and undo history alone. The preview does not use the
-editor's page projection.
+editor's page projection; its places come from `TITLE_PAGE` and `PAGE`
+in `src/core/format.ts`, which the PDF uses too.
 
 ## Settings
 
@@ -417,6 +419,37 @@ Fountain apps hide as a note and Tir's reader treats as the element's type.
 A draft date that is not shown goes under `Hidden draft date:`. Each
 paragraph is checked by reading it back. What a round trip cannot keep is
 listed at the top of `write.ts`.
+
+## PDF
+
+`src/core/pdf.ts` writes a draft's PDF (brief, "PDF export") from the
+script with `@cantoo/pdf-lib` and `@cantoo/fontkit` (findings, "PDF
+libraries"), taking Courier Prime's four font files as bytes, so the core
+reads no file. It does no layout of its own: it paginates the elements and
+sets each of the engine's lines at its `x` and row, the page number, and
+what the sheets print besides the elements ((MORE), repeated cues, the
+automatic (CONT'D)), unstyled as on screen. Bold, italic and underline
+split a line into runs, each on the engine's character grid: a character
+spacing makes every character take its 7.2 pt cell, where Courier Prime's
+own advance is 7.195 pt, and ligatures are off, as in the editor. The
+baseline sits where CSS puts it in a 12 pt row, from the font's ascent and
+descent (findings, "Courier Prime"). The title page follows the preview's
+rules: the title always takes its line, empty fields close up, and a line
+break ending a field starts no line.
+Each face the script uses is embedded once as a subset; the outline (one
+bookmark per scene, from `ScriptMap`) and the page labels are written as
+PDF dictionaries, since the library has neither. Text is black on white
+whatever the paper.
+
+Export PDF… in the draft menu asks whether to include the title page,
+then `pdf-export.ts` makes the PDF in a worker of its own
+(`pdf.worker.ts`), since a 120-page script takes over half a second; it
+falls back to the interface thread if no worker runs. Both load the fonts
+through `pdf-fonts.ts`, which fetches the files the editor's `@font-face`
+rules use. The page passes the PDF to `export_pdf` (`dialogs.rs`) as the
+request's raw body, with its suggested name, percent-encoded, in the
+`tir-name` header; the Rust side shows the Save dialog and publishes a new
+file as Export Fountain… does ([Writing files](#writing-files)).
 
 ## The editor
 

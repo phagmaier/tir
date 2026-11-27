@@ -259,6 +259,26 @@ Final Draft" is proprietary and cannot be bundled. Evidence:
 `google/fonts` `ofl/courierprime/CourierPrime-Regular.ttf`, measured with
 fontTools on 2026-11-26.
 
+- The OFL's requirement to stay under the licence "does not apply to any
+  document created using the fonts", and Courier Prime names no Reserved
+  Font Name, so a PDF may carry a subset of it. Evidence: the licence text
+  bundled as `src/ui/fonts/OFL-courierprime.txt`, read 2026-11-27.
+- All four faces have ascent 1600 and descent 700 of 2048 units, with
+  USE_TYPO_METRICS set and no line gap. CSS centres that 13.48 pt content
+  area in a 12 pt row, putting the baseline 8.64 pt below the row's top;
+  WebKitGTK 2.54.2 at 100% puts it at 12 px (9 pt), rounding the metrics to
+  whole pixels. The PDF uses 8.64 pt, 0.36 pt from the screen. Evidence:
+  fontkit's reading of the four files, and a zero-size inline block in a
+  Courier Prime row in the dev app, 2026-11-27.
+- Italic and Bold Italic carry a `liga` table that joins "fi" and "fl"
+  into one glyph of one character's width; Regular and Bold have none.
+  ProseMirror's stylesheet turns ligatures off in the editor
+  (`font-variant-ligatures: none`), and the PDF embeds the faces with
+  `liga` off, so every character keeps its cell. Without that, italic
+  "final" measured four characters wide in WebKitGTK and in the PDF.
+  Evidence: fontkit's feature lists for the four files; widths measured
+  in the dev app and read back from a PDF, 2026-11-27.
+
 ## Title page conventions
 
 Guides agree on a spec-script title page: the title centred in capitals
@@ -395,10 +415,10 @@ StudioBinder guides, read 2026-11-26.
 - Writing: `@cantoo/pdf-lib` (2.11) with `@cantoo/fontkit`, the maintained
   fork of pdf-lib (whose last release was 2022). It is pure JavaScript with
   its own types, takes and returns bytes, and runs the same in Node and in
-  WebKitGTK, so Stage 3's writer can live beside the core. It embeds and
-  subsets Courier Prime (7 KB for a page) and places text at exact
-  coordinates. It has no bookmark API: Stage 3 builds the PDF outline
-  dictionary itself (PDF 1.7, section 12.3.3).
+  WebKitGTK, so the writer lives in the core (architecture, "PDF"). It
+  embeds and subsets Courier Prime and places text at exact coordinates.
+  It has no bookmark or page label API, so Tir writes the outline (PDF
+  1.7, section 12.3.3) and page labels (12.4.2) as dictionaries itself.
 - Rejected: PDFKit 0.21 has bookmarks and a browser build, but its types
   (`@types/pdfkit` 0.17) lag the browser and byte-output APIs, and the
   latter is marked experimental; jsPDF is browser-first and installs
@@ -406,6 +426,22 @@ StudioBinder guides, read 2026-11-26.
 - Evidence: npm metadata and Context7 docs read 2026-11-26; a spike wrote a
   page in Courier Prime with the fork and read back every run's text and
   position with unpdf, which also adds a space run between separate runs.
+- `drawText` given a `font` adds a font resource to the page at every call,
+  so a run per call doubled a 121-page PDF (437 KB against 195 KB); Tir
+  sets a page's font only when the face changes. Subsets are named with a
+  random number after the PostScript name, not the six capitals and "+"
+  that PDF 1.7 (9.6.4) asks of a subset, so Tir names them itself
+  (`customName`); poppler's `pdffonts` then lists them as embedded subsets
+  with Unicode maps. With a character spacing set, pdf.js reads each word
+  as a run of its own and the spaces between as runs, so the text still
+  reads whole. Evidence: the PDF library's `PDFPage.setOrEmbedFont` and
+  `CustomFontEmbedder.embedIntoContext`; exports of the 121-page `feature`
+  fixture; `pdffonts` 2026-11-27.
+- Writing a 121-page script takes 340–450 ms in Node and 560–600 ms in a
+  WebKitGTK worker (310–560 ms on the interface thread), most of it
+  fontkit shaping each string into glyphs, so the export runs in a worker:
+  the interface thread's longest pause while it ran was 8 ms. Evidence: a
+  CPU profile in Node and timings in the dev app, 2026-11-27.
 
 ## Reading screenplay PDFs
 

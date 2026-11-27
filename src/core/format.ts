@@ -11,8 +11,24 @@ export const PAGE = {
   heightIn: 11,
   topMarginIn: 1,
   bottomMarginIn: 1,
+  /** Where action and scene headings start, and the title page's lines. */
+  leftMarginIn: 1.5,
+  /** The page number and the title page's draft and date end this far from the right edge. */
+  rightMarginIn: 1,
   /** The header, holding the page number, sits this far from the top edge. */
   headerIn: 0.5,
+} as const;
+
+/**
+ * The title page's fixed places (brief, "Title page"; findings, "Title page
+ * conventions"), which its preview and the PDF share: the title, credit,
+ * authors and source centred between the side margins from a third of the
+ * way down, a blank line between fields; the contact at the bottom left and
+ * the draft and date at the bottom right, each ending on the bottom margin.
+ */
+export const TITLE_PAGE = {
+  /** The title's first line starts this far from the top edge. */
+  centreTopIn: 3.5,
 } as const;
 
 /** Courier at 12 pt: 10 characters per inch and 6 lines per inch. */

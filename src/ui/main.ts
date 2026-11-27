@@ -29,6 +29,7 @@ import {
   unplaced,
 } from "./opening.ts";
 import { pagePosition } from "./page-position.ts";
+import { makePdf } from "./pdf-export.ts";
 import { PageCounter, Projects } from "./projects.ts";
 import { ProjectsScreen } from "./projects-screen.ts";
 import { savedIndicator } from "./saved-indicator.ts";
@@ -133,6 +134,10 @@ const draftSide = {
   remove: deleteDraft,
   activate: setActiveDraft,
   exportFountain: (name: string, text: string) => invoke<void>("export_fountain", { name, text }),
+  pdf: makePdf,
+  // The PDF goes as the request's body; a header carries its suggested name.
+  exportPdf: (name: string, bytes: Uint8Array) =>
+    invoke<void>("export_pdf", bytes, { headers: { "tir-name": encodeURIComponent(name) } }),
   tell,
 };
 let draftAction: Promise<void> | null = null;

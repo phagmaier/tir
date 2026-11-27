@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@cantoo/fontkit':
+        specifier: 2.0.12
+        version: 2.0.12
+      '@cantoo/pdf-lib':
+        specifier: 2.11.1
+        version: 2.11.1(html-entities@2.6.0)
       '@tauri-apps/api':
         specifier: 2.12.5
         version: 2.12.5
@@ -33,12 +39,6 @@ importers:
       '@biomejs/biome':
         specifier: ^2.6.9
         version: 2.6.9
-      '@cantoo/fontkit':
-        specifier: ^2.0.12
-        version: 2.0.12
-      '@cantoo/pdf-lib':
-        specifier: ^2.11.1
-        version: 2.11.1(html-entities@2.6.0)
       '@tauri-apps/cli':
         specifier: ^2.12.6
         version: 2.12.6

@@ -159,10 +159,12 @@ export class DraftMenu {
     fork.addEventListener("click", () => this.showFork(fork, active.name));
     const rename = button("draft-action", "Rename…");
     rename.addEventListener("click", () => this.ask("rename", active.name));
-    const exportDraft = button("draft-action", "Export Fountain…");
-    exportDraft.addEventListener("click", () => {
+    const exportPdf = button("draft-action", "Export PDF…");
+    exportPdf.addEventListener("click", () => this.askPdf(active.name));
+    const exportFountain = button("draft-action", "Export Fountain…");
+    exportFountain.addEventListener("click", () => {
       this.dismiss();
-      this.side.run({ kind: "export" });
+      this.side.run({ kind: "exportFountain" });
     });
     const remove = button("draft-action danger", "Delete…");
     remove.disabled = rows.length === 1;
@@ -175,7 +177,8 @@ export class DraftMenu {
       el("hr"),
       fork,
       rename,
-      exportDraft,
+      exportPdf,
+      exportFountain,
       remove,
     );
     this.menu.hidden = false;
@@ -334,6 +337,38 @@ export class DraftMenu {
     this.dialog.replaceChildren(form);
     this.dialog.showModal();
     input?.select();
+    window.addEventListener("keydown", this.escape, true);
+  }
+
+  /** Whether the PDF has the title page (brief, "PDF export"): ticked each time. */
+  private askPdf(active: string): void {
+    this.dismiss();
+    const form = el("form");
+    const heading = el("h2", "", "Export PDF");
+    heading.id = "draft-dialog-title";
+    const note = el("p", "", `“${active}”, page for page as Tir shows it, on white paper.`);
+    note.id = "draft-pdf-note";
+    this.dialog.setAttribute("aria-describedby", note.id);
+    const titlePage = el("input");
+    titlePage.type = "checkbox";
+    titlePage.checked = true;
+    const toggle = el("label", "draft-toggle");
+    toggle.append(titlePage, "Include the title page");
+    const cancel = button("btn quiet", "Cancel");
+    cancel.addEventListener("click", () => this.dialog.close());
+    const confirm = button("btn primary", "Export…", "submit");
+    const actions = el("div", "actions");
+    actions.append(cancel, confirm);
+    form.append(heading, note, toggle, actions);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!this.dialog.open) return;
+      this.dialog.close();
+      this.side.run({ kind: "exportPdf", titlePage: titlePage.checked });
+    });
+    confirm.autofocus = true;
+    this.dialog.replaceChildren(form);
+    this.dialog.showModal();
     window.addEventListener("keydown", this.escape, true);
   }
 }

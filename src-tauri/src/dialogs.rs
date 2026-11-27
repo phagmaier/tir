@@ -2,14 +2,21 @@
 //! chosen paths: import reads a source and export publishes a new file.
 
 use crate::files;
+use percent_encoding::percent_decode_str;
 use serde::Serialize;
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const FOUNTAIN: &str = "fountain";
+const PDF: &str = "pdf";
+/// The request header holding an exported PDF's suggested file name,
+/// percent-encoded, since a header holds only ASCII.
+const NAME_HEADER: &str = "tir-name";
 
 /// The folder the Open dialog last picked a file in, where it opens next.
 #[derive(Default)]
@@ -57,30 +64,76 @@ pub fn open_fountain(
 /// The page suggests a file name; only the native dialog supplies the path.
 #[tauri::command(async)]
 pub fn export_fountain(window: WebviewWindow, name: String, text: String) -> Result<(), String> {
+    export(&window, Export::FOUNTAIN, name, text.as_bytes())
+}
+
+/// Like `export_fountain`, with the PDF as the request's raw body, which
+/// JSON would carry as a list of numbers, and its suggested name in the
+/// `tir-name` header.
+#[tauri::command]
+pub async fn export_pdf(window: WebviewWindow, request: Request<'_>) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("The PDF did not arrive as a file.".into());
+    };
+    let name = request
+        .headers()
+        .get(NAME_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| percent_decode_str(value).decode_utf8().ok())
+        .ok_or("The PDF arrived without a file name.")?;
+    export(&window, Export::PDF, name.into_owned(), bytes)
+}
+
+/// What an export writes: its Save dialog's title, the kind of file, and its extension.
+struct Export {
+    title: &'static str,
+    kind: &'static str,
+    extension: &'static str,
+}
+
+impl Export {
+    const FOUNTAIN: Self = Self {
+        title: "Export Fountain",
+        kind: "Fountain",
+        extension: FOUNTAIN,
+    };
+    const PDF: Self = Self {
+        title: "Export PDF",
+        kind: "PDF",
+        extension: PDF,
+    };
+}
+
+fn export(window: &WebviewWindow, to: Export, name: String, bytes: &[u8]) -> Result<(), String> {
     let suggestion = Path::new(&name);
-    if suggestion.file_name() != Some(std::ffi::OsStr::new(&name)) || !is_fountain(suggestion) {
-        return Err("The suggested name is not a Fountain file name.".into());
+    if suggestion.file_name() != Some(OsStr::new(&name)) || !has_extension(suggestion, to.extension)
+    {
+        return Err(format!(
+            "The suggested name is not a {} file name.",
+            to.kind
+        ));
     }
     let Some(picked) = window
         .dialog()
         .file()
-        .set_parent(&window)
-        .set_title("Export Fountain")
+        .set_parent(window)
+        .set_title(to.title)
         .set_file_name(name)
-        .add_filter("Fountain", &[FOUNTAIN])
+        .add_filter(to.kind, &[to.extension])
         .blocking_save_file()
     else {
         return Ok(());
     };
-    write_fountain(
+    write_new(
         picked.into_path().map_err(|error| error.to_string())?,
-        &text,
+        to.extension,
+        bytes,
     )
 }
 
 fn read_fountain(path: &Path) -> Result<Opened, String> {
     let name = file_name(path);
-    if !is_fountain(path) {
+    if !has_extension(path, FOUNTAIN) {
         return Err(format!("“{name}” is not a .fountain file."));
     }
     let text = files::read_text(path).map_err(|error| {
@@ -93,14 +146,16 @@ fn read_fountain(path: &Path) -> Result<Opened, String> {
     Ok(Opened { name, text })
 }
 
-fn write_fountain(mut path: PathBuf, text: &str) -> Result<(), String> {
+/// Writes an export to a new file at `path`, with `extension` added when
+/// the name has none; it never replaces anything there.
+fn write_new(mut path: PathBuf, extension: &str, bytes: &[u8]) -> Result<(), String> {
     if path.extension().is_none() {
-        path.set_extension(FOUNTAIN);
+        path.set_extension(extension);
     }
-    if !is_fountain(&path) {
-        return Err("Choose a name that ends in .fountain.".into());
+    if !has_extension(&path, extension) {
+        return Err(format!("Choose a name that ends in .{extension}."));
     }
-    files::create_new(&path, text.as_bytes()).map_err(|error| {
+    files::create_new(&path, bytes).map_err(|error| {
         let name = file_name(&path);
         if error.kind() == io::ErrorKind::AlreadyExists {
             format!("“{name}” already exists. Choose a new file name; Tir won't replace it.")
@@ -153,9 +208,9 @@ pub fn already_open(app: &AppHandle) {
         .show(move |_| exit.exit(0));
 }
 
-fn is_fountain(path: &Path) -> bool {
+fn has_extension(path: &Path, extension: &str) -> bool {
     path.extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case(FOUNTAIN))
+        .is_some_and(|found| found.eq_ignore_ascii_case(extension))
 }
 
 fn file_name(path: &Path) -> String {
@@ -203,23 +258,45 @@ mod tests {
         let imported = read_fountain(&source).unwrap();
         let export = "Title: Harbour\n\nThe tide is in.\n";
         assert!(
-            write_fountain(source.clone(), export)
+            write_new(source.clone(), FOUNTAIN, export.as_bytes())
                 .unwrap_err()
                 .contains("already exists")
         );
 
         let alias = dir.0.join("alias.fountain");
         std::os::unix::fs::symlink(&source, &alias).unwrap();
-        assert!(write_fountain(alias.clone(), export).is_err());
+        assert!(write_new(alias.clone(), FOUNTAIN, export.as_bytes()).is_err());
         assert_eq!(fs::read_link(alias).unwrap(), source);
         assert_eq!(fs::read(&source).unwrap(), imported.text.as_bytes());
 
-        write_fountain(dir.0.join("export"), export).unwrap();
+        write_new(dir.0.join("export"), FOUNTAIN, export.as_bytes()).unwrap();
         let reopened = read_fountain(&dir.0.join("export.fountain")).unwrap();
         assert_eq!(reopened.text, export);
         assert_eq!(
             dir.names(),
             ["alias.fountain", "export.fountain", "source.fountain"]
         );
+    }
+
+    #[test]
+    fn exports_a_pdf_byte_for_byte_only_under_a_pdf_name() {
+        let dir = TempDir::new();
+        // Not UTF-8, as a PDF's binary marker line is not.
+        let pdf = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n";
+        assert!(
+            write_new(dir.0.join("Salt Line.fountain"), PDF, pdf)
+                .unwrap_err()
+                .contains("ends in .pdf")
+        );
+        write_new(dir.0.join("Salt Line - First Draft"), PDF, pdf).unwrap();
+        let written = dir.0.join("Salt Line - First Draft.pdf");
+        assert_eq!(fs::read(&written).unwrap(), pdf);
+        assert!(
+            write_new(written.clone(), PDF, b"%PDF-1.7\n")
+                .unwrap_err()
+                .contains("already exists")
+        );
+        assert_eq!(fs::read(&written).unwrap(), pdf);
+        assert_eq!(dir.names(), ["Salt Line - First Draft.pdf"]);
     }
 }

@@ -353,10 +353,17 @@ intact.
 
 - The title page, included by default, then the script pages exactly as the
   editor shows them.
+- **Export PDF…** in the draft menu first asks, in a dialog, whether to
+  include the title page, ticked each time *(the user's choice,
+  2026-11-27)*; then the system's Save dialog picks a new file. Like
+  Export Fountain…, it exports the draft on screen.
 - Page numbers at the top right from page 2.
 - Courier Prime embedded.
 - One PDF bookmark per scene, for the viewer's sidebar; invisible on paper.
-- File name "Title - Draft.pdf".
+  *(agent-selected: a bookmark reads as its heading prints, and an empty
+  heading as "Scene 2"; a viewer numbers the pages as they print, the
+  title page outside the numbering.)*
+- File name "Title - Draft.pdf": the project's name and the draft's.
 
 ## Look
 

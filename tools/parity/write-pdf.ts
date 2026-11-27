@@ -1,7 +1,7 @@
 /**
  * Writes a script as a PDF laid out as Final Draft lays out its own, from
- * Tir's pagination: the parity tool's test fixtures. Stage 3 writes the
- * real PDF export.
+ * Tir's pagination: the parity tool's test fixtures, with Final Draft's
+ * options. Tir's own export is `src/core/pdf.ts`.
  */
 import { readFileSync } from "node:fs";
 import fontkit from "@cantoo/fontkit";

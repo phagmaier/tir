@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readDraft, writeDraft } from "../core/draft-file.ts";
 import { readFountain } from "../core/fountain/read.ts";
 import { newTitlePage, type ProjectInfo, type Script } from "../core/model.ts";
+import type { PdfOptions } from "../core/pdf.ts";
 import {
   newProject,
   withActiveDraft,
@@ -60,6 +61,7 @@ function desk() {
   saver.show({ project, file: FIRST }, titlePage, doc(original));
   const messages: string[] = [];
   const exports: { name: string; text: string }[] = [];
+  const pdfs: { name: string; script: Script; options: PdfOptions }[] = [];
   const side: Parameters<typeof changeDraft>[1] = {
     texts: async (script) => draftTexts(script),
     read: async (_project, file) => {
@@ -75,6 +77,12 @@ function desk() {
     activate: async (from, file) => publish(withActiveDraft(from.info, file)),
     exportFountain: async (name, text) => {
       exports.push({ name, text });
+    },
+    // The PDF's bytes stand for the script and options it was made from.
+    pdf: async (script, options) => new TextEncoder().encode(JSON.stringify({ script, options })),
+    exportPdf: async (name, bytes) => {
+      const { script, options } = JSON.parse(new TextDecoder().decode(bytes));
+      pdfs.push({ name, script, options });
     },
     rename: async (from, file, name) => {
       const renamed = withDraftRenamed(from.info, file, name, [...files.keys()]);
@@ -93,6 +101,7 @@ function desk() {
   };
   return {
     exports,
+    pdfs,
     fail,
     files,
     messages,
@@ -176,7 +185,7 @@ describe("draft actions", () => {
     fail.save = true;
     edit("EXT. FLOODED HARBOUR - NIGHT");
     saver.editTitlePage(revised);
-    await act({ kind: "export" });
+    await act({ kind: "exportFountain" });
     const [exported] = exports;
     if (!exported) throw new Error("Expected a Fountain export");
     expect(exported.name).toBe("Salt Line - First Draft.fountain");
@@ -185,6 +194,28 @@ describe("draft actions", () => {
       leftOut: [],
     });
     expect(contents(files, FIRST)).toEqual({ ok: true, script: original });
+  });
+
+  it("exports a PDF of the draft on screen, with the title page as chosen, even if saving fails", async () => {
+    const { act, edit, fail, pdfs, saver } = desk();
+    const revised = { ...titlePage, contact: "Ada Shaw\nada@example.test" };
+    fail.save = true;
+    edit("EXT. FLOODED HARBOUR - NIGHT");
+    saver.editTitlePage(revised);
+    await act({ kind: "exportPdf", titlePage: true });
+    await act({ kind: "exportPdf", titlePage: false });
+    expect(pdfs).toEqual([
+      {
+        name: "Salt Line - First Draft.pdf",
+        script: { titlePage: revised, elements: scene("EXT. FLOODED HARBOUR - NIGHT") },
+        options: { titlePage: true },
+      },
+      {
+        name: "Salt Line - First Draft.pdf",
+        script: { titlePage: revised, elements: scene("EXT. FLOODED HARBOUR - NIGHT") },
+        options: { titlePage: false },
+      },
+    ]);
   });
 
   it("neither switches nor deletes when the other draft cannot be read", async () => {

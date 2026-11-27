@@ -1,4 +1,4 @@
-import { FONT_SIZE_PT, LINES_PER_INCH, PAGE } from "../core/format.ts";
+import { FONT_SIZE_PT, LINES_PER_INCH, PAGE, TITLE_PAGE } from "../core/format.ts";
 import { newTitlePage, type TitlePage } from "../core/model.ts";
 
 const TEXT_FIELDS = ["title", "credit", "authors", "source", "contact", "draftDate"] as const;
@@ -34,7 +34,16 @@ export class TitlePageView {
     const toggle = required<HTMLInputElement>(this.form, "#tp-show-draft-date");
     const dateField = required<HTMLElement>(root, "#tp-draft-field");
     const preview = required<HTMLElement>(root, ".title-preview");
-    preview.style.cssText = `--paper-width: ${PAGE.widthIn}in; --paper-height: ${PAGE.heightIn}in; --font-size: ${FONT_SIZE_PT}pt; --row-height: calc(1in / ${LINES_PER_INCH})`;
+    preview.style.cssText = [
+      `--paper-width: ${PAGE.widthIn}in`,
+      `--paper-height: ${PAGE.heightIn}in`,
+      `--font-size: ${FONT_SIZE_PT}pt`,
+      `--row-height: calc(1in / ${LINES_PER_INCH})`,
+      `--title-top: ${TITLE_PAGE.centreTopIn}in`,
+      `--margin-left: ${PAGE.leftMarginIn}in`,
+      `--margin-right: ${PAGE.rightMarginIn}in`,
+      `--margin-bottom: ${PAGE.bottomMarginIn}in`,
+    ].join("; ");
     const print = TEXT_FIELDS.map(
       (key) => [key, required<HTMLElement>(preview, `[data-print="${key}"]`)] as const,
     );

@@ -2,6 +2,7 @@ import { readDraft } from "../core/draft-file.ts";
 import { safeName } from "../core/file-names.ts";
 import { writeFountain } from "../core/fountain/write.ts";
 import type { Script } from "../core/model.ts";
+import type { PdfOptions } from "../core/pdf.ts";
 import { withoutDraft } from "../core/project-file.ts";
 import type { DraftTexts } from "./draft-texts.ts";
 import type { Project } from "./library.ts";
@@ -11,7 +12,9 @@ import type { Place, Saver } from "./saving.ts";
 export type DraftAction =
   | { readonly kind: "switch"; readonly file: string }
   | { readonly kind: "fork" | "rename"; readonly name: string }
-  | { readonly kind: "delete" | "export" };
+  | { readonly kind: "delete" }
+  | { readonly kind: "exportFountain" }
+  | ({ readonly kind: "exportPdf" } & PdfOptions);
 
 interface DraftSide {
   texts(script: Script): Promise<DraftTexts>;
@@ -22,6 +25,9 @@ interface DraftSide {
   remove(project: Project, file: string): Promise<Project>;
   activate(project: Project, file: string): Promise<Project>;
   exportFountain(name: string, text: string): Promise<void>;
+  /** Makes the PDF of `script` (`src/core/pdf.ts`). */
+  pdf(script: Script, options: PdfOptions): Promise<Uint8Array>;
+  exportPdf(name: string, bytes: Uint8Array): Promise<void>;
   tell(title: string, message: string): Promise<void>;
 }
 
@@ -41,13 +47,17 @@ export async function changeDraft(
   if (action.kind === "delete" && info.drafts.length === 1) return null;
 
   const name = info.drafts.find((draft) => draft.file === file)?.name ?? file;
-  if (action.kind === "export") {
+  if (action.kind === "exportFountain" || action.kind === "exportPdf") {
     // Export the draft on screen even if the library cannot save it.
+    const base = safeName(`${info.name} - ${name}`);
+    const script = saver.snapshot();
     try {
-      await side.exportFountain(
-        `${safeName(`${info.name} - ${name}`)}.fountain`,
-        writeFountain(saver.snapshot()),
-      );
+      if (action.kind === "exportFountain") {
+        await side.exportFountain(`${base}.fountain`, writeFountain(script));
+      } else {
+        const pdf = await side.pdf(script, { titlePage: action.titlePage });
+        await side.exportPdf(`${base}.pdf`, pdf);
+      }
     } catch (error) {
       await side.tell(
         `Tir could not export “${name}”`,
