@@ -1,6 +1,7 @@
 import { Desk } from "./desk.ts";
 import { devScript } from "./dev-fixtures.ts";
 import { mountEditor } from "./editor.ts";
+import { listenForFileKeys, rustSide, ScriptFiles } from "./files.ts";
 import { pagePosition } from "./page-position.ts";
 import { loadSettings, settingsSaver } from "./settings-file.ts";
 import { sceneSidebar } from "./sidebar.ts";
@@ -8,10 +9,10 @@ import { elementToolbar } from "./toolbar.ts";
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement;
 
-// Until a draft can be opened (task 1.9), Tir shows a fixture script:
-// `?fixture=NAME` picks one (architecture, "Measuring the editor").
+// Tir starts on a fixture script, `?fixture=NAME` picking one (architecture,
+// "Measuring the editor"), until Stage 2 opens the last project; Ctrl+O
+// opens a file in its place.
 const script = devScript(new URLSearchParams(location.search).get("fixture"));
-byId("title").textContent = script.titlePage.title || "Untitled";
 // The settings come first, so the script opens at the zoom it was left at.
 const settings = await loadSettings();
 const editor = mountEditor(byId("pages"), script.elements, {
@@ -30,4 +31,18 @@ const desk = new Desk(editor, settings, settingsSaver(), {
   pages: byId("pages"),
   toast: byId("toast"),
 });
+const title = byId("title");
+const files = new ScriptFiles(
+  {
+    doc: () => editor.view.state.doc,
+    open: (elements) => editor.open(elements),
+    title: (text) => {
+      title.textContent = text;
+    },
+    saved: (name) => desk.toast(`Saved · ${name}`),
+  },
+  rustSide,
+  script.titlePage,
+);
+listenForFileKeys(files);
 if (import.meta.env.DEV) Object.assign(globalThis, { tirView: editor.view, tirDesk: desk });

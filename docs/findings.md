@@ -93,6 +93,10 @@ numbers and apostrophes: the calibration PDFs (see "Calibration").
 - **Format Assistant**, Final Draft's formatting check, opens from Tools >
   Format Assistant and steps through its findings with Fix and Ignore; it
   has no default key.
+- **File**: Open is Ctrl+O on Windows and Cmd+O on a Mac, Save Ctrl+S and
+  Cmd+S. Save As is Cmd+Shift+S on a Mac; the Windows table lists no key
+  for it (its Ctrl+Shift+P is Save As PDF), and Ctrl+Shift+O there shows
+  or hides the outline in the script.
 - Evidence: Final Draft's knowledge base, "What keyboard shortcuts can I use
   in Final Draft?" (2024; Go To in both Edit tables, Zoom In and Zoom Out in
   the Mac View table and the Windows Beat Board table), "What info can I
@@ -275,6 +279,23 @@ StudioBinder guides, read 2026-11-26.
   spell checker stays off in a Tauri app unless the app turns it on through
   the WebKitGTK API. Evidence: no match for "spell" in the wry 0.58.2 crate
   source.
+- tauri-plugin-dialog 2.8.4 (Apache-2.0 or MIT; it brings rfd 0.17.2,
+  tauri-plugin 2.7.4 and tauri-plugin-fs 2.7.1, the rest already in the
+  build) shows GTK 3 dialogs through rfd by default, run on the main
+  thread; its `blocking_*` calls must not be made from the main thread, so
+  Tir's commands that call them are `async`. Its permissions gate only the
+  page's calls to its own commands; Rust calls need none, and Tir's
+  capability stays `core:default`. It injects a script that replaces
+  `window.alert` and `window.confirm` with calls to its `message` command,
+  which the capability refuses. Its Save dialog asks before replacing the
+  file named in it (`gtk_file_chooser_set_do_overwrite_confirmation`). A
+  message box shows its title twice, as the window's title and in bold
+  above the message, so Tir titles one with its headline. Hyprland tiled
+  the file dialogs beside the window and floated message boxes over it;
+  the GTK file chooser printed `Gtk-CRITICAL` assertions about tree models
+  while a path was typed, and worked. Evidence: the crate sources
+  (`desktop.rs`, `lib.rs`, `init-iife.js`; rfd's `gtk3/file_dialog`), and
+  the native check of task 1.9, 2026-11-26.
 
 ## Fountain
 
@@ -531,6 +552,60 @@ pairs at 100% and 110%: a zoom step 2–3 ms (p95 4), 9–15 ms (p95 18–20),
 10–15 ms (16), 19–28 ms (29–51), 19–25 ms. Focus mode's change of the
 space around the page costs several times a zoom step; the cause was not
 traced.
+
+**Opening and saving leave typing as it was** (task 1.9; a capturing
+`keydown` listener for the file keys is all they add to a keystroke). Two
+full runs of `mise run editor-timing` at 100% gave ordinary typing
+10–11 ms layout (p95 14–25), 17–19 ms frame, 15–23 ms busy; a line added
+or removed 11–12 ms (14–22), 18–20 ms, 21–23 ms; a page added 15 and
+18 ms (21–24), 23–28 ms, 29 ms, and the Backspace removing it 57–58 ms
+(61), 62 ms, 67–68 ms; the `feature` line change 15–16 ms (18–21),
+23–24 ms, 23–29 ms; typing in a cue with the popup open 11–12 ms (13–17),
+17–19 ms, 22–24 ms; a zoom step 3–4 ms (4), 9–11 ms, 9–10 ms; focus mode
+on 13–14 ms (14–15), 20 ms, 22 ms, off 11–14 ms (16), 20–24 ms,
+25–26 ms. The page added and focus mode on, above task 1.8's runs,
+measured the same in alternating 20-pair runs with the file keys'
+listener switched off (16 and 16 ms; 12 and 12 ms) and on (15, 16 and
+17 ms; 13, 13 and 12 ms): the day's, not the change.
+
+**Opening the 120-page script takes a quarter of a second, and saving it
+waits on the disk** (task 1.9, through the real dialogs, timed in the page
+from the reply to `open_script`, which brings the file's text; five opens
+of each file, each after opening `every.tir`, so the whole document was
+new):
+
+| File | Reading the text | New state, projection, sheets | View update | Layout | Frame |
+| --- | --- | --- | --- | --- | --- |
+| `spike.tir`, the fixture's draft (270 KB) | 6–10 ms | 29–65 ms | 149–158 ms | 213–258 ms | 241–378 ms |
+| `spike.fountain`, its Fountain (196 KB) | 50–84 ms | 26–31 ms | 146–150 ms | 265–301 ms | 269–306 ms |
+
+*Reading the text* is `readDraft` or `readFountain` with the check for
+changes not saved; *view update* is ProseMirror's `updateState`, drawing
+2,280 new paragraphs; *layout* and *frame* run from the reply to a forced
+layout of the editor after `Editor.open`, and to the next frame. About
+22 ms of the layout is restyling every paragraph after the update:
+`nodeDOM` walks the document's children from the start each time, so
+2,280 calls took 21–24 ms in the page. The reply came within 5 ms of the
+window's `focus` event as the dialog closed, so the Rust side's read and
+the IPC are a few milliseconds. A Ctrl+S save of the
+same draft, ten times: 3–9 ms of the page's work (`fromDocument`, and
+`writeDraft` reading its output back), then 117–172 ms until the Rust side
+replied (the write, both syncs and the IPC), which the page awaits without
+blocking.
+
+**A new editor state makes ProseMirror make every plugin's view again**
+(prosemirror-view 1.44, `updatePluginViews`): it compares the old and new
+states' plugin arrays, and `EditorState.create` always makes a new one, so
+`updateState` with a new state destroys each plugin's view and calls its
+`view` again; a view that added DOM listeners would add them twice. It
+also resets the editable element's own scroll, not the document's. Seen
+in the source and in task 1.9's opens, where the scene list and the page
+position each followed the new script.
+
+**The file keys reach the page** (task 1.9, the Hyprland dispatcher):
+WebKitGTK and Tauri deliver Ctrl+O, Ctrl+S and Ctrl+Shift+S to the
+page's `keydown`. This Hyprland binds no Ctrl or Ctrl+Shift key but
+Ctrl+Print (`hyprctl binds`, 2026-11-26).
 
 **A jump to a scene or a page takes a frame** (task 1.7, real clicks
 through `wlrctl` and keys through the dispatcher, timed as above from the

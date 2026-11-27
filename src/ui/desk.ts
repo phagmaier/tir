@@ -213,7 +213,8 @@ export class Desk {
     }
   }
 
-  private toast(text: string): void {
+  /** Shows `text` at the top of the window for a moment (prototype piece 5's toast). */
+  toast(text: string): void {
     const { toast } = this.parts;
     toast.textContent = text;
     toast.classList.add("show");

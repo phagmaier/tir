@@ -34,9 +34,9 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; stopped after 1.8 as the user asked
+- Active: none; stopped after 1.9 as the user asked
 - Blockers: none
-- Next: 1.9 Open and save a draft file, when the user says to continue
+- Next: 1.10 Review: Stage 1, when the user says to continue
 
 ## Stages
 
@@ -842,8 +842,8 @@ saving arrive in Stage 2.
     built the top-level `await` in `main.ts`. `mise run check` passed (507
     Vitest tests, both type checks, Biome and Rust checks with 5 tests).
 
-- [ ] 1.9 — Open and save a draft file
-  - Status: todo
+- [x] 1.9 — Open and save a draft file
+  - Status: done
   - Depends on: 1.6
   - Spec: brief "Storage"
   - Do: Open a draft file or a Fountain file, and save the draft with
@@ -856,6 +856,83 @@ saving arrive in Stage 2.
   - Note (from 1.7): the sidebar and page position read the projection in
     their plugin views' `update`; a document put in place without a
     transaction must rebuild the projection before the view updates.
+  - Decision (2026-11-26): asked where Stage 1 saves, given design rule 4,
+    the user chose saving only to files picked (Ctrl+S writes back to the
+    `.tir` opened or last saved, the system's Save dialog asks when there
+    is none, Ctrl+Shift+S always asks, only `.tir` files are written, and
+    rule 4 gains an exception until 2.2) over a library folder set in the
+    settings file now and saving only a `.tir` that was opened; Ctrl+O for
+    opening until the Projects screen takes it, over Ctrl+Shift+O; a
+    question before discarding changes on open; refusals and failed saves
+    in a system message box and "Saved · NAME.tir" in the existing toast.
+    Recorded in brief "Elements and keys" (File keys) and "Saving and
+    backup", architecture rule 4 and "Opening and saving", and AGENTS.md.
+  - Evidence: 2026-11-26. `src/ui/files.ts` (the keys, opening, saving,
+    the question), `src-tauri/src/script_file.rs` (the dialogs, through
+    `tauri-plugin-dialog` from Rust only, and the paths, kept in Rust) and
+    `src-tauri/src/files.rs` (temporary file, sync, rename, directory sync,
+    the temporary file removed on failure; UTF-8 read strictly), which
+    `settings.rs` now uses. `Editor.open` gives the view a new state after
+    rebuilding the projection, sheets and frame; the toolbar, scene list
+    and page position add their listeners once, since a new state makes
+    ProseMirror remake plugin views (findings, "Editor"). New dependency:
+    `tauri-plugin-dialog` 2.8.4, Rust only (it brings rfd 0.17.2,
+    tauri-plugin 2.7.4 and tauri-plugin-fs 2.7.1), and `serde` made direct
+    (already in the build); no JavaScript package; the capability stays
+    `core:default`, and the page's `window.confirm`, which the plugin
+    rewires, was refused. Tests in temporary directories:
+    `src/ui/files.test.ts` (10, through the editor's own `scriptState` and
+    the harness): `everyFormat` and the 120-page fixture saved, opened back
+    equal with their title, and saved again byte for byte without a
+    dialog; a hand-written Fountain file opened as its four elements and
+    title; a damaged and a newer draft refused whole with `readDraft`'s
+    message, nothing asked, the script and its save target unchanged;
+    opening over changes asks and Cancel keeps them, and nothing is asked
+    when unchanged, undone back or saved; a cancelled or failed save
+    leaves the changes unsaved; after opening, Ctrl+Z changes nothing and
+    a cue offers only the opened script's names; the three keys. Dropping
+    the title page on open, or the saved mark on save, each failed tests.
+    Rust (11 tests): a 200 KB draft-like text replaced and read back
+    identical, only the file left; a write failing half way leaves the old
+    file whole and no temporary file; a failed rename leaves none;
+    Windows-1252 bytes refused as not UTF-8; saving only to `.tir` paths (a
+    `.fountain` name gains `.tir`). Native, through the Hyprland
+    dispatcher, `wtype` and `wlrctl`, with the settings and drafts in
+    temporary directories: Ctrl+O, Ctrl+S and Ctrl+Shift+S reached the
+    page and Hyprland binds none; the GTK Open and Save dialogs worked; a
+    scene written in the app over `every.tir` (heading, italic, cue,
+    dialogue, centred, dual) saved in place, saved as `written.tir`,
+    reopened equal (`Node.eq`) and saved again byte for byte; opening
+    `spike.fountain` left it unchanged (sha256), its Ctrl+S suggested
+    `spike.tir` beside it, and the draft saved from it equals the one
+    written from the model; after each open the title, scene list, "Page 1
+    of N", the frame at 100% and 125%, the scroll at the top and the caret
+    and focus were right, and Ctrl+Z and Ctrl+Shift+Z changed nothing; a
+    damaged and a newer draft and a Windows-1252 Fountain file were refused
+    in a message box with the script unchanged, and Ctrl+S then still
+    saved to the script's own file; Cancel on the question kept the
+    changes and Discard opened; cancelled dialogs changed nothing; no
+    `.tmp` file was left. After opening, the dead acute then `e` and
+    Compose `o` `c` entered "é©" in an action and a cue. `mise run
+    editor-timing` at 100%, two runs: typing as in findings, the page added
+    (15 and 18 ms) and focus mode on (13–14 ms) measuring the same in
+    alternating runs with the file keys' listener off and on. Opening the
+    120-page draft took 213–258 ms to layout and 241–378 ms to the frame,
+    its Fountain 265–301 and 269–306 ms; Ctrl+S, 3–9 ms in the page and
+    117–172 ms in the Rust side (findings, "Editor"). `mise run
+    editor-placement` on `every`, `feature` (5,040 lines, 83 marks),
+    `spike` (4,200 lines), `spike.tir` opened over `every.tir` and
+    `feature.tir` opened over `spike.tir`: every line, click, shown text
+    and mark in place. Screenshots of the dialogs, the message boxes, the
+    question and the toast. Reviewed with user-code-review at HEAD
+    `d78f0c0` plus uncommitted changes: fixed message boxes showing "Tir"
+    twice (they now carry a headline), and a path a refused file could
+    leave in the Rust side's state (cleared at each open); dropped a test
+    of message wording; recorded the 22 ms restyle in an open (findings).
+    `vite build` built; `mise run check` passed (517 Vitest tests, both
+    type checks, Biome, rustfmt, clippy, 11 Rust tests). Not checked
+    natively: a save failing on disk (Rust tests cover it), and the
+    laptop.
 
 - [ ] 1.10 — Review: Stage 1
   - Status: todo
@@ -932,6 +1009,14 @@ saving arrive in Stage 2.
   - Done when: tests show saves happen after a pause and on close, the
     Fountain copy always matches the draft, and closing mid-save loses
     nothing.
+  - Note (from 1.9): 1.9's stand-in is `src/ui/files.ts` and
+    `src-tauri/src/script_file.rs` (architecture, "Opening and saving").
+    Retiring it also removes design rule 4's Stage 1 exception (Tir writing
+    `.tir` files outside the library) and the brief's "Until automatic
+    saving arrives" bullet. Saves already go through `files::replace`
+    (architecture, "Writing files"); a Ctrl+S save of the 120-page draft
+    waited 117–172 ms for the Rust side (writing, both syncs and the IPC)
+    after 3–9 ms of the page's own work (findings, "Editor").
 
 - [ ] 2.3 — Projects screen
   - Status: todo
@@ -943,6 +1028,10 @@ saving arrive in Stage 2.
     the last project on its active draft.
   - Done when: each action works in the app against a temporary library,
     and the screen matches prototype piece 6's list.
+  - Note (from 1.9): Ctrl+O opens a file in 1.9's stand-in (brief, "File
+    keys"); the Projects screen takes the key over. Opening a script gives
+    the editor a new state (`Editor.open`), which this screen and 2.4's
+    draft switch can reuse.
 
 - [ ] 2.4 — Drafts
   - Status: todo
@@ -976,6 +1065,9 @@ saving arrive in Stage 2.
   - Done when: tests show an import leaves the source byte-for-byte
     unchanged with the same modification time, the report lists what was
     left out, and export then import gives the same script.
+  - Note (from 1.9): 1.9's Ctrl+O already reads a Fountain file without
+    writing it, but drops `readFountain`'s `leftOut`, so notes, boneyard
+    and the like vanish without a report; the import report closes that.
 
 - [ ] 2.7 — Review: Stage 2
   - Status: todo
@@ -1298,3 +1390,6 @@ that will close it.
   ends into the first element's type, ProseMirror's rule, while cut (1.6)
   removes the elements it covers whole and leaves the last one its type.
   1.10 to judge whether the keys should follow cut.
+- Closing the window or reloading the page with changes not saved loses
+  them: 1.9's stand-in asks only before opening another file over them.
+  2.2 saves on close.

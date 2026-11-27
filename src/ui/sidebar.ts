@@ -1,4 +1,5 @@
 import { Plugin } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import type { Scene } from "../core/script-map.ts";
 import { jumpTo } from "./jump.ts";
 import type { Projection } from "./projection.ts";
@@ -85,20 +86,25 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection, zoom: () 
     keepInView();
   };
 
+  // ProseMirror makes the plugin's view again for each new state (an opened
+  // script), so the list gets its listeners once, here.
+  let editor: EditorView | undefined;
+  // Pressing a scene would take focus, and the caret, from the editor.
+  list.addEventListener("mousedown", (event) => {
+    if (event.target instanceof Element && event.target.closest("button")) {
+      event.preventDefault();
+    }
+  });
+  list.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("button") : null;
+    // The scene as it is now, should the list still show the edit before.
+    const scene = projection.map.scenes[rows.findIndex((row) => row.button === button)];
+    if (scene && editor) jumpTo(editor, projection, scene, zoom());
+  });
+
   return new Plugin({
     view(view) {
-      // Pressing a scene would take focus, and the caret, from the editor.
-      list.addEventListener("mousedown", (event) => {
-        if (event.target instanceof Element && event.target.closest("button")) {
-          event.preventDefault();
-        }
-      });
-      list.addEventListener("click", (event) => {
-        const button = event.target instanceof Element ? event.target.closest("button") : null;
-        // The scene as it is now, should the list still show the edit before.
-        const scene = projection.map.scenes[rows.findIndex((row) => row.button === button)];
-        if (scene) jumpTo(view, projection, scene, zoom());
-      });
+      editor = view;
       let waiting = false;
       const show = () => {
         waiting = false;

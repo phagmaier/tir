@@ -3,12 +3,12 @@
 //! interface reads and checks the text (`src/core/settings.ts`); this side
 //! only reads the file and replaces it.
 
+use crate::files;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
 const FILE: &str = "settings.json";
-const TEMPORARY: &str = "settings.json.tmp";
 
 /// The file's text, or `None` when there is no file yet. Bytes that are not
 /// UTF-8 come back replaced, so the interface reads them as a damaged file.
@@ -20,43 +20,17 @@ pub fn read(dir: &Path) -> io::Result<Option<String>> {
     }
 }
 
-/// Replaces the file with `text`, making the directory if needed. The text
-/// goes to a temporary file that is then renamed over the old one, so the
-/// file is always whole, old or new.
+/// Replaces the file with `text`, making the directory if needed, so that
+/// the file is always whole, old or new (`files::replace`).
 pub fn write(dir: &Path, text: &str) -> io::Result<()> {
     fs::create_dir_all(dir)?;
-    let temporary = dir.join(TEMPORARY);
-    let mut file = fs::File::create(&temporary)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
-    fs::rename(&temporary, dir.join(FILE))
+    files::replace(&dir.join(FILE), text.as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    /// A new directory under the system's temporary directory, removed on drop.
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new() -> Self {
-            static NEXT: AtomicUsize = AtomicUsize::new(0);
-            let n = NEXT.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!("tir-settings-{}-{n}", std::process::id()));
-            let _ = fs::remove_dir_all(&dir);
-            fs::create_dir_all(&dir).unwrap();
-            TempDir(dir)
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::files::tests::TempDir;
 
     const TEXT: &str = "{\n  \"format\": \"tir-settings\",\n  \"zoom\": 1.25\n}\n";
 
@@ -68,11 +42,7 @@ mod tests {
         write(&dir.0, "{}\n").unwrap();
         assert_eq!(read(&dir.0).unwrap().as_deref(), Some("{}\n"));
         // Only the settings file remains: the temporary one was renamed.
-        let names: Vec<_> = fs::read_dir(&dir.0)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        assert_eq!(names, ["settings.json"]);
+        assert_eq!(dir.names(), ["settings.json"]);
     }
 
     #[test]

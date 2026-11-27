@@ -67,6 +67,27 @@ export function pagePosition(dom: HTMLElement, projection: Projection, zoom: () 
     else view.focus();
   };
 
+  // ProseMirror makes the plugin's view again for each new state (an opened
+  // script), so the button and field get their listeners once, here.
+  let editor: EditorView | undefined;
+  button.addEventListener("click", open);
+  field.addEventListener("keydown", (event) => {
+    if (!editor) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      go(editor);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      editor.focus();
+    }
+  });
+  // Clicking elsewhere leaves the page where it is. Switching to another
+  // window, to look a page number up, keeps the field for the return.
+  field.addEventListener("blur", () => {
+    if (document.hasFocus()) close();
+  });
+
   return new Plugin({
     props: {
       handleKeyDown: keydownHandler({
@@ -77,22 +98,7 @@ export function pagePosition(dom: HTMLElement, projection: Projection, zoom: () 
       }),
     },
     view(view) {
-      button.addEventListener("click", open);
-      field.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          go(view);
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          close();
-          view.focus();
-        }
-      });
-      // Clicking elsewhere leaves the page where it is. Switching to another
-      // window, to look a page number up, keeps the field for the return.
-      field.addEventListener("blur", () => {
-        if (document.hasFocus()) close();
-      });
+      editor = view;
       show(view);
       return { update: show };
     },

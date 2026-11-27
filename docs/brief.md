@@ -166,6 +166,12 @@ The user has said the V1 list above is everything they need.
   its own *(Ctrl+Shift+F agent-selected, from prototype piece 5)*. F8 goes
   to the next formatting finding *(agent-selected: Final Draft's Format
   Assistant has no key; F8 is the next problem in code editors)*.
+- **File keys**: Ctrl+O opens, Ctrl+S saves and Ctrl+Shift+S saves to a
+  file picked anew, as Final Draft's Open, Save and Save As (Save As is
+  Cmd+Shift+S on a Mac; Final Draft for Windows has no key for it,
+  [findings](findings.md#final-drafts-keys)). Ctrl+O opens a file until the
+  Projects screen takes the key *(the user's choice, 2026-11-26)*; see
+  [Saving and backup](#saving-and-backup).
 
 ## Formatting check
 
@@ -425,6 +431,19 @@ three.
 
 - **Saving is automatic**, a moment after the user pauses typing. There is
   never unsaved work; Ctrl+S is harmless.
+- **Until automatic saving arrives (Stage 2)**, Tir opens and saves one
+  file at a time *(the user's choices, 2026-11-26)*. Ctrl+O opens a Tir
+  draft or a Fountain file picked in the system's Open dialog. Ctrl+S saves
+  the draft to the `.tir` file it was opened from or last saved to; a script
+  with no such file, such as an opened Fountain file or the script Tir
+  starts with, asks for one in the system's Save dialog, which suggests the
+  Fountain file's folder and name; Ctrl+Shift+S always asks. Tir writes
+  only `.tir` files, so a Fountain file it opened is never written. Opening
+  over changes not yet saved asks first (Discard or Cancel). A file Tir
+  cannot open, or a save that fails, is explained in a system message box,
+  and the script on screen stays as it was; a save shows "Saved ·
+  NAME.tir" in the toast. *(agent-selected: a Fountain file that is not
+  UTF-8 text is refused, not guessed at.)*
 - **One private GitHub repository** holds the whole library. Tir runs the
   system `git` with the user's existing GitHub login and stores no tokens.
   The user gives Tir the repository URL once.

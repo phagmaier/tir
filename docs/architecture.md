@@ -25,12 +25,16 @@ The user delegated these technical choices during planning.
    Tauri imports, so they test quickly in Node. The interface is
    TypeScript with ProseMirror. The Rust side only reads and writes files,
    runs git and opens system dialogs.
-4. **Tir writes only inside the library**, with one exception: its own
-   settings file, kept for each machine in its config directory
+4. **Tir writes only inside the library**, with one lasting exception: its
+   own settings file, kept for each machine in its config directory
    ([Settings](#settings); the user's choice, 2026-11-26). An import reads
    its source file and never writes to it; an export writes a new file.
-   WebKitGTK keeps its cache and storage for Tir in
-   `~/.local/share/dev.tir.desktop/`, which Tir itself never writes.
+   Until Stage 2's library, Tir also writes `.tir` files outside it, but
+   only the one it opened or one the user picks in the system's Save dialog
+   ([Opening and saving](#opening-and-saving-until-stage-2); the user's
+   choice, 2026-11-26); task 2.2 removes this. WebKitGTK keeps its cache
+   and storage for Tir in `~/.local/share/dev.tir.desktop/`, which Tir
+   itself never writes.
 5. **Tests never touch the real library, the real settings file or
    GitHub.** They use temporary directories and a local bare git
    repository.
@@ -54,10 +58,13 @@ src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/proto
               element buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to
               page, jump.ts the caret and scroll for both, desk.ts the window's settings (paper,
               zoom, focus mode, the sidebar's toggle) and their keys, settings-file.ts loads and
-              saves them, dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
-              editor-harness.ts runs the editor's state and keys for tests
-src-tauri/    Rust: the Tauri shell; src/settings.rs reads and replaces the settings file;
-              tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
+              saves them, files.ts opens and saves the script's file until Stage 2,
+              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and editor-harness.ts runs
+              the editor's state and keys for tests
+src-tauri/    Rust: the Tauri shell; src/files.rs writes a file whole or not at all,
+              src/settings.rs reads and replaces the settings file, src/script_file.rs shows the
+              dialogs for opening and saving and keeps the script's paths; tauri.conf.json,
+              capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
               write-pdf.ts (test PDFs in Final Draft's layout), main.ts (the command)
@@ -130,6 +137,39 @@ diff of a draft reads like the script:
 - A draft's name is not in its file: the project records it (`DraftInfo` in
   the model; `project.json` in Stage 2).
 
+## Writing files
+
+`src-tauri/src/files.rs` replaces a file so that it is always whole, old or
+new: the bytes go to `NAME.tmp` beside it, which is synced and renamed over
+the file, and then the directory is synced so that the rename reaches the
+disk. A write that fails removes `NAME.tmp`; a crash between the two can
+leave one, which the next save replaces. The settings file and draft files
+are written this way. A script's file is read as UTF-8 and refused, rather
+than read with replacement characters, when it is not.
+
+## Opening and saving (until Stage 2)
+
+`src/ui/files.ts` and `src-tauri/src/script_file.rs` stand in for Stage
+2's library and automatic saving (brief, "Saving and backup"). The Rust
+side shows the system's dialogs, through `tauri-plugin-dialog` called from
+Rust only (the capability grants the page none of the plugin's commands),
+and keeps the paths: the `.tir` file Ctrl+S writes, and the file a dialog
+opens beside. The page never names a path; it receives a file's name and
+text and sends a draft's text.
+
+- Opening takes two calls, `open_script` then `keep_opened`, so a file the
+  page refuses, or one the writer chose not to open over changes, never
+  becomes the file Ctrl+S writes. A `.tir` file reads as a draft and any
+  other as Fountain.
+- Saving writes only `.tir` files: a name picked without the extension
+  gets it, after Tir asks before replacing a file of that name, since the
+  dialog asked only about the name it was given.
+- Errors the Rust side meets (a file it cannot read, or that is not UTF-8,
+  and a failed write) it shows itself in a message box; the page shows
+  those of the readers, `readDraft`'s for a damaged or newer draft.
+- The page knows the script has changes not saved when the editor's
+  document differs (`Node.eq`) from the one last opened or saved.
+
 ## Settings
 
 The window's settings (brief, "Zoom, focus mode and the paper") live in
@@ -156,8 +196,8 @@ and trial runs use for a temporary directory.
   default for that field, and a zoom that is not a step the nearest step;
   fields it does not know are ignored.
 - The Rust side (`src-tauri/src/settings.rs`, the `read_settings` and
-  `write_settings` commands) only reads the file and replaces it: written
-  to `settings.json.tmp`, then renamed over it, off the interface thread.
+  `write_settings` commands) only reads the file and replaces it
+  ([Writing files](#writing-files)), off the interface thread.
 - `src/ui/settings-file.ts` loads the settings before the editor mounts,
   so the script opens at its zoom, and saves each change, one write at a
   time and the last change last.
@@ -253,6 +293,16 @@ down to the focused element, before the editor sees them, because
 ProseMirror prevents the default of every Esc in the editor; Esc yields to
 the autocomplete popup and to fields such as Go to page's, which close
 first, before it leaves focus mode.
+
+Opening a script gives the view a new `EditorState` (`scriptState` and
+`Editor.open` in `editor.ts`), so undo starts afresh and autocomplete
+counts the new script. The projection follows transactions, and a new
+state brings none, so `open` rebuilds it, the sheets and the frame before
+the view updates, then restyles every paragraph, since ProseMirror keeps
+the paragraph of an element equal to the one it showed there. A new state
+also makes ProseMirror destroy and make again every plugin's view, so the
+toolbar, the scene list and the page position add their DOM listeners
+once, when the plugin is made, not in its view.
 
 ## Working here
 
@@ -406,7 +456,11 @@ Not in git:
   `press` in `tools/inspector.ts` takes Hyprland's modifiers, such as
   `press("z", "CTRL SHIFT")`. Read and set the system clipboard with
   `nix shell nixpkgs#wl-clipboard --command wl-paste` (`--list-types`
-  lists what a copy offered) and `... wl-copy`.
+  lists what a copy offered) and `... wl-copy`. The system's dialogs are
+  windows of their own, titled "Open File", "Save File", or a message box's
+  headline: send them keys through the dispatcher by title or by `address:`
+  from `hyprctl clients -j` (`wtype -k Return` did not reach a message box),
+  and in the Open dialog press Ctrl+L before typing a path with `wtype`.
   Findings ("Editor") lists measuring traps. For WebKit's own time, run the
   binary under `perf` from the Nix shell:
   `nix develop --command bash -c 'exec $(nix build --no-link --print-out-paths nixpkgs#perf)/bin/perf record -e task-clock:u -g --user-callchains -o /tmp/tir.perf -- src-tauri/target/debug/tir'`

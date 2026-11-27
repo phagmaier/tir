@@ -1,4 +1,5 @@
 import { type EditorState, Plugin } from "prosemirror-state";
+import type { EditorView } from "prosemirror-view";
 import { ELEMENT_TYPES, type ElementType } from "../core/model.ts";
 import { setElementType } from "./commands.ts";
 
@@ -26,9 +27,12 @@ function currentType(state: EditorState): ElementType | undefined {
  * The top bar's element buttons in `dom`, one for each element type, with the
  * current element's pressed; a click changes the elements the selection
  * touches to its type. A view plugin, so it follows every selection.
+ * ProseMirror makes the plugin's view again for each new state (an opened
+ * script), so the buttons get their listeners once, here.
  */
 export function elementToolbar(dom: HTMLElement): Plugin {
   const buttons = new Map<ElementType, HTMLButtonElement>();
+  let editor: EditorView | undefined;
   for (const type of ELEMENT_TYPES) {
     const [full, short] = NAMES[type];
     const button = document.createElement("button");
@@ -44,6 +48,13 @@ export function elementToolbar(dom: HTMLElement): Plugin {
     button.append(long, narrow);
     buttons.set(type, button);
     dom.append(button);
+    // Pressing a button would take focus, and the caret, from the editor.
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => {
+      if (!editor) return;
+      setElementType(type)(editor.state, editor.dispatch);
+      editor.focus();
+    });
   }
   let shown: ElementType | undefined;
   const show = (state: EditorState) => {
@@ -55,14 +66,7 @@ export function elementToolbar(dom: HTMLElement): Plugin {
   };
   return new Plugin({
     view(view) {
-      for (const [type, button] of buttons) {
-        // Pressing a button would take focus, and the caret, from the editor.
-        button.addEventListener("mousedown", (event) => event.preventDefault());
-        button.addEventListener("click", () => {
-          setElementType(type)(view.state, view.dispatch);
-          view.focus();
-        });
-      }
+      editor = view;
       show(view.state);
       return { update: (view) => show(view.state) };
     },

@@ -162,12 +162,36 @@ export interface EditorOptions {
 export interface Editor {
   readonly view: EditorView;
   /**
+   * Shows `elements` in place of the script, with the caret at its start
+   * and an undo history and autocomplete of its own: undo never reaches
+   * the script it replaced.
+   */
+  open(elements: readonly Element[]): void;
+  /**
    * Shows the page at `zoom`, keeping the caret's line where it is in the
    * window, or the window's middle when the caret is out of sight.
    */
   setZoom(zoom: number): void;
   /** What fixed bars cover: scrolling the caret into view keeps clear of it. */
   setCovered(covered: Covered): void;
+}
+
+const statePlugins = [
+  ...undoHistory,
+  // Before the screenplay's keys: the popup's Enter, Tab and arrows win while it is open.
+  autocomplete,
+  keymap(screenplayKeys),
+  keymap(undoKeys),
+  keymap(baseKeymap),
+  clipboard,
+];
+
+/**
+ * The editor's state for `elements`: a document with its own undo history
+ * and autocomplete tally, and the caret at its start.
+ */
+export function scriptState(elements: readonly Element[]): EditorState {
+  return EditorState.create({ schema, doc: toDocument(elements), plugins: statePlugins });
 }
 
 const scrollThreshold = ({ top, left }: Covered) => ({ top, left, right: 0, bottom: 0 });
@@ -193,19 +217,7 @@ export function mountEditor(
   elements: readonly Element[],
   { plugins = () => [], zoom: initialZoom = 1 }: EditorOptions = {},
 ): Editor {
-  const state = EditorState.create({
-    schema,
-    doc: toDocument(elements),
-    plugins: [
-      ...undoHistory,
-      // Before the screenplay's keys: the popup's Enter, Tab and arrows win while it is open.
-      autocomplete,
-      keymap(screenplayKeys),
-      keymap(undoKeys),
-      keymap(baseKeymap),
-      clipboard,
-    ],
-  });
+  const state = scriptState(elements);
   const projection = new Projection(state.doc);
   let zoom = initialZoom;
   let covered: Covered = { top: 0, left: 0 };
@@ -234,6 +246,12 @@ export function mountEditor(
     sizeFrame();
   };
   scale();
+  // Sets element `index`'s paragraph to its block once ProseMirror has drawn it.
+  const restyle = (view: EditorView, index: number) => {
+    const dom = view.nodeDOM(projection.positionOf(index) ?? -1);
+    const block = projection.block(index);
+    if (dom instanceof HTMLElement && block) setBlock(dom, block);
+  };
   const view = new EditorView(
     { mount: root },
     {
@@ -280,16 +298,28 @@ export function mountEditor(
         this.updateState(next);
         // Node views style the paragraphs ProseMirror redrew; this catches
         // changed elements whose paragraphs it kept.
-        for (const index of later) {
-          const dom = this.nodeDOM(projection.positionOf(index) ?? -1);
-          const block = projection.block(index);
-          if (dom instanceof HTMLElement && block) setBlock(dom, block);
-        }
+        for (const index of later) restyle(this, index);
       },
     },
   );
   return {
     view,
+    open(elements) {
+      const next = scriptState(elements);
+      // The projection follows transactions, and a new state comes with
+      // none, so it is built afresh before the view, and the plugins'
+      // views reading it, show the new document. A new state also makes
+      // ProseMirror make those views again.
+      projection.rebuild(next.doc);
+      sheets.update(projection.sheets);
+      sizeFrame();
+      view.updateState(next);
+      // ProseMirror keeps the paragraph of an element equal to the one it
+      // showed there, without its node view restyling it.
+      for (let index = 0; index < next.doc.childCount; index++) restyle(view, index);
+      scrollTo(0, 0);
+      view.focus();
+    },
     setZoom(next) {
       if (next === zoom) return;
       const top = frame.getBoundingClientRect().top;

@@ -1,7 +1,9 @@
 //! Starts Tir. The Rust side only reads and writes files, runs git and
 //! opens system dialogs (architecture, design rule 3); so far it keeps the
-//! window's settings.
+//! window's settings and opens and saves the script's file.
 
+mod files;
+mod script_file;
 mod settings;
 
 use std::path::PathBuf;
@@ -34,7 +36,19 @@ fn write_settings(app: AppHandle, text: String) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![read_settings, write_settings])
+        // Its dialogs are shown from this side only: the page is given none
+        // of the plugin's commands (capabilities/default.json).
+        .plugin(tauri_plugin_dialog::init())
+        .manage(script_file::ScriptFile::default())
+        .invoke_handler(tauri::generate_handler![
+            read_settings,
+            write_settings,
+            script_file::open_script,
+            script_file::keep_opened,
+            script_file::save_draft,
+            script_file::ask,
+            script_file::tell,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Tir");
 }

@@ -192,7 +192,12 @@ export class Projection {
     return this.positions[index];
   }
 
-  private rebuild(doc: Node): void {
+  /**
+   * Projects `doc` afresh, for a document put in place without a
+   * transaction (an opened script) or one that is not the document it
+   * last followed.
+   */
+  rebuild(doc: Node): void {
     this.doc = doc;
     this.placements = this.place(doc);
     this.positions = positionsOf(doc);

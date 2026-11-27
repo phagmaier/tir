@@ -14,3 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2.12", features = [] }
+# The system's file and message dialogs, shown from Rust only (task 1.9).
+tauri-plugin-dialog = "2.8"
+# Commands' results as JSON objects; already in the build through Tauri.
+serde = { version = "1", features = ["derive"] }
