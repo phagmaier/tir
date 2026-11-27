@@ -14,9 +14,11 @@ outside facts in [findings.md](findings.md), and the chosen screens in
   "Current status".
 - **Finishing a task:** only when its "Done when" is verified, check the
   box, set `Status: done`, and add an `Evidence:` line saying what you ran
-  or observed and the result. Then update "Current status". Never check off
-  unverified work; use `Status: blocked (why)` or `verification pending
-  (what is missing)` instead.
+  or observed and the result. Search "Known gaps" and the other tasks'
+  notes for the task's ID, and delete or rewrite what it closed. Then
+  update "Current status". Never check off unverified work; use
+  `Status: blocked (why)` or `verification pending (what is missing)`
+  instead.
 - **Review tasks** (titled "Review: …") are tasks like any other. Run the
   user-code-review skill (not the bundled `/code-review`) on the scope the
   task names, work through its checklist, fix concrete findings within the

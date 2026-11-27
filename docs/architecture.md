@@ -613,6 +613,9 @@ Not in git:
   of `src/core/` without the DOM, Vitest, `cargo fmt --check`, clippy with
   warnings as errors, and `cargo test`. Run it once at stage reviews and
   before completing a broad or cross-stack change.
+- **`mise run fmt`** formats the TypeScript and Rust and applies Biome's
+  safe fixes (import order and the like), which `check` only checks. Run it
+  after editing and before `check`; it needs no Nix shell.
 - **`mise run parity [files…] [--lines N] [--all] [--show PAGE]`**
   compares Tir's page breaks with Final Draft PDFs (every PDF in the
   ignored `calibration/` folder by default; set-aside ones live in
