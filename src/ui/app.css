@@ -111,6 +111,18 @@ body.sidebar-collapsed #sidebar {
 body.sidebar-collapsed #canvas {
   padding-left: 0;
 }
+/* The Projects screen covers the writing window, which stays laid out
+   beneath it, hidden, so going back lays nothing out again. The document
+   keeps its scroll for the return, but shows no scrollbar and takes no
+   scrolling meanwhile. */
+html.projects-shown {
+  overflow: hidden;
+}
+html.projects-shown #topbar,
+html.projects-shown #sidebar,
+html.projects-shown #canvas {
+  visibility: hidden;
+}
 /* Focus mode (prototype piece 5) fades the bars out, and the page centres
    in the whole window. The bars stay in the page, so a bar holding focus
    shows again: the top bar while Go to page's field is open, or either
@@ -162,13 +174,18 @@ body.focus #canvas {
 .side-toggle[aria-pressed="true"] {
   color: var(--fg);
 }
+/* The project's name opens the Projects screen (prototype piece 5). */
 .title {
   padding: 3px 8px;
+  border-radius: 7px;
   font-family: "Newsreader", Georgia, serif;
   font-size: 19px;
   font-weight: 500;
   letter-spacing: 0.003em;
   white-space: nowrap;
+}
+.title:hover {
+  background: var(--hover);
 }
 .elements {
   display: flex;
@@ -249,6 +266,33 @@ body.focus #canvas {
 }
 .pg-field:focus-visible {
   outline: none;
+}
+
+/* The saved state (prototype piece 5), after a rule. Its labels share one
+   grid cell and only the current one shows, so the indicator keeps the
+   widest label's width and a change of state moves nothing. */
+.bar-right > .sep {
+  width: 1px;
+  height: 16px;
+  padding: 0;
+  margin: 0 4px;
+  background: var(--rule);
+}
+.bar-right > .saved {
+  display: grid;
+  justify-items: end;
+}
+.saved > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.saved[data-state="saved"] > [data-state="saved"],
+.saved[data-state="saving"] > [data-state="saving"],
+.saved[data-state="failed"] > [data-state="failed"] {
+  visibility: visible;
+}
+.bar-right > .saved[data-state="failed"] {
+  color: var(--warn);
 }
 
 /* ===== The scene sidebar (prototype piece 5). The list scrolls on its own:
@@ -410,6 +454,307 @@ body.focus #canvas {
   #toast.show {
     transition: none;
   }
+}
+
+/* ===== The Projects screen (prototype piece 6, the list), over the writing
+   window. The list scrolls on its own, apart from the script. ===== */
+#projects {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  background: var(--canvas);
+}
+#projects[hidden] {
+  display: none;
+}
+#projects:focus {
+  outline: none;
+}
+.projects-bar {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--rule);
+}
+.projects-bar .brand {
+  padding: 0 8px;
+  font:
+    500 21px "Newsreader",
+    Georgia,
+    serif;
+  letter-spacing: 0.01em;
+}
+/* The saved state alone, without the rule that parts it from the page position. */
+.projects-bar .bar-right > .sep {
+  display: none;
+}
+.projects-scroll {
+  position: absolute;
+  inset: 50px 0 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.projects-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 44px 40px 140px;
+}
+.projects-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+.projects-head h1 {
+  margin: 0;
+  font:
+    500 34px / 1.1 "Newsreader",
+    Georgia,
+    serif;
+}
+.projects-head .count {
+  padding-bottom: 4px;
+  color: var(--muted);
+}
+.projects-head .acts {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.projects-head .acts[hidden] {
+  display: none;
+}
+#projects svg {
+  flex: none;
+}
+.plist {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--chrome);
+}
+.prow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 14px 16px 20px;
+  border-top: 1px solid var(--rule);
+}
+.prow:first-child {
+  border-top: 0;
+}
+.prow:hover {
+  background: var(--hover);
+}
+.prow .open {
+  display: block;
+  min-width: 0;
+  text-align: left;
+}
+.prow .t {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font:
+    500 20px / 1.25 "Newsreader",
+    Georgia,
+    serif;
+}
+.prow .m {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.prow .m span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.prow .m [hidden] {
+  display: none;
+}
+.prow .m .warn {
+  color: var(--warn);
+}
+.tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font:
+    500 11px "IBM Plex Sans",
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+}
+.more {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.more:hover,
+.more[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--fg);
+}
+.empty {
+  padding: 70px 20px;
+  border: 1.5px dashed var(--rule);
+  border-radius: 14px;
+  text-align: center;
+}
+.empty h2 {
+  margin: 0 0 8px;
+  font:
+    500 26px "Newsreader",
+    Georgia,
+    serif;
+}
+.empty p {
+  max-width: 30em;
+  margin: 0 auto 20px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.empty .acts {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+/* A row's menu, by its button. */
+.pop {
+  position: fixed;
+  z-index: 40;
+  border: 1px solid var(--pop-border);
+  border-radius: 10px;
+  background: var(--pop-bg);
+  color: var(--pop-fg);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32);
+}
+.pop[hidden] {
+  display: none;
+}
+.row-menu {
+  width: 180px;
+  padding: 5px;
+}
+.row-menu .item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  text-align: left;
+}
+.row-menu .item:hover {
+  background: var(--hover);
+}
+.row-menu .danger {
+  color: var(--danger);
+}
+/* Buttons, fields and dialogs, as docs/prototype/look.css's shared controls. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--pop-border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--hover);
+}
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn.primary:hover {
+  filter: brightness(1.06);
+}
+.btn.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #1a0d09;
+}
+.btn.quiet {
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn.quiet:hover {
+  color: var(--fg);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field + .field {
+  margin-top: 12px;
+}
+.field > label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+}
+.field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--pop-border);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--fg);
+  font: inherit;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.dialog {
+  width: min(480px, calc(100vw - 40px));
+  padding: 22px 24px 20px;
+  border: 1px solid var(--pop-border);
+  border-radius: 14px;
+  background: var(--pop-bg);
+  color: var(--pop-fg);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.dialog::backdrop {
+  background: rgba(4, 6, 9, 0.62);
+}
+.dialog h2 {
+  margin: 0 0 6px;
+  font:
+    500 22px / 1.25 "Newsreader",
+    Georgia,
+    serif;
+}
+.dialog p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 /* ===== The script: sheets of paper with the editor's text over them ===== */

@@ -174,7 +174,7 @@ export class Desk {
     return this.shown;
   }
 
-  /** Changes settings, shows them and saves them. */
+  /** Changes settings, shows them and saves them. The project shown is kept only. */
   set(change: Partial<Settings>): void {
     const next = { ...this.shown, ...change };
     const was = this.shown;
@@ -182,7 +182,8 @@ export class Desk {
       next.zoom === was.zoom &&
       next.theme === was.theme &&
       next.focus === was.focus &&
-      next.sidebarCollapsed === was.sidebarCollapsed
+      next.sidebarCollapsed === was.sidebarCollapsed &&
+      next.project === was.project
     ) {
       return;
     }

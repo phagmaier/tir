@@ -339,6 +339,11 @@ export function mountEditor(
   return {
     view,
     open(elements) {
+      // Focus first: taking focus, WebKit may put back the selection the
+      // editor had before focus left it, and scroll to it, as after a click
+      // on a button; the new state's selection then replaces it, and the
+      // scroll goes to the top last.
+      view.focus();
       const next = scriptState(elements);
       // The projection follows transactions, and a new state comes with
       // none, so it is built afresh before the view, and the plugins'
@@ -350,7 +355,6 @@ export function mountEditor(
       view.updateState(next);
       restyleAll(view);
       scrollTo(0, 0);
-      view.focus();
     },
     setZoom(next) {
       if (next === zoom) return;

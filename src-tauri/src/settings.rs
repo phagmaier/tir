@@ -1,7 +1,7 @@
 //! Tir's settings file (architecture, "Settings"): the window's settings,
 //! one file per machine in Tir's config directory, never in the library. The
 //! interface reads and checks the text (`src/core/settings.ts`); this side
-//! only reads the file and replaces it.
+//! reads the file and replaces it, and takes the library's folder from it.
 
 use crate::files;
 use std::fs;
@@ -25,6 +25,18 @@ pub fn read(dir: &Path) -> io::Result<Option<String>> {
 pub fn write(dir: &Path, text: &str) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     files::replace(&dir.join(FILE), text.as_bytes())
+}
+
+/// The library's folder as the settings file's `text` names it, if it
+/// does; the interface keeps the field and never reads it (`library` in
+/// `src/core/settings.ts`). A damaged or foreign file names none, as the
+/// interface reads it.
+pub fn library(text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    if value.get("format").and_then(serde_json::Value::as_str) != Some("tir-settings") {
+        return None;
+    }
+    value.get("library")?.as_str().map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -70,6 +82,23 @@ mod tests {
         );
         write(&dir.0, TEXT).unwrap();
         assert_eq!(read(&dir.0).unwrap().as_deref(), Some(TEXT));
+    }
+
+    #[test]
+    fn takes_the_library_from_a_settings_file() {
+        let named = "{\n  \"format\": \"tir-settings\",\n  \"version\": 1,\n  \"zoom\": 1,\n  \"library\": \"~/Scripts\"\n}\n";
+        assert_eq!(library(named).as_deref(), Some("~/Scripts"));
+        for text in [
+            TEXT,
+            "{\"format\": \"tir-settings\", \"library\": 42}",
+            "{\"format\": \"tir-draft\", \"library\": \"/srv/scripts\"}",
+            "{\"library\": \"/srv/scripts\"}",
+            "[\"library\"]",
+            "{\"format\": \"tir-settings\", \"library\": \"/srv",
+            "",
+        ] {
+            assert_eq!(library(text), None, "{text}");
+        }
     }
 
     #[test]

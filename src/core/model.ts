@@ -84,8 +84,8 @@ export function newTitlePage(): TitlePage {
 
 /**
  * A project's record of one of its drafts: its name, shown in the top bar,
- * and its file in the project's `drafts/` folder. Stage 2 stores these in
- * `project.json`.
+ * and its file in the project's `drafts/` folder. The project's file,
+ * `project.json`, holds these (`project-file.ts`).
  */
 export interface DraftInfo {
   readonly name: string;

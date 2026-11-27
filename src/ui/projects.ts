@@ -1,0 +1,373 @@
+/**
+ * The Projects screen's rows and what it does with them (brief, "Projects";
+ * prototype piece 6, the list). Each row is a project with its active
+ * draft, pages, drafts and last edit, most recent first, then any folder
+ * Tir cannot read as a project, with why. Opening, making or importing a
+ * project shows it in the writing window once the script on screen is
+ * saved, and the script stays when it cannot be; renaming or deleting the
+ * project on screen first waits for its saves. Until task 2.6, Import…
+ * opens a Tir draft or a Fountain file as a new project, as Ctrl+O did
+ * before this screen took the key.
+ */
+import { type ReadResult, readDraft } from "../core/draft-file.ts";
+import { readFountain } from "../core/fountain/read.ts";
+import type { Script } from "../core/model.ts";
+import { paginate } from "../core/paginate.ts";
+import type { DraftTexts } from "./draft-texts.ts";
+import type { Library, Project } from "./library.ts";
+import { emptyScript, FIRST_DRAFT, type Opening, projectName, UNTITLED } from "./opening.ts";
+import type { Place, Saver } from "./saving.ts";
+
+/** One row of the list: a project, or a folder Tir cannot read as one. */
+export interface Row {
+  readonly folder: string;
+  /** Null for a folder Tir cannot read as a project, as `problem` says. */
+  readonly project: Project | null;
+  readonly problem: string | null;
+  /** When its drafts were last written, in milliseconds since 1970; null when unknown. */
+  readonly edited: number | null;
+  /** Whether it is the project in the writing window. */
+  readonly open: boolean;
+}
+
+/** When `project`'s script was last edited: the newest of its drafts' files. */
+export function lastEdit(project: Project): number | null {
+  let last: number | null = null;
+  for (const { file } of project.info.drafts) {
+    const time = project.edited[file];
+    if (time !== undefined && (last === null || time > last)) last = time;
+  }
+  return last;
+}
+
+/**
+ * The list's rows: the projects, the one edited last first and those
+ * edited at the same moment by name, then the folders Tir cannot read, by
+ * name. `open` is the folder of the project in the writing window.
+ */
+export function rows(library: Library, open: string | null): Row[] {
+  const projects = library.projects.map(
+    (project): Row => ({
+      folder: project.folder,
+      project,
+      problem: null,
+      edited: lastEdit(project),
+      open: project.folder === open,
+    }),
+  );
+  const name = (row: Row) => row.project?.info.name ?? row.folder;
+  projects.sort(
+    (a, b) =>
+      (b.edited ?? Number.NEGATIVE_INFINITY) - (a.edited ?? Number.NEGATIVE_INFINITY) ||
+      name(a).localeCompare(name(b)),
+  );
+  const unreadable = library.unreadable
+    .map(
+      ({ folder, error }): Row => ({
+        folder,
+        project: null,
+        problem: error,
+        edited: null,
+        open: false,
+      }),
+    )
+    .sort((a, b) => a.folder.localeCompare(b.folder));
+  return [...projects, ...unreadable];
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * When something was last edited, as the list shows it, at `now`: "Just
+ * now", "5 minutes ago", "3 hours ago" the same day, "Yesterday", then the
+ * date, "Oct 14, 2026" (prototype piece 6).
+ */
+export function whenEdited(time: number, now: number): string {
+  const ago = now - time;
+  if (ago < MINUTE) return "Just now";
+  if (ago < HOUR) return `${count(Math.floor(ago / MINUTE), "minute", "minutes")} ago`;
+  const then = new Date(time);
+  const today = new Date(now);
+  const day = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  if (day(then) === day(today)) return `${count(Math.floor(ago / HOUR), "hour", "hours")} ago`;
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  if (day(then) === yesterday.getTime()) return "Yesterday";
+  return DATE.format(then);
+}
+
+/** "113 pages", "1 draft". */
+export const pagesText = (n: number) => count(n, "page", "pages");
+export const draftsText = (n: number) => count(n, "draft", "drafts");
+
+/**
+ * Counts the pages of each project's active draft as the editor lays it
+ * out, reading and paginating the draft (a few milliseconds a draft;
+ * findings, "Editor"), and remembers each count until the draft's file
+ * changes.
+ */
+export class PageCounter {
+  private readonly read: (project: Project, file: string) => Promise<string>;
+  private readonly known = new Map<string, { edited: number; pages: number }>();
+
+  constructor(read: (project: Project, file: string) => Promise<string>) {
+    this.read = read;
+  }
+
+  /** The pages of `project`'s active draft; null when it cannot be read. */
+  async count(project: Project): Promise<number | null> {
+    const file = project.info.activeDraft;
+    const edited = project.edited[file];
+    const key = `${project.folder}/${file}`;
+    const known = this.known.get(key);
+    if (known && known.edited === edited) return known.pages;
+    let read: ReadResult;
+    try {
+      read = readDraft(await this.read(project, file));
+    } catch {
+      return null;
+    }
+    if (!read.ok) return null;
+    const pages = paginate(read.script.elements).length;
+    if (edited !== undefined) this.known.set(key, { edited, pages });
+    return pages;
+  }
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+/** `text` ending as a sentence: the Rust side's messages for system errors end without a full stop. */
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
+
+/** A file picked in the Open dialog: its name, whether it is a Tir draft (else Fountain), its text. */
+export interface Opened {
+  readonly name: string;
+  readonly draft: boolean;
+  readonly text: string;
+}
+
+/** What the screen's actions need outside the page (`library.ts`, the dialogs). */
+export interface ProjectsSide {
+  list(): Promise<Library>;
+  read(project: Project, file: string): Promise<string>;
+  texts(script: Script): Promise<DraftTexts>;
+  create(library: Library, name: string, draftName: string, texts: DraftTexts): Promise<Project>;
+  rename(library: Library, project: Project, name: string): Promise<Project>;
+  remove(project: { readonly folder: string }): Promise<void>;
+  /** Asks for a file and reads it; null when the dialog is closed or the file unreadable, which the Rust side says itself. */
+  pick(): Promise<Opened | null>;
+  tell(title: string, message: string): Promise<void>;
+}
+
+/** What the actions change in the writing window. */
+export interface ProjectsWindow {
+  /** Shows `opening` in the writing window, in place of the script there. */
+  show(opening: Opening): void;
+  /** The project on screen was renamed: its draft is now at `place`, where the saver now saves. */
+  moved(place: Place): void;
+  /** The project on screen was deleted: no script is open. */
+  closed(): void;
+}
+
+/**
+ * What the Projects screen does: open, make, rename, delete and import
+ * projects, one at a time, each answering whether it was done. Anything
+ * that goes wrong is told in a message box.
+ */
+export class Projects {
+  private readonly saver: Saver;
+  private readonly side: ProjectsSide;
+  private readonly window: ProjectsWindow;
+  /** The project on screen's name, for a message. */
+  private readonly name: () => string;
+  /** The last action asked for; each waits for the one before. */
+  private last: Promise<unknown> = Promise.resolve();
+
+  constructor(saver: Saver, side: ProjectsSide, window: ProjectsWindow, name: () => string) {
+    this.saver = saver;
+    this.side = side;
+    this.window = window;
+    this.name = name;
+  }
+
+  /** Opens `project` on its active draft. */
+  open(project: Project): Promise<boolean> {
+    return this.queue(async () => {
+      const name = project.info.name;
+      if (!(await this.saved(`“${name}” was not opened.`))) return false;
+      const file = project.info.activeDraft;
+      let read: ReadResult;
+      try {
+        read = readDraft(await this.side.read(project, file));
+      } catch (error) {
+        read = { ok: false, error: message(error) };
+      }
+      if (!read.ok) {
+        await this.side.tell(`Tir could not open “${name}”`, read.error);
+        return false;
+      }
+      const opening = { script: read.script, place: { project, file }, name };
+      return this.showWhenSaved(opening, `“${name}”`);
+    });
+  }
+
+  /** Makes the project `name`, an empty script in one draft, `draftName`, and opens it. */
+  create(name: string, draftName: string): Promise<boolean> {
+    return this.queue(async () => {
+      if (!(await this.saved(`“${name}” was not made.`))) return false;
+      const script = emptyScript();
+      let project: Project;
+      try {
+        const texts = await this.side.texts(script);
+        project = await this.side.create(await this.side.list(), name, draftName, texts);
+      } catch (error) {
+        await this.side.tell(`Tir could not make “${name}”`, message(error));
+        return false;
+      }
+      const opening = {
+        script,
+        place: { project, file: project.info.activeDraft },
+        name: project.info.name,
+      };
+      return this.showWhenSaved(opening, `“${project.info.name}”, now in the library,`);
+    });
+  }
+
+  /**
+   * Renames `project`, as listed, `name`. The project on screen is saved
+   * first, and its saves then go to its new folder.
+   */
+  rename(project: Project, name: string): Promise<boolean> {
+    return this.queue(async () => {
+      const was = project.info.name;
+      const open = this.isOpen(project.folder);
+      if (open && !(await this.saved(`“${was}” was not renamed.`))) return false;
+      let renamed: Project;
+      try {
+        renamed = await this.side.rename(await this.side.list(), project, name);
+      } catch (error) {
+        await this.side.tell(`Tir could not rename “${was}”`, message(error));
+        return false;
+      }
+      const place = this.saver.where;
+      if (open && place) {
+        const moved = { project: renamed, file: place.file };
+        this.saver.move(moved);
+        this.window.moved(moved);
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Deletes the project in `folder`, named `name`, with everything in it.
+   * A save of the project on screen under way or waiting finishes first,
+   * so none lands after; then no script is open.
+   */
+  remove(folder: string, name: string): Promise<boolean> {
+    return this.queue(async () => {
+      const open = this.isOpen(folder);
+      // What it could not save goes with the project, unless it stays.
+      const saved = !open || (await this.saver.settle());
+      try {
+        await this.side.remove({ folder });
+      } catch (error) {
+        const unsaved = saved ? "" : ` Nor could Tir save it: ${this.saver.failure ?? ""}`;
+        await this.side.tell(
+          `Tir could not delete “${name}”`,
+          `${sentence(message(error))}${unsaved}`,
+        );
+        return false;
+      }
+      if (open) this.window.closed();
+      return true;
+    });
+  }
+
+  /** Resolves once every action asked for has finished, so closing waits for them. */
+  idle(): Promise<void> {
+    return this.last.then(() => {});
+  }
+
+  /**
+   * Import… until task 2.6: opens a picked file as a new project, named
+   * from its title or else its file's name, with one draft. A draft is
+   * refused whole when damaged or newer; Fountain reads whatever it holds,
+   * and what it leaves out goes unreported until 2.6. The file itself is
+   * never written.
+   */
+  importFile(): Promise<boolean> {
+    return this.queue(async () => {
+      const opened = await this.side.pick().catch((error: unknown) => {
+        console.error(error);
+        return null;
+      });
+      if (!opened) return false;
+      const failed = `Tir could not open “${opened.name}”`;
+      const read: ReadResult = opened.draft
+        ? readDraft(opened.text)
+        : { ok: true, script: readFountain(opened.text).script };
+      if (!read.ok) {
+        await this.side.tell(failed, read.error);
+        return false;
+      }
+      if (!(await this.saved(`“${opened.name}” was not opened.`))) return false;
+      let project: Project;
+      try {
+        const texts = await this.side.texts(read.script);
+        const stem = opened.name.replace(/\.[^.]*$/, "");
+        const name = projectName(read.script.titlePage, stem || UNTITLED);
+        project = await this.side.create(await this.side.list(), name, FIRST_DRAFT, texts);
+      } catch (error) {
+        await this.side.tell(failed, message(error));
+        return false;
+      }
+      const opening = {
+        script: read.script,
+        place: { project, file: project.info.activeDraft },
+        name: project.info.name,
+      };
+      return this.showWhenSaved(
+        opening,
+        `“${opened.name}”, now the project “${project.info.name}” in the library,`,
+      );
+    });
+  }
+
+  private isOpen(folder: string): boolean {
+    return this.saver.where?.project.folder === folder;
+  }
+
+  private queue(action: () => Promise<boolean>): Promise<boolean> {
+    const next = this.last.then(action).catch((error: unknown) => {
+      console.error(error);
+      return false;
+    });
+    this.last = next;
+    return next;
+  }
+
+  /**
+   * Shows `opening` once the script on screen is saved, with nothing
+   * awaited in between, so nothing typed meanwhile is lost; `what` names
+   * it in the message when the script cannot be saved.
+   */
+  private async showWhenSaved(opening: Opening, what: string): Promise<boolean> {
+    if (!(await this.saved(`${what} was not opened.`))) return false;
+    this.window.show(opening);
+    return true;
+  }
+
+  /** Saves the script on screen; when it cannot, tells the writer that it stays, and `after`. */
+  private async saved(after: string): Promise<boolean> {
+    if (await this.saver.settle()) return true;
+    await this.side.tell(
+      `Tir could not save “${this.name()}”`,
+      `${this.saver.failure ?? ""} So the script on screen stays, and ${after}`,
+    );
+    return false;
+  }
+}

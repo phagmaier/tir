@@ -16,15 +16,17 @@ export async function loadSettings(): Promise<Settings> {
   }
 }
 
-/**
- * A function that saves the settings it is given. Writes go one at a time,
- * so the file ends with the last settings given, however fast they come.
- */
-export function settingsSaver(): (settings: Settings) => void {
+/** Saves the settings it is given, one write at a time, the last settings last. */
+export interface SettingsSaver {
+  save(settings: Settings): void;
+  /** Resolves once every save asked for is written or has failed, so closing waits for it. */
+  written(): Promise<void>;
+}
+
+export function settingsSaver(): SettingsSaver {
   let next: string | null = null;
-  let writing = false;
+  let writing: Promise<void> | null = null;
   const flush = async () => {
-    writing = true;
     while (next !== null) {
       const text = next;
       next = null;
@@ -34,10 +36,13 @@ export function settingsSaver(): (settings: Settings) => void {
         console.error("Tir could not save its settings file:", error);
       }
     }
-    writing = false;
+    writing = null;
   };
-  return (settings) => {
-    next = writeSettings(settings);
-    if (!writing) void flush();
+  return {
+    save(settings) {
+      next = writeSettings(settings);
+      writing ??= flush();
+    },
+    written: () => writing ?? Promise.resolve(),
   };
 }

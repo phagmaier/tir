@@ -19,7 +19,14 @@ const file = `{
   "sidebar": "collapsed"
 }
 `;
-const settings: Settings = { zoom: 1.25, theme: "light", focus: true, sidebarCollapsed: true };
+const settings: Settings = {
+  zoom: 1.25,
+  theme: "light",
+  focus: true,
+  sidebarCollapsed: true,
+  project: null,
+  library: null,
+};
 
 describe("the settings file", () => {
   it("writes one setting per line and reads back what it wrote", () => {
@@ -54,6 +61,23 @@ describe("the settings file", () => {
     // Fields it does not know, as a newer Tir might write, are left alone.
     expect(read('"focus": true, "ruler": "on"')).toEqual(settings);
     expect(readSettings(file.replace('"version": 1', '"version": 7'))).toEqual(settings);
+  });
+
+  it("keeps the library the writer set, and reads a file without one as the default", () => {
+    // The file above, from before Tir had a library, reads with none set.
+    expect(readSettings(file).library).toBeNull();
+    const moved = file.replace('"collapsed"', '"collapsed",\n  "library": "~/Scripts/Tir"');
+    expect(readSettings(moved)).toEqual({ ...settings, library: "~/Scripts/Tir" });
+    expect(writeSettings({ ...settings, library: "~/Scripts/Tir" })).toBe(moved);
+    expect(readSettings(moved.replace('"~/Scripts/Tir"', "42")).library).toBeNull();
+  });
+
+  it("keeps the project last shown, and reads a file without one as none", () => {
+    expect(readSettings(file).project).toBeNull();
+    const shown = file.replace('"collapsed"', '"collapsed",\n  "project": "Salt Line 2"');
+    expect(readSettings(shown)).toEqual({ ...settings, project: "Salt Line 2" });
+    expect(writeSettings({ ...settings, project: "Salt Line 2" })).toBe(shown);
+    expect(readSettings(shown.replace('"Salt Line 2"', "null")).project).toBeNull();
   });
 
   it("takes the nearest zoom step for a zoom that is not one", () => {

@@ -6,8 +6,6 @@ terms are in [brief.md](brief.md); outside-world facts the code depends on
 are in [findings.md](findings.md). Where this map and the code disagree,
 the code is right: fix the map.
 
-The library section below is still a plan, which Stage 2 builds.
-
 ## Design rules
 
 The user delegated these technical choices during planning.
@@ -25,16 +23,13 @@ The user delegated these technical choices during planning.
    Tauri imports, so they test quickly in Node. The interface is
    TypeScript with ProseMirror. The Rust side only reads and writes files,
    runs git and opens system dialogs.
-4. **Tir writes only inside the library**, with one lasting exception: its
-   own settings file, kept for each machine in its config directory
-   ([Settings](#settings); the user's choice, 2026-11-26). An import reads
-   its source file and never writes to it; an export writes a new file.
-   Until Stage 2's library, Tir also writes `.tir` files outside it, but
-   only the one it opened or one the user picks in the system's Save dialog
-   ([Opening and saving](#opening-and-saving-until-stage-2); the user's
-   choice, 2026-11-26); task 2.2 removes this. WebKitGTK keeps its cache
-   and storage for Tir in `~/.local/share/dev.tir.desktop/`, which Tir
-   itself never writes.
+4. **Tir writes only inside the library**, with one exception: its own
+   settings file, kept for each machine in its config directory
+   ([Settings](#settings); the user's choice, 2026-11-26). A file opened
+   or imported is read and never written to; an export writes a new file.
+   The Rust side holds the rule ([File access](#file-access)). WebKitGTK
+   keeps its cache and storage for Tir in `~/.local/share/dev.tir.desktop/`,
+   which Tir itself never writes.
 5. **Tests never touch the real library, the real settings file or
    GitHub.** They use temporary directories and a local bare git
    repository.
@@ -44,8 +39,9 @@ The user delegated these technical choices during planning.
 ```
 docs/         brief, architecture, findings, plan; prototype/ (design pieces; index.html marks the chosen ones)
 src/core/     pure TypeScript: format.ts holds every Final Draft format value; the model, draft file,
-              Fountain, FDX, line layout, pagination, autocomplete's suggestions (suggestions.ts),
-              the clipboard's forms (clipping.ts), the scenes and where each page starts
+              project file (project-file.ts), the library's names (file-names.ts), Fountain, FDX,
+              line layout, pagination, autocomplete's suggestions (suggestions.ts), the
+              clipboard's forms (clipping.ts), the scenes and where each page starts
               (script-map.ts), the settings file's text and the zoom steps (settings.ts) and checks
               join it
 src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/prototype/look.css),
@@ -58,13 +54,18 @@ src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/proto
               element buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to
               page, jump.ts the caret and scroll for both, desk.ts the window's settings (paper,
               zoom, focus mode, the sidebar's toggle) and their keys, settings-file.ts loads and
-              saves them, files.ts opens and saves the script's file until Stage 2,
-              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and editor-harness.ts runs
-              the editor's state and keys for tests
+              saves them, library.ts reaches the library through the Rust side, saving.ts saves
+              the script and holds closing for it, draft-texts.ts (with draft-texts.worker.ts, its
+              worker) makes a save's texts, saved-indicator.ts shows the top bar's saved state,
+              opening.ts what Tir opens at launch and the file keys, projects-screen.ts the
+              Projects screen and projects.ts its rows and what it does (open, make, rename,
+              delete, import), dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
+              editor-harness.ts runs the editor's state and keys for tests
 src-tauri/    Rust: the Tauri shell; src/files.rs writes a file whole or not at all,
-              src/settings.rs reads and replaces the settings file, src/script_file.rs shows the
-              dialogs for opening and saving and keeps the script's paths; tauri.conf.json,
-              capabilities/, icons/ (icon.svg is the source)
+              src/settings.rs reads and replaces the settings file, src/library.rs keeps the
+              library's folders and files, src/dialogs.rs shows the Open dialog and message boxes,
+              src/closing.rs holds the window open on closing until the page has saved;
+              tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
               write-pdf.ts (test PDFs in Final Draft's layout), main.ts (the command)
@@ -81,16 +82,104 @@ read fixtures. `src/core/tsconfig.json` type-checks the core without the DOM
 library or ambient types, so `document`, `window` or `process` fail.
 `src/core/purity.test.ts` proves both parts still fire.
 
-## Library on disk (planned)
+## Library on disk
 
 ```
-~/Screenplays/                  the library, and the backed-up git repository
-  Salt Line/                    one project
-    project.json                its name, drafts and active draft
+~/Screenplays/                    the library, and the backed-up git repository
+  Salt Line/                      one project, its folder named from its name
+    project.json                  its name, drafts and active draft
     drafts/
-      rewrite-nov-2026.tir      a draft: title page and elements
-      rewrite-nov-2026.fountain the copy written on every save; Tir never reads it
+      First Draft.tir             a draft: title page and elements, its file named from its name
+      First Draft.fountain        its Fountain copy, written with it every time; Tir never reads it
+      Rewrite, Nov 2026.tir
+      Rewrite, Nov 2026.fountain
 ```
+
+```json
+{
+  "format": "tir-project",
+  "version": 1,
+  "name": "Salt Line",
+  "activeDraft": "Rewrite, Nov 2026.tir",
+  "drafts": [
+    {"name":"First Draft","file":"First Draft.tir"},
+    {"name":"Rewrite, Nov 2026","file":"Rewrite, Nov 2026.tir"}
+  ]
+}
+```
+
+- **Where.** The library is the folder the settings file's `library`
+  names ([Settings](#settings)); otherwise `Screenplays` in the home
+  folder, or in `TIR_CONFIG_DIR` when that is set, so a trial run gets a
+  library of its own. The Rust side finds it at start
+  (`library::root`) and makes it, and syncs each folder it makes, with
+  the first project.
+- **The project file** is read and written by `src/core/project-file.ts`
+  as the draft file is: keys in a fixed order, one draft per line, and a
+  damaged or newer file refused whole with a readable message, so Tir
+  never writes over a project it could not read. A draft's `file` must be
+  one `.tir` entry of `drafts/`. Raise `PROJECT_VERSION` for any change an
+  older Tir would misread. The same module gives a project as each change
+  leaves it (`newProject`, `withNewDraft`, `withDraftRenamed`,
+  `withoutDraft`, `withActiveDraft`): a project keeps at least one draft,
+  and deleting the active one makes the draft before it, or else after it,
+  active.
+- **Names.** A project's folder and a draft's file are named from the
+  names the writer gives them (`src/core/file-names.ts`), readable on
+  GitHub, accents kept (NFC), but one entry of a folder on any system the
+  library may be cloned to: `/ \ |` and `:` become dashes, `"` an
+  apostrophe, `* ? < >` go, as do control and bidirectional characters, a
+  leading dot (so never `.`, `..` or `.git`) and trailing dots and spaces;
+  Windows' device names gain `_`; at most 120 bytes; "Untitled" when
+  nothing is left (findings, "Library on disk"). A name already in the
+  folder, ignoring capitals and how accents are encoded (compared through
+  capitals and back, so Greek "σ" and "ς" meet), gets " 2", " 3" and so
+  on; a draft's file is free only when its Fountain copy's name is too.
+  Renaming a project or draft renames its folder or file.
+- **Who does what.** `src/ui/library.ts` makes every name and every
+  file's text from the core and calls the Rust side's commands
+  (`src-tauri/src/library.rs`), naming a project by its folder and a
+  draft by its file. A draft's text always goes with its Fountain copy's
+  (`DraftTexts`): making a project or a draft writes both, and so does a
+  save (`write_draft`, which only replaces a draft that is there, never
+  makes one). The Rust side refuses any name that is not one entry of its
+  folder or that starts with a dot, and any link where it expects a
+  project or `drafts` folder, a project file or a draft, or a link or
+  folder where a copy goes, so nothing it reads, writes, moves or deletes
+  lies outside the library. It never makes a folder or draft over an
+  entry already there: it claims the name first (a new folder, or a new
+  empty file, and the copy's name must be free). It deletes only a folder
+  with a project file, readable or not, so never a folder of the writer's
+  own. Each change to a project carries `was`, the project file's text
+  the page made it from, and is refused when the file now differs, so a
+  change made from an older reading never undoes a newer one; the
+  commands run one at a time, and Tir does not exit while one runs
+  (`finish_commands`).
+- **Order.** Each change leaves every project whole if Tir stops or fails
+  part way: `project.json` names only drafts that are there. A new
+  project's `project.json` is written last, after its draft and copy, and
+  a project that fails to be made is removed whole; a new draft and its
+  copy are written before the project names it, both removed if either
+  fails, and kept if naming it fails, since the project file may be in
+  place when the error comes; a save writes the draft, then its copy, so
+  the copy is never newer than the draft; a renamed draft is copied to
+  its new file before the project names that, and the old file goes
+  after; a deleted draft goes after the project stops naming it; a
+  project folder is renamed over an empty folder claimed first, and a
+  deleted project is first moved to a hidden `.deleting.<pid>-<n>.tmp`
+  folder, then removed. Once a renamed project is in its new folder, or a
+  deleted one has left the library, the change is reported done even if
+  syncing the library's folder or removing the files fails after, since
+  the page would otherwise keep saving to a folder that is gone. A draft
+  the project does not name harms nothing: its name stays taken.
+- **Listing** (`list_library`) gives every entry's name that is not
+  hidden, and for each folder that is not a link its `project.json` text,
+  the entries of its `drafts/`, and when each draft file there was last
+  written (`edited`, the file's modification time, for the Projects
+  screen's last edit); `listLibrary` reads each, and a folder whose
+  project file is missing, damaged, newer or a link comes back with the
+  reason, never silently dropped. After a change fails, listing again
+  shows what is there.
 
 ## The draft file
 
@@ -135,7 +224,7 @@ diff of a draft reads like the script:
   and throws rather than save a file Tir would refuse. Raise `DRAFT_VERSION`
   for any change an older Tir would misread.
 - A draft's name is not in its file: the project records it (`DraftInfo` in
-  the model; `project.json` in Stage 2).
+  the model; [Library on disk](#library-on-disk)).
 
 ## Writing files
 
@@ -146,36 +235,120 @@ and renamed over the file, and then the directory is synced so that the
 rename reaches the disk. A file Tir did not make is never opened, replaced
 or removed. A write that fails removes its temporary file; a crash
 between the two can leave one behind, which no later save replaces or
-removes. The settings file and draft files are written this way. A
-script's file is read as UTF-8 and refused, rather than read with
+removes. The settings file and the library's files are written this way.
+A script's file is read as UTF-8 and refused, rather than read with
 replacement characters, when it is not.
 
-## Opening and saving (until Stage 2)
+## File access
 
-`src/ui/files.ts` and `src-tauri/src/script_file.rs` stand in for Stage
-2's library and automatic saving (brief, "Saving and backup"). The Rust
-side shows the system's dialogs, through `tauri-plugin-dialog` called from
-Rust only (the capability grants the page none of the plugin's commands),
-and keeps the paths: the `.tir` file Ctrl+S writes, and the file a dialog
-opens beside. The page never names a path; it receives a file's name and
-text and sends a draft's text.
+The page has Tauri's `core:default` capability and nothing more: no file
+system plugin is registered, the asset protocol is off, and none of the
+dialog plugin's commands is granted. So every file Tir reads or writes
+goes through its own Rust commands, which reach three places only: the
+settings file in Tir's config directory or `TIR_CONFIG_DIR`
+(`read_settings`, `write_settings`); the library, by the folder and file
+names `library.rs` checks ([Library on disk](#library-on-disk)); and a
+file the writer picks in the system's Open dialog, which is only read
+(`dialogs.rs`; Fountain and FDX import and export later). The page never
+names a path, and the Rust side keeps every path it uses; it tells the
+page the library's place only to show it (`library_place`, "~/Screenplays"
+for the empty library), and no command takes one back. Nor can the
+page move the library: `write_settings` refuses settings that name a
+library other than the one the file named when Tir started.
 
-- Opening takes two calls, `open_script` then `keep_opened`, so a file the
-  page refuses, or one the writer chose not to open over changes, never
-  becomes the file Ctrl+S writes. A `.tir` file reads as a draft and any
-  other as Fountain.
-- Saving writes only `.tir` files: a name picked without the extension
-  gets it, after Tir asks before replacing a file of that name, since the
-  dialog asked only about the name it was given.
-- Errors the Rust side meets (a file it cannot read, or that is not UTF-8,
-  and a failed write) it shows itself in a message box; the page shows
-  those of the readers, `readDraft`'s for a damaged or newer draft.
-- The page knows the script has changes not saved when the editor's
-  document differs (`Node.eq`) from the one last opened or saved.
+## Saving and opening
+
+The script on screen is saved to its draft automatically (brief, "Saving
+and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
+(`savingPlugin`) tells of every change to the editor's document:
+
+- **When.** A second after the last change (`SAVE_DELAY_MS`), and at once
+  through `settle`, which waits for the save under way, then saves until
+  the draft holds what is on screen: before another script takes the
+  screen, on Ctrl+S and before the window closes. Saves go one at a time,
+  each writing the script as it is when it starts. The script is saved
+  when its document equals (`Node.eq`) the one last written, so undoing
+  back writes nothing; after a failed save it counts as not saved until
+  one succeeds, since the draft may hold a newer text than its copy.
+- **Off the interface thread.** A save takes the model from the document
+  on the interface thread (`fromDocument`, which reuses unchanged
+  elements), then `draft-texts.worker.ts` writes the draft and its
+  Fountain copy (`DraftTexts`) in a Web Worker, since `writeFountain`
+  takes a fifth of a second on a long script; the Rust side writes both
+  files on its own thread (findings, "Editor"). Should the worker fail,
+  the texts are made on the interface thread instead.
+- **Where.** A script in the library is saved to its draft
+  (`write_draft`); one not there yet, such as the empty script of an empty
+  library or a test script, becomes a project at its first save, named
+  from its title page's title or "Untitled", with one draft, "First
+  Draft". The settings file then names it as the project last shown.
+- **Failures.** The top bar shows "Saved", "Saving…" from the first change
+  until the draft holds it, and "Not saved" when a save failed
+  (`saved-indicator.ts`). A save that fails is tried again after the next
+  pause in typing, or after five seconds; the writer hears of it once, in
+  a message box, until a save succeeds. A caller of `settle` tells the
+  writer itself, or asks it to tell as a save after a pause does
+  (`settle(true)`, the Projects screen's).
+- **Closing.** Once the page can save, it calls `hold_close`, and the Rust
+  side (`closing.rs`) then holds each request to close the window and
+  passes it to the page as `tir://close`. The page stops typing (the
+  editor is made read-only), settles, waits for the Projects screen's
+  action under way and the settings file's writes, and calls
+  `close_window`. When a save fails it asks, in a
+  message box, whether to close without it; Cancel makes the editor
+  editable again and holds closing again. A page that does not answer
+  cannot keep the window open: a request to close five seconds or more
+  after the first one held closes it (the user's choice, 2026-11-27,
+  over a window only killing Tir closes). Tir exits only once the library's
+  command under way has finished (`finish_commands`). Tauri's own
+  close-requested event was not used: its listener outlives a page load,
+  and closing from the page needs a permission beyond `core:default`
+  (findings, "Desktop stack").
+
+What Tir opens is `src/ui/opening.ts`'s. At launch (`openAtLaunch`) it is
+the active draft of the project the settings file's `project` names, else
+of the library's first project; with none, or when the draft cannot be
+read, nothing opens and the Projects screen shows instead, the editor
+holding an empty script, not in the library, unseen behind it. A project
+or draft that cannot be read is reported in a message box and never
+written.
+
+The Projects screen (`projects-screen.ts`; Ctrl+O or the top bar's project
+name) is part of the same page. It covers the writing window, which
+stays mounted beneath it with `visibility: hidden`, so going back (Esc, or
+the open project's row) finds the script, caret, undo and scroll as they
+were; the document keeps its scroll, its scrollbar hidden. The screen's
+list scrolls in a container of its own, apart from the script, and its
+one key listener is added only while it shows, catching the writing
+window's keys on the way down so they do nothing there. It saves the
+script on screen before it lists the library, so the open project's row
+is current. Each row's pages are counted by reading and paginating the
+project's active draft on the interface thread, one project at a time
+after the list shows, and kept until the draft's file time changes
+(`PageCounter`); its last edit is the newest of its drafts' file times.
+
+What the screen does is `projects.ts`'s `Projects`, one action at a time.
+Opening, making or importing a project first settles the saver (`false`
+keeps the script on screen and says why), then shows the new script with
+nothing awaited in between (`Editor.open`, `Saver.show`, the settings
+file's `project`). Renaming the project on screen settles first, then
+moves the saver to the new folder (`Saver.move`) and records it in the
+settings. Deleting the project on screen waits for its save under way or
+waiting, then leaves no script open: the editor gets an empty script not
+in the library, the settings name no project, and the screen offers no
+way back. Until task 2.6, Import… (`importFile`) asks for a Tir draft or
+a Fountain file in the system's Open dialog, which the Rust side
+(`dialogs.rs`, through `tauri-plugin-dialog` called from Rust only) shows
+and reads, refusing a file that is not UTF-8; the page refuses a damaged
+or newer draft whole, saves the script on screen, makes a project from
+the file's script, saves again, and shows it. The file itself is never
+written. Dialogs that ask for a name or confirm a delete are `<dialog>`
+elements in the page (prototype piece 6); failures are message boxes.
 
 ## Settings
 
-The window's settings (brief, "Zoom, focus mode and the paper") live in
+The window's settings (brief, "Zoom, focus mode and the paper"), and the
+project last shown, which Tir opens at launch, live in
 one file per machine, outside the library, so they never become backup
 commits and each screen keeps its own zoom:
 `~/.config/dev.tir.desktop/settings.json` (Tauri's config directory for
@@ -190,7 +363,9 @@ and trial runs use for a temporary directory.
   "zoom": 1.25,
   "theme": "light",
   "focus": false,
-  "sidebar": "open"
+  "sidebar": "open",
+  "project": "Salt Line",
+  "library": "~/Scripts/Tir"
 }
 ```
 
@@ -198,12 +373,23 @@ and trial runs use for a temporary directory.
   missing or damaged file gives the defaults, a value it cannot read the
   default for that field, and a zoom that is not a step the nearest step;
   fields it does not know are ignored.
+- `project` is the folder of the project last shown on this machine, there
+  once Tir has shown one and gone once the Projects screen deletes it
+  ([Saving and opening](#saving-and-opening)).
+- `library` is there only when the writer set it, by editing the file
+  while Tir is closed (an edit made while Tir runs is lost at its next
+  save of the settings): a full path, or one starting `~/`. The Rust
+  side reads it at start (`settings::library`); anything else names no
+  library and the default is used
+  ([Library on disk](#library-on-disk)). The page only keeps it, so that
+  saving the window's settings never drops it, and the Rust side refuses
+  a save that changes it ([File access](#file-access)).
 - The Rust side (`src-tauri/src/settings.rs`, the `read_settings` and
-  `write_settings` commands) only reads the file and replaces it
+  `write_settings` commands) reads the file for the page and replaces it
   ([Writing files](#writing-files)), off the interface thread.
 - `src/ui/settings-file.ts` loads the settings before the editor mounts,
   so the script opens at its zoom, and saves each change, one write at a
-  time and the last change last.
+  time and the last change last; closing waits for its writes.
 
 ## Fountain
 
@@ -309,7 +495,10 @@ first, before it leaves focus mode.
 
 Opening a script gives the view a new `EditorState` (`scriptState` and
 `Editor.open` in `editor.ts`), so undo starts afresh and autocomplete
-counts the new script. The projection follows transactions, and a new
+counts the new script. It focuses the editor first: taking focus after a
+click elsewhere, WebKit puts back the editor's last selection and scrolls
+to it (findings, "Editor"), so the new state's selection and the scroll
+to the top come after. The projection follows transactions, and a new
 state brings none, so `open` rebuilds it, the sheets and the frame before
 the view updates, then restyles every paragraph, since ProseMirror keeps
 the paragraph of an element equal to the one it showed there. A new state
@@ -434,11 +623,14 @@ Not in git:
 - **Measuring the editor:** start the app with
   `TIR_CONFIG_DIR=$(mktemp -d) WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`
   (the temporary directory keeps the tools' settings changes out of the
-  real settings file), then `mise run editor-timing [--pairs N] [--zoom Z]
+  real settings file, and gives the run a library of its own in
+  `$TIR_CONFIG_DIR/Screenplays`; `await import("/src/ui/library.ts")`
+  in the page reaches it), then `mise run editor-timing [--pairs N] [--zoom Z]
   [--focus]` (`tools/editor-timing/`) prints the findings ("Editor") table
   for the current code: layout, frame and busy times for each edit in it,
-  at the zoom given (100% by default), then for a zoom step and focus mode
-  on and off. It sends keys through Hyprland, so it runs on a Hyprland
+  the last of them typing as automatic saves start and run, at the zoom
+  given (100% by default), then for a zoom step and focus mode on and off.
+  It sends keys through Hyprland, so it runs on a Hyprland
   desktop with the window open. `mise run editor-placement [--fixture NAME]
   [--zoom Z] [--focus]` checks design rule 1 in the same app, at the
   window's zoom or the one given: every line the engine lays out must start
@@ -453,13 +645,16 @@ Not in git:
   `ws://127.0.0.1:9339/socket/1/1/WebPage` through that module
   (`Page.evaluate` runs a script and awaits its promise; `ScriptProfiler`
   messages sample JavaScript). In development, `globalThis.tirView` is the
-  editor's view and `globalThis.tirDesk` the window's settings
-  (`tirDesk.set({ zoom: 1.25 })`). The app opens a 120-page script with a
-  forced break before each scene (`?fixture=spike`); `?fixture=feature`
-  opens one without forced breaks, `?fixture=every` one with every element
-  type and format and some
-  text typed in lower case where capitals apply, and `?fixture=sample`
-  prototype piece 5's script, "Salt Line". For a real click, move the
+  editor's view, `globalThis.tirDesk` the window's settings
+  (`tirDesk.set({ zoom: 1.25 })`), `globalThis.tirSaver` the saver
+  (`tirSaver.where`, the draft it saves to) and `globalThis.tirScreen` the
+  Projects screen. The app opens the trial library's last project, or the
+  Projects screen; `?fixture=spike` opens a 120-page
+  script with a forced break before each scene, `?fixture=feature` one
+  without forced breaks, `?fixture=every` one with every element type and
+  format and some text typed in lower case where capitals apply, and
+  `?fixture=sample` prototype piece 5's script, "Salt Line"; a fixture
+  becomes a project in the trial library at its first save. For a real click, move the
   pointer with `nix shell nixpkgs#wlrctl --command wlrctl pointer move DX
   DY` (relative to `hyprctl cursorpos`; the window's `at` plus the
   element's client position is its place on screen) and press with `wlrctl
@@ -470,10 +665,12 @@ Not in git:
   `press("z", "CTRL SHIFT")`. Read and set the system clipboard with
   `nix shell nixpkgs#wl-clipboard --command wl-paste` (`--list-types`
   lists what a copy offered) and `... wl-copy`. The system's dialogs are
-  windows of their own, titled "Open File", "Save File", or a message box's
+  windows of their own, titled "Open File" or a message box's
   headline: send them keys through the dispatcher by title or by `address:`
   from `hyprctl clients -j` (`wtype -k Return` did not reach a message box),
   and in the Open dialog press Ctrl+L before typing a path with `wtype`.
+  Close the window as the writer does, which saves first, with
+  `hyprctl dispatch 'hl.dsp.window.close({window="title:^Tir$"})'`.
   Findings ("Editor") lists measuring traps. For WebKit's own time, run the
   binary under `perf` from the Nix shell:
   `nix develop --command bash -c 'exec $(nix build --no-link --print-out-paths nixpkgs#perf)/bin/perf record -e task-clock:u -g --user-callchains -o /tmp/tir.perf -- src-tauri/target/debug/tir'`

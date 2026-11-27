@@ -5,6 +5,7 @@
  * Reading validates everything and refuses a damaged or newer file whole,
  * never loading part of it.
  */
+import { isRecord, oneLineJson } from "./json.ts";
 import {
   ELEMENT_TYPES,
   type Element,
@@ -67,12 +68,7 @@ function elementLine(element: Element): string {
     if (spans.length > 0) ordered[style] = spans;
   }
   for (const flag of FLAGS) if (element[flag]) ordered[flag] = true;
-  // JSON leaves U+2028 and U+2029 unescaped, and some viewers break lines
-  // at them; escaping keeps each element on one line.
-  return JSON.stringify(ordered).replace(
-    /[\u2028\u2029]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16)}`,
-  );
+  return oneLineJson(ordered);
 }
 
 /** Thrown inside the reader only; `readDraft` turns it into a result. */
@@ -205,10 +201,6 @@ function rejectUnknownKeys(data: Record<string, unknown>, known: readonly string
   for (const key of Object.keys(data)) {
     if (!known.includes(key)) throw damaged(`${where} has an unexpected field "${key}"`);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isElementType(value: unknown): value is ElementType {

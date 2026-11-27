@@ -170,12 +170,11 @@ The user has said the V1 list above is everything they need.
   its own *(Ctrl+Shift+F agent-selected, from prototype piece 5)*. F8 goes
   to the next formatting finding *(agent-selected: Final Draft's Format
   Assistant has no key; F8 is the next problem in code editors)*.
-- **File keys**: Ctrl+O opens, Ctrl+S saves and Ctrl+Shift+S saves to a
-  file picked anew, as Final Draft's Open, Save and Save As (Save As is
-  Cmd+Shift+S on a Mac; Final Draft for Windows has no key for it,
-  [findings](findings.md#final-drafts-keys)). Ctrl+O opens a file until the
-  Projects screen takes the key *(the user's choice, 2026-11-26)*; see
-  [Saving and backup](#saving-and-backup).
+- **File keys**: Ctrl+O opens and Ctrl+S saves, as Final Draft's Open and
+  Save ([findings](findings.md#final-drafts-keys)). Ctrl+O shows the
+  Projects screen, where projects open ([Projects](#projects)). Saving is
+  automatic, so Ctrl+S only saves at once what is waiting
+  *(agent-selected)*; no key saves to a file picked anew.
 
 ## Formatting check
 
@@ -215,11 +214,37 @@ screenplay convention, shows no number.
 
 ## Projects
 
-- On launch Tir opens the last project on its active draft.
-- A **Projects** screen (Ctrl+O) lists every project with its title, page
-  count and last edit. From it the user creates, opens, renames and deletes
-  projects. Deleting asks for confirmation; GitHub's history still holds a
-  deleted project.
+- On launch Tir opens the last project on its active draft: the project
+  last shown on this machine *(the user's choice, 2026-11-27)*. With an
+  empty library, or when that draft cannot be read, it shows the Projects
+  screen instead: the empty library, or the list *(the user's choice,
+  2026-11-27)*. A project or draft Tir cannot read is explained in a
+  message box and left as it is.
+- A **Projects** screen (Ctrl+O, or a click on the project's name in the
+  top bar) lists every project with its title, active draft, page count,
+  number of drafts and last edit, most recent first (prototype piece 6).
+  From it the user creates, opens, renames and deletes projects. Deleting
+  asks for confirmation; GitHub's history still holds a deleted project.
+  Until backup arrives (Stage 6) a deleted project is gone for good, and
+  the confirmation says so: "Its 2 drafts will be deleted from this
+  machine. Tir has no backup of it yet, so this can't be undone." *(the
+  user's choice, 2026-11-27)*. *(agent-selected: the screen covers the
+  writing window, and Esc, or a click on the open project, goes back to
+  the script as it was left; while it shows, the writing window's keys do
+  nothing. A project's last edit is when one of its drafts was last saved
+  on this machine, and its pages are its active draft's. A folder Tir
+  cannot read as a project is listed last, with why, and its menu offers
+  only Delete. A new project's title page starts empty. Deleting the
+  project on screen leaves the screen up with no script open.)*
+- **Until import arrives** (task 2.6), Import… on the Projects screen
+  opens a Tir draft or a Fountain file picked in the system's Open dialog
+  as a new project, named from its title page's title, or else its file's
+  name, with one draft, "First Draft", and shows it; the file itself is
+  never written. The script on screen is saved first, and stays when it
+  cannot be *(the user's choice for Ctrl+O until this screen, 2026-11-27;
+  agent-selected: it moved to Import… when the screen took Ctrl+O; a
+  Fountain file that is not UTF-8 text is refused, not guessed at, and a
+  damaged or newer draft is refused whole)*.
 - **Import** reads a Fountain or FDX file into either a new project (the
   default) or a new draft of the current project, for example when a
   co-writer sends back an edited `.fdx`.
@@ -434,20 +459,19 @@ three.
 ## Saving and backup
 
 - **Saving is automatic**, a moment after the user pauses typing. There is
-  never unsaved work; Ctrl+S is harmless.
-- **Until automatic saving arrives (Stage 2)**, Tir opens and saves one
-  file at a time *(the user's choices, 2026-11-26)*. Ctrl+O opens a Tir
-  draft or a Fountain file picked in the system's Open dialog. Ctrl+S saves
-  the draft to the `.tir` file it was opened from or last saved to; a script
-  with no such file, such as an opened Fountain file or the script Tir
-  starts with, asks for one in the system's Save dialog, which suggests the
-  Fountain file's folder and name; Ctrl+Shift+S always asks. Tir writes
-  only `.tir` files, so a Fountain file it opened is never written. Opening
-  over changes not yet saved asks first (Discard or Cancel). A file Tir
-  cannot open, or a save that fails, is explained in a system message box,
-  and the script on screen stays as it was; a save shows "Saved ·
-  NAME.tir" in the toast. *(agent-selected: a Fountain file that is not
-  UTF-8 text is refused, not guessed at.)*
+  never unsaved work; Ctrl+S is harmless. *(agent-selected: a second after
+  the last change, and at once before another script takes the screen and
+  before the window closes, each save writing the draft and its Fountain
+  copy.)*
+- **The saved half of the indicator** reads "Saved", "Saving…" from the
+  first change until the draft holds it, or "Not saved" in the warning
+  colour when a save failed, with why in its tooltip. A save that fails is
+  tried again; a message box says why once, until a save succeeds. When
+  closing cannot save, Tir stays open and asks whether to close without
+  saving (Close without saving or Cancel) *(agent-selected)*. A second
+  request to close, five or more seconds after the first, closes Tir even
+  if it has not saved, so a Tir that stops answering can still be closed
+  *(the user's choice, 2026-11-27)*.
 - **One private GitHub repository** holds the whole library. Tir runs the
   system `git` with the user's existing GitHub login and stores no tokens.
   The user gives Tir the repository URL once.
@@ -486,8 +510,13 @@ are in [findings](findings.md#rejected-designs).
 
 ## Storage
 
-- A **library** folder holds every project, for example `~/Screenplays/`.
+- A **library** folder holds every project: `~/Screenplays/`, unless Tir's
+  settings file names another folder, which the writer sets by editing
+  that file; Tir has no control for it *(the user's choice, 2026-11-27)*.
 - Each **project** is a folder in the library, with one file per **draft**.
+  *(agent-selected: a project's folder and a draft's file are named from
+  their names, accents kept and characters other systems refuse left out,
+  and follow a rename.)*
 - Draft files use Tir's own format, which records every element's type
   explicitly, so a script reopens exactly as it was saved.
 - Every save also writes a `.fountain` copy of each draft beside it. Tir

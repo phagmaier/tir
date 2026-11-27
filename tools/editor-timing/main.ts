@@ -10,6 +10,7 @@
  * titled "Tir" through Hyprland's dispatcher, so this runs only on a
  * Hyprland desktop (architecture, "Measuring the editor").
  */
+import { SAVE_DELAY_MS } from "../../src/ui/saving.ts";
 import { load as loadApp, Page, press, sleep } from "../inspector.ts";
 
 /**
@@ -113,6 +114,19 @@ const cueStart = (index: number) => `(() => {
   return true;
 })()`;
 
+/**
+ * Counts, in `__saves`, the saves that end with the draft holding what is
+ * on screen, by the top bar's saved state.
+ */
+const countSaves = `(() => {
+  const saved = document.querySelector(".saved");
+  globalThis.__saves = 0;
+  new MutationObserver(() => {
+    if (saved.dataset.state === "saved") globalThis.__saves++;
+  }).observe(saved, { attributes: true, attributeFilter: ["data-state"] });
+  return true;
+})()`;
+
 interface Scenario {
   readonly edit: string;
   readonly query: string;
@@ -121,6 +135,10 @@ interface Scenario {
   readonly key?: string;
   /** True in the page when the edit was measured in the state it names. */
   readonly check?: string;
+  /** The time between keys, in ms; 140 unless given. */
+  readonly gap?: () => number;
+  /** A note on the run, as text, read in the page after it. */
+  readonly note?: string;
 }
 
 const SCENARIOS: readonly Scenario[] = [
@@ -134,6 +152,15 @@ const SCENARIOS: readonly Scenario[] = [
     setup: cueStart(17),
     key: "a",
     check: `!document.querySelector(".completion").hidden`,
+  },
+  {
+    // Each key comes after the pause that starts a save, up to 1.2 s
+    // later, so it lands as the save starts, while it runs, or after it.
+    edit: "Typing as a save starts or runs",
+    query: "?fixture=spike",
+    setup: `(${caret(1, 2)}, ${countSaves})`,
+    gap: () => SAVE_DELAY_MS + Math.random() * 1200,
+    note: `__saves + " saves finished during it"`,
   },
 ];
 
@@ -197,13 +224,13 @@ async function pressPairs(
   pairs: number,
   busy: boolean,
   keys: readonly Key[],
-  gap: number,
+  gap: () => number,
 ): Promise<Row[]> {
   await page.evaluate(`(__timing.rows.length = 0, __timing.busy = ${busy}, true)`);
   for (let i = 0; i < pairs; i++) {
     for (const { key, mods } of keys) {
       await press(key, mods);
-      await sleep(gap);
+      await sleep(gap());
     }
   }
   await sleep(400);
@@ -254,7 +281,8 @@ async function main(args: string[]): Promise<number> {
     );
     console.log("| Edit | Key | Layout | Frame | Busy median |");
     console.log("| --- | --- | --- | --- | --- |");
-    for (const { edit, query, setup, key = "x", check } of SCENARIOS) {
+    const notes: string[] = [];
+    for (const { edit, query, setup, key = "x", check, gap = () => 140, note } of SCENARIOS) {
       const page = await load(query, { zoom, focus }, false);
       const keys = [
         { name: key, key },
@@ -265,14 +293,15 @@ async function main(args: string[]): Promise<number> {
       try {
         await page.evaluate(setup);
         const before = await page.evaluate<string>("tirView.state.doc.textContent");
-        rows = await pressPairs(page, pairs, false, keys, 140);
-        busyRows = await pressPairs(page, pairs, true, keys, 140);
+        rows = await pressPairs(page, pairs, false, keys, gap);
+        busyRows = await pressPairs(page, pairs, true, keys, gap);
         if ((await page.evaluate<string>("tirView.state.doc.textContent")) !== before) {
           console.error(`${edit}: the text changed, so a key was lost; the times are suspect.`);
         }
         if (check && !(await page.evaluate<boolean>(check))) {
           console.error(`${edit}: the page was not in the state measured; the times are suspect.`);
         }
+        if (note) notes.push(`${edit}: ${await page.evaluate<string>(note)}.`);
       } finally {
         page.close();
       }
@@ -281,6 +310,7 @@ async function main(args: string[]): Promise<number> {
         console.log(tableRow(edit, typed, own(rows), own(busyRows)));
       }
     }
+    if (notes.length) console.log(`\n${notes.join("\n")}`);
 
     console.log(
       `\nThe window's keys from ${Math.round(zoom * 100)}%, ${pairs} pairs each, on ?fixture=spike with the caret in the middle; busy over 150 ms.\n`,
@@ -294,8 +324,8 @@ async function main(args: string[]): Promise<number> {
       try {
         await page.evaluate(middle);
         // Long enough apart for the bars' fade to end.
-        rows = await pressPairs(page, pairs, false, keys, 700);
-        busyRows = await pressPairs(page, pairs, true, keys, 700);
+        rows = await pressPairs(page, pairs, false, keys, () => 700);
+        busyRows = await pressPairs(page, pairs, true, keys, () => 700);
       } finally {
         page.close();
       }

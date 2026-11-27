@@ -1,5 +1,6 @@
 //! Reading and writing Tir's files (architecture, "Writing files"): the
-//! settings file and draft files. A write never leaves a file damaged.
+//! settings file, and the library's project files and drafts. A write never
+//! leaves a file damaged.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -26,11 +27,16 @@ fn replace_with(path: &Path, write: impl FnOnce(&mut File) -> io::Result<()>) ->
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
-    let directory = match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-    File::open(directory)?.sync_all()
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => sync_dir(parent),
+        _ => sync_dir(Path::new(".")),
+    }
+}
+
+/// Syncs the directory `dir`, so that a file made, renamed or removed in it
+/// stays so after a crash.
+pub fn sync_dir(dir: &Path) -> io::Result<()> {
+    File::open(dir)?.sync_all()
 }
 
 /// A file beside `path` that did not exist before, `NAME.<pid>-<n>.tmp` with
