@@ -1,0 +1,167 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Collapsing the scene sidebar (docs/brief.md, Scene
+  sidebar: "The sidebar collapses, and focus mode hides it") in the settled
+  writing window of piece 5. Two places for the control:
+
+    A  Top bar toggle   a sidebar button at the left end of the top bar
+                        hides and shows the whole sidebar; the paper switch
+                        and zoom go with it (the zoom keys still work)
+    B  Rail             a « button in the sidebar's heading folds it to a
+                        narrow rail that keeps » to open it again, the paper
+                        switch and zoom
+
+  Either way the page centres in the space left, at once: animating the
+  page's position would lay the whole script out on every frame. Nothing
+  else differs from piece 5.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tir prototype: collapsing the sidebar</title>
+<link rel="stylesheet" href="page.css">
+<link rel="stylesheet" href="look.css">
+<style>
+.a-tp { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); margin: 12px 8px 0; padding: 8px 10px; border-radius: 7px; color: var(--muted); font-size: 12.5px; text-align: left; }
+.a-tp:hover { background: var(--hover); color: var(--fg); }
+.a-foot .paper { display: flex; align-items: center; gap: 7px; padding: 5px 8px; margin-left: -8px; border-radius: 6px; }
+.a-foot .paper:hover { background: var(--hover); color: var(--fg); }
+
+.ib { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 7px; color: var(--muted); }
+.ib:hover { background: var(--hover); color: var(--fg); }
+.ib.on { color: var(--fg); }
+
+/* A: the toggle sits before the project's name. */
+.a-left .ib { margin-right: 2px; }
+body.collapsed[data-v="A"] #sidebar { display: none; }
+body.collapsed[data-v="A"] #canvas { left: 0; }
+
+/* B: a fold button in the heading; folded, a rail. */
+.a-head { align-items: center; }
+.a-head .ib { width: 24px; height: 24px; margin: -4px -8px -4px 4px; }
+.a-head .count { margin-left: auto; }
+.rail { display: none; }
+body.collapsed[data-v="B"] #sidebar { width: 48px; }
+body.collapsed[data-v="B"] #sidebar > :not(.rail) { display: none; }
+body.collapsed[data-v="B"] .rail { display: flex; flex-direction: column; align-items: center; height: 100%; padding: 10px 0 10px; gap: 2px; color: var(--muted); }
+.rail .grow { flex: 1; }
+.rail .rule { width: 24px; height: 1px; margin: 6px 0; background: var(--rule); }
+.rail .zv { font-size: 11px; font-variant-numeric: tabular-nums; padding: 3px 0; }
+body.collapsed[data-v="B"] #canvas { left: 48px; }
+</style>
+</head>
+<body data-variant="A" data-theme="dark" data-v="A">
+<div id="app">
+  <header id="topbar"></header>
+  <aside id="sidebar" aria-label="Scenes"></aside>
+  <main id="canvas"><div id="pages"></div></main>
+</div>
+
+<div id="proto" role="region" aria-label="Prototype controls">
+  <span class="tag">PROTOTYPE</span>
+  <button data-p="variant" id="p-variant"></button>
+  <button data-p="collapse" id="p-collapse"></button>
+  <button data-p="theme" id="p-theme"></button>
+</div>
+
+<script src="script.js"></script>
+<script>
+(function () {
+'use strict';
+const P = window.TirProto;
+const $ = (s) => document.querySelector(s);
+const ICON = {
+  chev: '<path d="M4.5 6.5 8 10l3.5-3.5"/>',
+  branch: '<circle cx="4.5" cy="3.5" r="1.4"/><circle cx="4.5" cy="12.5" r="1.4"/><circle cx="11.5" cy="5" r="1.4"/><path d="M4.5 4.9v6.2M11.5 6.4c0 2.6-2.2 3.1-4.2 3.5-1.6.3-2.8 1-2.8 1.2"/>',
+  alert: '<path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/>',
+  cloudok: '<path d="M4.6 12.6h6.7a2.9 2.9 0 0 0 .3-5.8 4 4 0 0 0-7.7.9 2.5 2.5 0 0 0 .7 4.9Z"/><path d="m6.4 9.7 1.2 1.2 2.3-2.5"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  minus: '<path d="M3.5 8h9"/>',
+  page: '<path d="M4 1.8h5.2L12 4.6v9.6H4z"/><path d="M9 1.8v3h3M6 8.5h4M6 11h3"/>',
+  moon: '<path d="M13 9.6A5.4 5.4 0 0 1 6.4 3 5.4 5.4 0 1 0 13 9.6Z"/>',
+  sun: '<circle cx="8" cy="8" r="2.8"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/>',
+  sidebar: '<rect x="1.8" y="2.6" width="12.4" height="10.8" rx="2"/><path d="M6.2 2.6v10.8"/>',
+  fold: '<path d="m8.5 4.5-3.5 3.5 3.5 3.5M12.5 4.5 9 8l3.5 3.5"/>',
+  unfold: '<path d="m7.5 4.5 3.5 3.5-3.5 3.5M3.5 4.5 7 8l-3.5 3.5"/>',
+};
+const svg = (name, size = 15) => `<svg viewBox="0 0 16 16" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+
+const params = new URLSearchParams(location.search);
+const els = P.parse(P.SAMPLE);
+const S = {
+  variant: params.get('v') === 'B' ? 'B' : 'A',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  collapsed: params.get('collapsed') === '1',
+  els,
+  cur: els.findIndex((e) => e.t === 'dialogue'),
+  lay: null,
+};
+const curType = () => { const e = S.els[S.cur]; return e ? e.t : null; };
+const curScene = () => (S.lay ? S.lay.sceneOf[S.cur] : 0);
+const pageCount = () => (S.lay ? S.lay.pages.length : 0);
+
+function top() {
+  const toggle = S.variant === 'A'
+    ? `<button class="ib${S.collapsed ? '' : ' on'}" data-act="collapse" aria-pressed="${!S.collapsed}" title="${S.collapsed ? 'Show' : 'Hide'} the sidebar">${svg('sidebar', 16)}</button>`
+    : '';
+  return `<div class="a-left">
+      ${toggle}<button class="a-proj" title="Projects · Ctrl+O">Salt Line</button>
+      <span class="a-slash">/</span>
+      <button class="a-draft">${svg('branch', 14)}<span>Rewrite, Nov 2026</span>${svg('chev', 14)}</button>
+    </div>
+    <div class="a-mid" role="toolbar" aria-label="Element">${P.ORDER.map((t) => `<button class="elb${t === curType() ? ' on' : ''}" aria-pressed="${t === curType()}"><span class="f">${P.LABELS[t]}</span><span class="s">${P.SHORT[t]}</span></button>`).join('')}</div>
+    <div class="a-right">
+      <button class="pg" title="Go to page · Ctrl+G">Page 1 of ${pageCount()}</button>
+      <span class="sep"></span>
+      <button class="warn">${svg('alert', 15)}<span>${S.lay.findings.length}</span></button>
+      <span class="sep"></span>
+      <button><span>Saved</span><span style="opacity:.5">·</span>${svg('cloudok', 16)}<span>Backed up</span></button>
+    </div>`;
+}
+function side() {
+  const sc = S.lay.scenes;
+  const fold = S.variant === 'B' ? `<button class="ib" data-act="collapse" title="Fold the sidebar">${svg('fold', 14)}</button>` : '';
+  const paper = svg(S.theme === 'dark' ? 'moon' : 'sun', 14);
+  return `<button class="a-tp">${svg('page', 15)}<span>Title page</span></button><div class="a-head"><span>Scenes</span><span class="count">${sc.length}</span>${fold}</div>
+    <ol class="a-scenes">${sc.map((s) => `<li class="${s.n === curScene() ? 'on' : ''}" title="${s.heading}"><span class="no">${s.n}</span><span class="hd">${s.heading}</span><span class="pg">${s.page}</span></li>`).join('')}</ol>
+    <div class="a-foot"><button class="paper" data-act="paper">${paper}<span>${S.theme === 'dark' ? 'Dark paper' : 'White paper'}</span></button><span class="z"><button aria-label="Zoom out">${svg('minus', 14)}</button><span>100%</span><button aria-label="Zoom in">${svg('plus', 14)}</button></span></div>
+    <div class="rail">
+      <button class="ib" data-act="collapse" title="Open the sidebar">${svg('unfold', 14)}</button>
+      <span class="grow"></span>
+      <button class="ib" data-act="paper" title="${S.theme === 'dark' ? 'Dark paper' : 'White paper'}">${paper}</button>
+      <span class="rule"></span>
+      <button class="ib" aria-label="Zoom in">${svg('plus', 14)}</button>
+      <span class="zv">100%</span>
+      <button class="ib" aria-label="Zoom out">${svg('minus', 14)}</button>
+    </div>`;
+}
+
+function render() {
+  S.lay = P.layout(S.els);
+  P.renderPages($('#pages'), S.lay, { cur: S.cur });
+  chrome();
+}
+function chrome() {
+  document.body.dataset.theme = S.theme;
+  document.body.dataset.v = S.variant;
+  document.body.classList.toggle('collapsed', S.collapsed);
+  $('#topbar').innerHTML = top();
+  $('#sidebar').innerHTML = side();
+  $('#p-variant').textContent = S.variant === 'A' ? 'A: top bar toggle' : 'B: rail';
+  $('#p-collapse').textContent = S.collapsed ? 'Collapsed' : 'Open';
+  $('#p-theme').textContent = S.theme === 'dark' ? 'Paper: dark' : 'Paper: white';
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act],[data-p]');
+  if (!t) return;
+  if (t.dataset.act === 'collapse' || t.dataset.p === 'collapse') { S.collapsed = !S.collapsed; chrome(); return; }
+  if (t.dataset.act === 'paper' || t.dataset.p === 'theme') { S.theme = S.theme === 'dark' ? 'light' : 'dark'; chrome(); return; }
+  if (t.dataset.p === 'variant') { S.variant = S.variant === 'A' ? 'B' : 'A'; chrome(); }
+});
+render();
+})();
+</script>
+</body>
+</html>

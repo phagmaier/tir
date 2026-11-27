@@ -34,10 +34,9 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; stopped after 1.7 as the user asked
+- Active: none; stopped after 1.8 as the user asked
 - Blockers: none
-- Next: 1.8 Zoom, focus mode, the paper switch, and settings, when the user
-  says to continue
+- Next: 1.9 Open and save a draft file, when the user says to continue
 
 ## Stages
 
@@ -760,8 +759,8 @@ saving arrive in Stage 2.
     `mise run check` passed (497 Vitest tests, both type checks, Biome and
     Rust checks).
 
-- [ ] 1.8 — Zoom, focus mode, the paper switch, and settings
-  - Status: todo
+- [x] 1.8 — Zoom, focus mode, the paper switch, and settings
+  - Status: done
   - Depends on: 1.3
   - Spec: brief "Scope" (Focus mode, Zoom, Dark and light themes), "Still
     to settle" (keys)
@@ -775,6 +774,73 @@ saving arrive in Stage 2.
     page and row at 96 px to the inch, and the sidebar is a flex column
     whose scene list takes the space above the footer; zoom must scale the
     jump.
+  - Decision (2026-11-26): asked whether settings outside the library
+    break design rule 4, the user chose a settings file per machine in
+    Tir's config directory over the library (backed up, but every change a
+    commit and a pause when both machines change) and WebKit's storage;
+    rule 4 and AGENTS.md now name it as the one exception. Asked with
+    prototype piece 8 (new), the user chose a toggle at the top bar's left
+    end (A) over a rail (B) for collapsing the sidebar. Both recorded in
+    brief "Scene sidebar", "Zoom, focus mode and the paper" and "Look".
+  - Evidence: 2026-11-26. `src/core/settings.ts` reads and writes the
+    settings file and holds the zoom steps (50–200%);
+    `src-tauri/src/settings.rs` reads it and replaces it by temporary file
+    and rename, at `~/.config/dev.tir.desktop/settings.json` or
+    `$TIR_CONFIG_DIR`;
+    `src/ui/desk.ts` holds the paper switch, the zoom control, the
+    sidebar's toggle and the window's keys; the editor scales the script
+    with a transform inside a frame sized to it, since CSS `zoom` moved
+    lines off the engine's rows at 90% and 110% (findings, "Editor"). Keys
+    (brief, "Elements and keys"; findings, "Final Draft's keys"): Ctrl+=
+    and Ctrl+−, Final Draft's Mac zoom keys, no reset (Ctrl+0 is General);
+    Ctrl+Shift+F for focus mode and Esc to leave it, as Final Draft's Esc;
+    F8 for the next finding (Stage 5). New dependency: `@tauri-apps/api`
+    2.12.5 (Apache-2.0 or MIT, no dependencies of its own), for `invoke`;
+    no Tauri plugin. Tests, expected results from the brief and worked by
+    hand: `src/core/settings.test.ts` (a hand-written file written and read
+    back, no file, damaged and foreign files, one unreadable value among
+    good ones, unknown fields and versions, the nearest step for a zoom
+    that is not one, the steps in and out with their ends),
+    `src/ui/desk.test.ts` (each key, Esc yielding to the popup or a field,
+    Ctrl+0 and other keys left alone), and five Rust tests in temporary
+    directories (round trip, the directory made, no file, a damaged file
+    read and replaced, an unwritable place reported). Native, through the
+    Hyprland dispatcher, `wlrctl` and `wtype`, with `TIR_CONFIG_DIR` a
+    temporary directory (`~/.config/dev.tir.desktop` was never created):
+    Ctrl+=, Ctrl+Shift+= and Ctrl+− stepped 100→110→100% with the caret's
+    line staying at 987 px; Ctrl+0 left the zoom; Ctrl+Shift+F entered
+    focus mode with the toast, the bars faded and the scroll threshold at
+    0, focus and caret kept, and Ctrl+Shift+F or Esc left it; in focus
+    mode Ctrl+G showed the top bar with its field and Esc closed only the
+    field, and with the autocomplete popup open Esc closed only the popup;
+    F8 reached the page. Real clicks on the paper switch, − and +, and the
+    sidebar's toggle each did their job and kept focus and the caret, and
+    the next key typed there. At 125% and 80% a real click on scene 30 and
+    Go to page 57 each put the caret at the engine's place and scrolled to
+    zoom × ((page − 1) × 1,086 + row × 16) px, its line where page 1's
+    first line sits. The dead acute then `e` and Compose `o` `c` entered
+    "é©" in a cue, a dialogue and an action at 110%. Left at 125%, white
+    paper, focus mode and the sidebar collapsed, the settings file held
+    them; after `pkill -x tir` and a fresh start the window opened in that
+    state. `mise run editor-placement` on `every`, `feature` (5,040 lines,
+    83 marks) and `spike` (4,200 lines) at 100%, at 110% and in focus mode:
+    every line, click, shown text and mark in place. `mise run
+    editor-timing` at 100% and 110%, and alternating runs for the one row
+    that differed, typing that adds a page: typing as in task 1.7 at
+    either zoom; a zoom step 2–3 ms to layout and 9–15 ms to the next
+    frame, focus mode on or off 9–15 ms and 17–28 ms (findings, "Editor").
+    Screenshots at 1440×900 beside piece 5 on both papers: the footer
+    equals piece 5's pixel for pixel at 2% tolerance; at 110% and in focus
+    mode (page centred in the window, the toast) the page and chrome match;
+    the toggle (piece 8) is new at the top bar's left; differences left for
+    other tasks as in 1.3 and 1.7. Reviewed with user-code-review at HEAD
+    `68209a1` plus uncommitted changes: fixed Esc never leaving focus mode
+    while the editor had focus (ProseMirror prevents every Esc's default;
+    the keys now act on the way down, found by the native check), the
+    current scene out of the list's view after the sidebar came back, an
+    unused getter, and a test pinning an incidental key. `vite build`
+    built the top-level `await` in `main.ts`. `mise run check` passed (507
+    Vitest tests, both type checks, Biome and Rust checks with 5 tests).
 
 - [ ] 1.9 — Open and save a draft file
   - Status: todo
@@ -823,6 +889,11 @@ saving arrive in Stage 2.
   - Note (from 1.7): a click on a scene keeps focus in the editor, and Tab
     never leaves the script, so no key reaches the scene list's buttons; Go
     to page has Ctrl+G.
+  - Note (from 1.8): the paper switch and the sidebar's toggle have no key
+    and keep focus in the script when clicked, so no key reaches them;
+    zoom and focus mode have keys. In the tiled 931 px window the page is
+    wider than the space beside the sidebar at 100%, and than the whole
+    window from 110%; the document then scrolls sideways.
 
 - [ ] 1.11 — User check: Stage 1
   - Status: todo
@@ -846,6 +917,9 @@ saving arrive in Stage 2.
   - Done when: tests with temporary libraries cover creating, listing,
     renaming and deleting projects and drafts, unsafe titles, and a
     damaged `project.json`.
+  - Note (from 1.8): Tir's settings file (architecture, "Settings") is the
+    place outside the library for the library's own location; "Limit the
+    app's file access" must leave it, and `TIR_CONFIG_DIR`, reachable.
 
 - [ ] 2.2 — Automatic saving and the Fountain copy
   - Status: todo
@@ -1148,6 +1222,9 @@ saving arrive in Stage 2.
     development shell must keep working.
   - Done when: a clean install from the repository gives a `tir` that
     starts outside the development shell.
+  - Note (from 1.8): the settings directory follows Tauri's identifier
+    (`dev.tir.desktop` in `tauri.conf.json`); changing the identifier
+    moves the settings, and WebKit's storage, to a new directory.
 
 - [ ] 7.2 — Desktop entry, icon and release hardening
   - Status: todo

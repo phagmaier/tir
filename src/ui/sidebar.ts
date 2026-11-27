@@ -22,8 +22,11 @@ interface Row {
  * When an edit moves pages, every later scene's page number can change, and
  * laying those rows out in the edit's frame made a page-adding keystroke
  * about 10 ms slower on 120 scenes (findings, "Editor").
+ *
+ * The heading and list go before what `dom` already holds, the sidebar's
+ * footer.
  */
-export function sceneSidebar(dom: HTMLElement, projection: Projection): Plugin {
+export function sceneSidebar(dom: HTMLElement, projection: Projection, zoom: () => number): Plugin {
   const head = document.createElement("div");
   head.className = "scenes-head";
   const title = document.createElement("span");
@@ -33,7 +36,7 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection): Plugin {
   head.append(title, count);
   const list = document.createElement("ol");
   list.className = "scenes";
-  dom.append(head, list);
+  dom.prepend(head, list);
 
   const rows: Row[] = [];
   let shown: readonly Scene[] = [];
@@ -58,6 +61,20 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection): Plugin {
     shown = scenes;
   };
 
+  // Keep the current scene in view in the list, which scrolls on its own.
+  const keepInView = () => {
+    const row = rows[current];
+    if (!row) return;
+    const top = (row.button.parentElement as HTMLElement).offsetTop;
+    const bottom = top + row.button.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight)
+      list.scrollTop = bottom - list.clientHeight;
+  };
+  // A collapsed sidebar measures nothing, so the list catches up when it
+  // shows again, or when the window's height changes.
+  new ResizeObserver(keepInView).observe(list);
+
   const showCurrent = (index: number) => {
     if (index === current) return;
     rows[current]?.button.removeAttribute("aria-current");
@@ -65,12 +82,7 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection): Plugin {
     const row = rows[index];
     if (!row) return;
     row.button.setAttribute("aria-current", "location");
-    // Keep the current scene in view in the list, which scrolls on its own.
-    const top = (row.button.parentElement as HTMLElement).offsetTop;
-    const bottom = top + row.button.offsetHeight;
-    if (top < list.scrollTop) list.scrollTop = top;
-    else if (bottom > list.scrollTop + list.clientHeight)
-      list.scrollTop = bottom - list.clientHeight;
+    keepInView();
   };
 
   return new Plugin({
@@ -85,7 +97,7 @@ export function sceneSidebar(dom: HTMLElement, projection: Projection): Plugin {
         const button = event.target instanceof Element ? event.target.closest("button") : null;
         // The scene as it is now, should the list still show the edit before.
         const scene = projection.map.scenes[rows.findIndex((row) => row.button === button)];
-        if (scene) jumpTo(view, projection, scene);
+        if (scene) jumpTo(view, projection, scene, zoom());
       });
       let waiting = false;
       const show = () => {

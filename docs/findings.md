@@ -82,14 +82,28 @@ numbers and apostrophes: the calibration PDFs (see "Calibration").
   scene, a bookmark and other divisions. The status bar's "Page X of Y"
   gives "the number of the displayed page and the total page count", and on
   a Mac a double-click on it opens Go To.
+- **Zoom**: on a Mac, View > Zoom In is Cmd++ and Zoom Out Cmd+−. The
+  Windows table lists Ctrl++ and Ctrl+− only for the Beat Board; on Windows
+  the script zooms from the status bar's slider, its − and + buttons, or a
+  menu of presets, from 50% to 300%. Neither table has a key that resets
+  the zoom.
+- **Focus Mode** (View > Focus Mode, or an icon in the status bar) hides
+  the menu bar, toolbar and other panels; it has no default key, and Escape
+  leaves it.
+- **Format Assistant**, Final Draft's formatting check, opens from Tools >
+  Format Assistant and steps through its findings with Fix and Ignore; it
+  has no default key.
 - Evidence: Final Draft's knowledge base, "What keyboard shortcuts can I use
-  in Final Draft?" (2024; Go To in both Edit tables) and "What info can I
-  see in the Status Bar at the bottom of the screen?" (2025), Final Draft's
-  blog "Tech Tips: Go To" (2025), and the Final Draft 13 user guide for
-  Windows (Dual Dialogue, Alignment, Page Break, the sample script tutorial,
-  the status bar, SmartType options, Element Shortcuts, Tab key), all from
-  finaldraft.com; the Final Draft 11 Windows guide (Reformatting). Read
-  2026-11-26.
+  in Final Draft?" (2024; Go To in both Edit tables, Zoom In and Zoom Out in
+  the Mac View table and the Windows Beat Board table), "What info can I
+  see in the Status Bar at the bottom of the screen?" (2025), "What's in the
+  View Mini-Bar at the bottom right of my screen? (Windows)" (2025; Zoom,
+  Focus Mode), "How do I use Focus Mode?" (2024) and "How do I use Format
+  Assistant?" (2024), Final Draft's blog "Tech Tips: Go To" (2025), and the
+  Final Draft 13 user guide for Windows (Dual Dialogue, Alignment, Page
+  Break, the sample script tutorial, the status bar, SmartType options,
+  Element Shortcuts, Tab key), all from finaldraft.com; the Final Draft 11
+  Windows guide (Reformatting). Read 2026-11-26.
 
 ## Final Draft's SmartType
 
@@ -498,6 +512,26 @@ changes in a timeout set in the next animation frame, after that frame is
 drawn, without `content-visibility`; with nothing but the caret moving,
 the highlight moves at once.
 
+**Zoom, focus mode and the paper switch leave typing as it was, at any
+zoom** (task 1.8; the window's keys catch every keystroke on its way to
+the editor, and the zoom is a transform). Two full runs of `mise run
+editor-timing` at 100%, the second after the last change, gave ordinary
+typing 10–11 ms layout (p95 12–26), 17 ms frame, 21–22 ms busy; a line
+added or removed 11–12 ms (14–16), 18–19 ms, 15–23 ms; a page added 15 ms
+(25), 23–24 ms, 30–32 ms, and the Backspace removing it 57–59 ms (64),
+62–64 ms, 65 ms; the `feature` line change 15–16 ms (18–21), 22–24 ms,
+24–27 ms; typing in a cue with the popup open 11 ms (13–17), 17–20 ms,
+21–22 ms, all as in task 1.7's runs. Two runs at 110% (`--zoom 1.1`) gave
+the same but for the page added, 16–18 ms layout, which alternating 20-pair
+runs placed in the day's variance (below). From the `keydown` to the
+layout after the window's listener, the next frame, and busy over 150 ms,
+with the caret mid-script on the 120-page fixture, five runs of fifteen
+pairs at 100% and 110%: a zoom step 2–3 ms (p95 4), 9–15 ms (p95 18–20),
+7–12 ms; focus mode on 9–12 ms (15), 17–19 ms (23–30), 17–22 ms; off
+10–15 ms (16), 19–28 ms (29–51), 19–25 ms. Focus mode's change of the
+space around the page costs several times a zoom step; the cause was not
+traced.
+
 **A jump to a scene or a page takes a frame** (task 1.7, real clicks
 through `wlrctl` and keys through the dispatcher, timed as above from the
 `click` or the Enter `keydown`, busy over 150 ms; two runs of twelve jumps
@@ -507,6 +541,41 @@ to layout (at most 4), 13.5 ms to the frame (at most 23), 14.5–15 ms busy
 16–17 ms (at most 27). Every jump landed on the engine's scroll position,
 (page − 1) × 1,086 px plus the row. WebKitGTK and Tauri deliver Ctrl+G to
 the page's `keydown`.
+
+**CSS `zoom` moves lines off the engine's rows; a transform keeps them**
+(task 1.8, `mise run editor-placement`'s check with positions scaled,
+before the zoom was built in). With `zoom` on the script, every line on
+`?fixture=feature` sat where the engine puts it at 75% and 125%, where a
+row (16 px) stays a whole number of pixels, but at 90% and 110% lines
+drifted up about 0.2 px a page, 22.6 px by page 121 at 110% and 25.9 px at
+90%, and clicks on 3,507 and 3,938 of 5,040 lines landed on the wrong one
+(likely WebKit rounding each scaled line box; not traced). With `transform:
+scale()` from the script's top left corner, WebKit lays the script out at
+100% and only paints it scaled: at 110% every line was within 0.5 px and
+every click landed. Changing the zoom also costs far less that way, on the
+120-page fixture: 2 ms to layout and 10–13 ms to the next frame for a
+transform, against 103–140 ms and 106–143 ms for `zoom`, which lays the
+whole script out again. A transform leaves the script's layout box at
+100%, so Tir sizes a frame around it to the scaled size (architecture,
+"The editor"). Typing measured the same with either and at 100%; in
+alternating 20-pair runs the page-adding keystroke took 15–16 ms to layout
+at 100%, 14–15 ms at 110% and 15–16 ms at 90%, and `will-change:
+transform`, which makes the script a composited layer, changed nothing.
+
+**The window's keys reach the page** (task 1.8, the Hyprland dispatcher):
+WebKitGTK and Tauri deliver Ctrl+=, Ctrl+Shift+= (as "+"), Ctrl+−,
+Ctrl+Shift+F, Esc and F8 to the page's `keydown`, and none of them zooms
+or does anything else of WebKit's own. This Hyprland binds no Ctrl or
+Ctrl+Shift key but Ctrl+Print, and no bare F8 or Esc (`hyprctl binds`).
+Its dispatcher knows no key named `plus`; send `equal` with Shift.
+ProseMirror prevents the default of every Esc and Enter in the editor
+(`captureKeyDown` in prosemirror-view 1.44), so a listener after the
+editor cannot tell an Esc that closed the autocomplete popup from one
+that closed nothing: Tir's window keys are caught on the way down
+instead. ProseMirror scrolls a transaction's selection into view only when
+the DOM selection is already in the editor, so a script that sets the
+caret must focus the editor first. Tauri's `invoke` reached commands the
+app defines with the capability left at `core:default`.
 
 **Pasting 120 pages and undoing it take a third and a tenth of a second**
 (task 1.6, timed from the key's `keydown` as above, three runs): the

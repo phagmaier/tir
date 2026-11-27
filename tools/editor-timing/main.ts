@@ -1,22 +1,29 @@
 /**
- * `mise run editor-timing [--pairs N]`: times typing in the running dev app,
- * measuring layout, frame and busy time as findings ("Editor") defines them,
- * for each edit in its table. Start the app first with
- * `WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`. Keys go to the
- * window titled "Tir" through Hyprland's dispatcher, so this runs only on a
+ * `mise run editor-timing [--pairs N] [--zoom Z] [--focus]`: times typing in
+ * the running dev app, measuring layout, frame and busy time as findings
+ * ("Editor") defines them, for each edit in its table, at the zoom given
+ * (100% by default) and in focus mode with `--focus`; then the window's
+ * keys that change no text, a zoom step and focus mode on and off, from that
+ * zoom. Start the app first with
+ * `TIR_CONFIG_DIR=$(mktemp -d) WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`;
+ * the tool puts back the window's settings it found. Keys go to the window
+ * titled "Tir" through Hyprland's dispatcher, so this runs only on a
  * Hyprland desktop (architecture, "Measuring the editor").
  */
-import { load as loadApp, type Page, press, sleep } from "../inspector.ts";
+import { load as loadApp, Page, press, sleep } from "../inspector.ts";
 
 /**
  * Installed in the page: for each key, the time from the `keydown` listener
- * to ProseMirror's DOM update plus a forced layout of the editor (layout), to
- * a zero-delay timer set in the next animation frame (frame), and, when
- * `__timing.busy` is set, the main thread's blocked time in the next 70 ms.
- * The forced layout is the editor's own `getBoundingClientRect`, since
+ * to a forced layout of the editor once the key's effect is in the page
+ * (layout), to a zero-delay timer set in the next animation frame (frame),
+ * and, when `__timing.busy` is set, the main thread's blocked time in the
+ * next `busyMs`. Typing is in the page at ProseMirror's DOM update; a window
+ * key, which changes no text, once the window's own listener, which catches
+ * keys on the way down (`src/ui/desk.ts`), has acted on it. The forced
+ * layout is the editor's own `getBoundingClientRect`, since
  * `document.body.offsetHeight` may skip a fixed-position subtree.
  */
-const PROBE = `(() => {
+const probe = (busyMs: number, windowKeys: boolean) => `(() => {
   const timing = (globalThis.__timing = { rows: [], busy: false });
   const editor = tirView.dom;
   let current = null;
@@ -30,12 +37,12 @@ const PROBE = `(() => {
       const now = performance.now();
       if (now - last > 1) busy += now - last;
       last = now;
-      if (now - row.t0 < 70) channel.port2.postMessage(0);
+      if (now - row.t0 < ${busyMs}) channel.port2.postMessage(0);
       else row.busy = busy;
     };
     channel.port2.postMessage(0);
   }, true);
-  new MutationObserver(() => {
+  const done = () => {
     if (!current || current.t1) return;
     editor.getBoundingClientRect();
     const row = current;
@@ -44,7 +51,9 @@ const PROBE = `(() => {
       row.t3 = performance.now();
       timing.rows.push(row);
     }, 0));
-  }).observe(editor, { childList: true, subtree: true, characterData: true, attributes: true });
+  };
+  if (${windowKeys}) addEventListener("keydown", done);
+  else new MutationObserver(done).observe(editor, { childList: true, subtree: true, characterData: true, attributes: true });
   return true;
 })()`;
 
@@ -136,21 +145,60 @@ interface Row {
   busy?: number;
 }
 
-/** Loads the app at `query`, installs the probe and focuses the editor. */
-async function load(query: string): Promise<Page> {
+/** A key the dispatcher presses, with Hyprland's names for it and its modifiers. */
+interface Key {
+  readonly name: string;
+  readonly key: string;
+  readonly mods?: string;
+}
+
+/** The window's keys, timed in pairs, each from the state the other leaves. */
+const WINDOW_KEYS: readonly (readonly [Key, Key])[] = [
+  [
+    { name: "Zoom in a step", key: "equal", mods: "CTRL" },
+    { name: "Zoom out a step", key: "minus", mods: "CTRL" },
+  ],
+  [
+    { name: "Focus mode on", key: "F", mods: "CTRL SHIFT" },
+    { name: "Focus mode off", key: "F", mods: "CTRL SHIFT" },
+  ],
+];
+
+/** Puts the caret at the start of the script's middle element, in view. */
+const middle = `(() => {
+  const v = tirView;
+  let pos = 0;
+  for (let i = 0; i < v.state.doc.childCount >> 1; i++) pos += v.state.doc.child(i).nodeSize;
+  const selection = v.state.selection.constructor.create(v.state.doc, pos + 1);
+  v.dispatch(v.state.tr.setSelection(selection).scrollIntoView());
+  return true;
+})()`;
+
+/**
+ * Loads the app at `query`, gives the window `settings`, installs the probe,
+ * for typing or for the window's keys, and focuses the editor.
+ */
+async function load(query: string, settings: object, windowKeys: boolean): Promise<Page> {
   const page = await loadApp(query);
-  await page.evaluate(PROBE);
+  await page.evaluate(`(tirDesk.set(${JSON.stringify(settings)}), true)`);
+  await page.evaluate(windowKeys ? probe(150, true) : probe(70, false));
   await page.evaluate("tirView.focus(), true");
   return page;
 }
 
-/** Types `key` then Backspace `pairs` times, returning one row per key. */
-async function typePairs(page: Page, pairs: number, busy: boolean, key: string): Promise<Row[]> {
+/** Presses `keys` in turn `pairs` times, `gap` ms apart, returning one row per press. */
+async function pressPairs(
+  page: Page,
+  pairs: number,
+  busy: boolean,
+  keys: readonly Key[],
+  gap: number,
+): Promise<Row[]> {
   await page.evaluate(`(__timing.rows.length = 0, __timing.busy = ${busy}, true)`);
   for (let i = 0; i < pairs; i++) {
-    for (const typed of [key, "BackSpace"]) {
-      await press(typed);
-      await sleep(140);
+    for (const { key, mods } of keys) {
+      await press(key, mods);
+      await sleep(gap);
     }
   }
   await sleep(400);
@@ -170,18 +218,42 @@ function median(values: number[]): number {
     : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
 }
 
+/** A table row: layout and frame as median (p95), and the median busy time. */
+function tableRow(name: string, key: string, rows: Row[], busyRows: Row[]): string {
+  const show = (values: number[]) =>
+    `${median(values).toFixed(0)} (${percentile(values, 0.95).toFixed(0)})`;
+  const busy = busyRows.filter((row) => row.busy !== undefined).map((row) => row.busy as number);
+  return `| ${name} | ${key} | ${show(rows.map((r) => r.t1 - r.t0))} | ${show(rows.map((r) => r.t3 - r.t0))} | ${median(busy).toFixed(0)} |`;
+}
+
 async function main(args: string[]): Promise<number> {
-  const at = args.indexOf("--pairs");
-  const pairs = at >= 0 ? Number(args[at + 1]) : 15;
-  console.log(`${pairs} pairs of a letter and Backspace per edit; times in ms, median (p95).\n`);
+  const option = (name: string) => {
+    const at = args.indexOf(name);
+    return at >= 0 ? args[at + 1] : undefined;
+  };
+  const pairs = Number(option("--pairs") ?? 15);
+  const zoom = Number(option("--zoom") ?? 1);
+  const focus = args.includes("--focus");
+  const open = await Page.open();
+  const found = await open.evaluate<object>("tirDesk.settings");
+  open.close();
+
+  const at = `${Math.round(zoom * 100)}%${focus ? " in focus mode" : ""}`;
+  console.log(
+    `At ${at}, ${pairs} pairs of a letter and Backspace per edit; times in ms, median (p95).\n`,
+  );
   console.log("| Edit | Key | Layout | Frame | Busy median |");
   console.log("| --- | --- | --- | --- | --- |");
   for (const { edit, query, setup, key = "x", check } of SCENARIOS) {
-    const page = await load(query);
+    const page = await load(query, { zoom, focus }, false);
     await page.evaluate(setup);
     const before = await page.evaluate<string>("tirView.state.doc.textContent");
-    const rows = await typePairs(page, pairs, false, key);
-    const busyRows = await typePairs(page, pairs, true, key);
+    const keys = [
+      { name: key, key },
+      { name: "Backspace", key: "BackSpace" },
+    ];
+    const rows = await pressPairs(page, pairs, false, keys, 140);
+    const busyRows = await pressPairs(page, pairs, true, keys, 140);
     if ((await page.evaluate<string>("tirView.state.doc.textContent")) !== before) {
       console.error(`${edit}: the text changed, so a key was lost; the times are suspect.`);
     }
@@ -190,15 +262,36 @@ async function main(args: string[]): Promise<number> {
     }
     page.close();
     for (const typed of [key, "Backspace"]) {
-      const own = rows.filter((row) => row.key === typed);
-      const busy = busyRows.filter((row) => row.key === typed && row.busy !== undefined);
-      const show = (values: number[]) =>
-        `${median(values).toFixed(0)} (${percentile(values, 0.95).toFixed(0)})`;
-      console.log(
-        `| ${edit} | ${typed} | ${show(own.map((r) => r.t1 - r.t0))} | ${show(own.map((r) => r.t3 - r.t0))} | ${median(busy.map((r) => r.busy as number)).toFixed(0)} |`,
-      );
+      const own = (list: Row[]) => list.filter((row) => row.key === typed);
+      console.log(tableRow(edit, typed, own(rows), own(busyRows)));
     }
   }
+
+  console.log(
+    `\nThe window's keys from ${Math.round(zoom * 100)}%, ${pairs} pairs each, on ?fixture=spike with the caret in the middle; busy over 150 ms.\n`,
+  );
+  console.log("| Change | Key | Layout | Frame | Busy median |");
+  console.log("| --- | --- | --- | --- | --- |");
+  for (const keys of WINDOW_KEYS) {
+    const page = await load("?fixture=spike", { zoom, focus: false }, true);
+    await page.evaluate(middle);
+    // Long enough apart for the bars' fade to end.
+    const rows = await pressPairs(page, pairs, false, keys, 700);
+    const busyRows = await pressPairs(page, pairs, true, keys, 700);
+    page.close();
+    if (rows.length !== 2 * pairs || busyRows.length !== 2 * pairs) {
+      console.error(`${keys[0].name}: a key was lost; the times are suspect.`);
+    }
+    keys.forEach(({ name, key, mods }, i) => {
+      const own = (list: Row[]) => list.filter((_, n) => n % 2 === i);
+      const combo = `${mods ? `${mods.replace(" ", "+")}+` : ""}${key}`;
+      console.log(tableRow(name, combo, own(rows), own(busyRows)));
+    });
+  }
+
+  const restore = await Page.open();
+  await restore.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
+  restore.close();
   return 0;
 }
 

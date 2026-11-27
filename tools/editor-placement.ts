@@ -1,14 +1,16 @@
 /**
- * `mise run editor-placement [--fixture NAME]`: checks design rule 1 in the
- * running dev app. Every line the engine lays out must start in the editor
- * where the engine puts it, and a click on its first or last character must
- * put the caret before that character; in dual dialogue, a click in the
- * blank part of a column's row must land at that line's end. Each element
- * must show the engine's text, capitals included. What the sheets print
- * (page numbers, (MORE), repeated cues and the automatic (CONT'D)) must sit
- * where the engine puts it too. With `--fixture` it loads that script first
- * (`?fixture=NAME`); otherwise it checks the one open. Start the app with
- * `WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`.
+ * `mise run editor-placement [--fixture NAME] [--zoom Z] [--focus]`: checks
+ * design rule 1 in the running dev app. Every line the engine lays out must
+ * start in the editor where the engine puts it, scaled by the page's zoom,
+ * and a click on its first or last character must put the caret before that
+ * character; in dual dialogue, a click in the blank part of a column's row
+ * must land at that line's end. Each element must show the engine's text,
+ * capitals included. What the sheets print (page numbers, (MORE), repeated
+ * cues and the automatic (CONT'D)) must sit where the engine puts it too.
+ * With `--fixture` it loads that script first (`?fixture=NAME`); otherwise
+ * it checks the one open. `--zoom` (such as 1.25) and `--focus` set the
+ * window's settings for the check and put back the ones it found. Start the
+ * app with `TIR_CONFIG_DIR=$(mktemp -d) WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`.
  */
 import { load, Page } from "./inspector.ts";
 
@@ -18,7 +20,8 @@ import { load, Page } from "./inspector.ts";
  * every other line and mark must match it. WebKit reports character boxes on
  * whole pixels (a cue centred at 262.8 px reads 262), so a miss is a pixel or
  * more. Clicks need the spot on screen and clear of the fixed bars, so the
- * check scrolls to it first.
+ * check scrolls to it first. Positions are the engine's at 100%, scaled by
+ * the zoom `Z` to compare with the window's.
  */
 const CHECK = `(async () => {
   const { paginate, pageLabel } = await import("/src/core/paginate.ts");
@@ -26,24 +29,25 @@ const CHECK = `(async () => {
   const { fromDocument } = await import("/src/ui/editor-model.ts");
   const { PITCH_PX, ROW_PX } = await import("/src/ui/projection.ts");
   const view = tirView;
+  const Z = tirDesk.settings.zoom;
   const doc = view.state.doc;
   const starts = [];
   doc.forEach((_node, pos) => starts.push(pos));
   const cells = (text) => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)];
-  const bar = document.getElementById("topbar")?.offsetHeight ?? 0;
-  const side = document.getElementById("sidebar")?.offsetWidth ?? 0;
+  // What the bars cover, as the editor keeps the caret clear of it.
+  const { top: bar, left: side } = view.someProp("scrollThreshold");
   const scroll = [scrollX, scrollY];
-  const out = { pages: 0, lines: 0, empty: 0, marks: 0, offset: null, placed: [], clicked: [], shown: [], printed: [] };
+  const out = { zoom: Z, focus: tirDesk.settings.focus, pages: 0, lines: 0, empty: 0, marks: 0, offset: null, placed: [], clicked: [], shown: [], printed: [] };
 
-  /** The caret position a click lands on, \`left\` and \`top\` px from the editor's corner. */
+  /** The caret position a click lands on, \`left\` and \`top\` px at 100% from the editor's corner. */
   const click = (left, top) => {
     let box = view.dom.getBoundingClientRect();
-    const x = box.left + left;
-    const y = box.top + top;
+    const x = box.left + Z * left;
+    const y = box.top + Z * top;
     if (x < side + 20 || x > innerWidth - 20) scrollBy(x - (side + innerWidth) / 2, 0);
     if (y < bar + 20 || y > innerHeight - 20) scrollBy(0, y - (bar + innerHeight) / 2);
     box = view.dom.getBoundingClientRect();
-    return view.posAtCoords({ left: box.left + left, top: box.top + top })?.pos;
+    return view.posAtCoords({ left: box.left + Z * left, top: box.top + Z * top })?.pos;
   };
 
   const pages = paginate(fromDocument(doc));
@@ -59,8 +63,8 @@ const CHECK = `(async () => {
       const left = line.x * 96;
       const box = view.dom.getBoundingClientRect();
       const at = view.coordsAtPos(pos, 1);
-      const dx = at.left - box.left - left;
-      const dy = at.top - box.top - top;
+      const dx = at.left - box.left - Z * left;
+      const dy = at.top - box.top - Z * top;
       out.offset ??= dy;
       const where = { element: line.element, page: p + 1, row: line.row, text: line.text };
       if (Math.abs(dx) >= 1 || Math.abs(dy - out.offset) >= 1) {
@@ -140,8 +144,8 @@ const CHECK = `(async () => {
         return;
       }
       const at = firstChar(span);
-      const dx = at.left - box.left - mark.x * 96;
-      const dy = at.top - box.top - sheetTop - mark.top - out.offset;
+      const dx = at.left - box.left - Z * mark.x * 96;
+      const dy = at.top - box.top - Z * (sheetTop + mark.top) - out.offset;
       if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) out.printed.push({ ...where, dx, dy });
     });
     if (drawn.length !== want.length) {
@@ -156,8 +160,8 @@ const CHECK = `(async () => {
       const range = document.createRange();
       range.selectNodeContents(number);
       const at = range.getBoundingClientRect();
-      const dx = at.right - box.left - (PAGE.widthIn - 1) * 96;
-      const dy = at.top - box.top - sheetTop - PAGE.headerIn * 96 - out.offset;
+      const dx = at.right - box.left - Z * (PAGE.widthIn - 1) * 96;
+      const dy = at.top - box.top - Z * (sheetTop + PAGE.headerIn * 96) - out.offset;
       if (Math.abs(dx) >= 1 || Math.abs(dy) >= 1) out.printed.push({ page: p + 1, text: label, dx, dy });
     }
   });
@@ -178,6 +182,8 @@ interface Miss {
 }
 
 interface Result {
+  zoom: number;
+  focus: boolean;
   pages: number;
   lines: number;
   empty: number;
@@ -189,12 +195,24 @@ interface Result {
 }
 
 async function main(args: string[]): Promise<number> {
-  const at = args.indexOf("--fixture");
-  const page = at >= 0 ? await load(`?fixture=${args[at + 1]}`) : await Page.open();
+  const option = (name: string) => {
+    const at = args.indexOf(name);
+    return at >= 0 ? args[at + 1] : undefined;
+  };
+  const fixture = option("--fixture");
+  const page = fixture ? await load(`?fixture=${fixture}`) : await Page.open();
+  const zoom = option("--zoom");
+  const change = {
+    ...(zoom ? { zoom: Number(zoom) } : {}),
+    ...(args.includes("--focus") ? { focus: true } : {}),
+  };
+  const found = await page.evaluate<object>("tirDesk.settings");
+  await page.evaluate(`(tirDesk.set(${JSON.stringify(change)}), true)`);
   const result = await page.evaluate<Result>(CHECK);
+  await page.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
   page.close();
   console.log(
-    `${result.pages} pages, ${result.lines} lines checked (${result.empty} of them empty), and ${result.marks} printed marks besides page numbers.`,
+    `At ${Math.round(result.zoom * 100)}%${result.focus ? " in focus mode" : ""}: ${result.pages} pages, ${result.lines} lines checked (${result.empty} of them empty), and ${result.marks} printed marks besides page numbers.`,
   );
   const show = (title: string, misses: Miss[]) => {
     console.log(`${title}: ${misses.length}`);

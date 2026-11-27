@@ -25,10 +25,15 @@ The user delegated these technical choices during planning.
    Tauri imports, so they test quickly in Node. The interface is
    TypeScript with ProseMirror. The Rust side only reads and writes files,
    runs git and opens system dialogs.
-4. **Tir writes only inside the library.** An import reads its source file
-   and never writes to it; an export writes a new file.
-5. **Tests never touch the real library or GitHub.** They use temporary
-   directories and a local bare git repository.
+4. **Tir writes only inside the library**, with one exception: its own
+   settings file, kept for each machine in its config directory
+   ([Settings](#settings); the user's choice, 2026-11-26). An import reads
+   its source file and never writes to it; an export writes a new file.
+   WebKitGTK keeps its cache and storage for Tir in
+   `~/.local/share/dev.tir.desktop/`, which Tir itself never writes.
+5. **Tests never touch the real library, the real settings file or
+   GitHub.** They use temporary directories and a local bare git
+   repository.
 
 ## Repository layout
 
@@ -37,18 +42,22 @@ docs/         brief, architecture, findings, plan; prototype/ (design pieces; in
 src/core/     pure TypeScript: format.ts holds every Final Draft format value; the model, draft file,
               Fountain, FDX, line layout, pagination, autocomplete's suggestions (suggestions.ts),
               the clipboard's forms (clipping.ts), the scenes and where each page starts
-              (script-map.ts) and checks join it
+              (script-map.ts), the settings file's text and the zoom steps (settings.ts) and checks
+              join it
 src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/prototype/look.css),
               fonts/ (Courier Prime, IBM Plex Sans, Newsreader and their licences); editor-model.ts
               maps the model to and from ProseMirror, projection.ts turns the engine's pages into
               decorations, paragraph styles, sheets and the script map edit by edit, editor.ts is
-              the ProseMirror view, commands.ts its keys and commands, undo.ts how undo groups
-              changes, clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete popup,
-              sheets.ts draws the sheets of paper behind it, toolbar.ts the top bar's element
-              buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to page,
-              jump.ts the caret and scroll for both, dev-fixtures.ts holds the scripts
-              `?fixture=NAME` opens, and editor-harness.ts runs the editor's state and keys for tests
-src-tauri/    Rust: the Tauri shell; tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
+              the ProseMirror view and the zoom, commands.ts its keys and commands, undo.ts how undo
+              groups changes, clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete
+              popup, sheets.ts draws the sheets of paper behind it, toolbar.ts the top bar's
+              element buttons, sidebar.ts the scene list, page-position.ts "Page N of M" and Go to
+              page, jump.ts the caret and scroll for both, desk.ts the window's settings (paper,
+              zoom, focus mode, the sidebar's toggle) and their keys, settings-file.ts loads and
+              saves them, dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and
+              editor-harness.ts runs the editor's state and keys for tests
+src-tauri/    Rust: the Tauri shell; src/settings.rs reads and replaces the settings file;
+              tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
               write-pdf.ts (test PDFs in Final Draft's layout), main.ts (the command)
@@ -120,6 +129,38 @@ diff of a draft reads like the script:
   for any change an older Tir would misread.
 - A draft's name is not in its file: the project records it (`DraftInfo` in
   the model; `project.json` in Stage 2).
+
+## Settings
+
+The window's settings (brief, "Zoom, focus mode and the paper") live in
+one file per machine, outside the library, so they never become backup
+commits and each screen keeps its own zoom:
+`~/.config/dev.tir.desktop/settings.json` (Tauri's config directory for
+Tir's identifier, under `$XDG_CONFIG_HOME` when that is set), or
+`$TIR_CONFIG_DIR/settings.json` when `TIR_CONFIG_DIR` is set, which tests
+and trial runs use for a temporary directory.
+
+```json
+{
+  "format": "tir-settings",
+  "version": 1,
+  "zoom": 1.25,
+  "theme": "light",
+  "focus": false,
+  "sidebar": "open"
+}
+```
+
+- `src/core/settings.ts` reads and writes the text. Reading never fails: a
+  missing or damaged file gives the defaults, a value it cannot read the
+  default for that field, and a zoom that is not a step the nearest step;
+  fields it does not know are ignored.
+- The Rust side (`src-tauri/src/settings.rs`, the `read_settings` and
+  `write_settings` commands) only reads the file and replaces it: written
+  to `settings.json.tmp`, then renamed over it, off the interface thread.
+- `src/ui/settings-file.ts` loads the settings before the editor mounts,
+  so the script opens at its zoom, and saves each change, one write at a
+  time and the last change last.
 
 ## Fountain
 
@@ -195,7 +236,23 @@ the edit, never the screen. They are in the typing path, so each touches
 the page only where what it shows changed, and the scene list applies an
 edit's changes just after the edit's frame is drawn (findings, "Editor").
 The list scrolls on its own inside the fixed sidebar. A jump, from a scene
-or Go to page, sets the caret and scrolls to the engine's page and row.
+or Go to page, sets the caret and scrolls to the engine's page and row,
+scaled by the zoom.
+
+The zoom scales the script, sheets included, with a CSS transform from its
+top left corner (none at 100%), so WebKit lays the script out as at 100%
+and every line stays where the engine puts it at any scale; the editor
+sizes a frame around it to the scaled size, keeping the page centred and
+the document's height right (findings, "Editor", for why not CSS `zoom`).
+The autocomplete ghost is inside the script and scales with it; the popup
+sits in the frame and keeps the interface's size. `desk.ts` applies the
+other settings as classes on the body (focus mode, the sidebar collapsed)
+and the paper as `data-theme`, and tells the editor what the bars cover
+(`setCovered`) for its scroll threshold. Its keys are caught on the way
+down to the focused element, before the editor sees them, because
+ProseMirror prevents the default of every Esc in the editor; Esc yields to
+the autocomplete popup and to fields such as Go to page's, which close
+first, before it leaves focus mode.
 
 ## Working here
 
@@ -312,25 +369,32 @@ Not in git:
   without Rust's bundled LLD ([findings](findings.md#nixos-development-shell)),
   so a build outside it differs and rebuilds everything.
 - **Measuring the editor:** start the app with
-  `WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`, then
-  `mise run editor-timing [--pairs N]` (`tools/editor-timing/`) prints the
-  findings ("Editor") table for the current code: layout, frame and busy
-  times for each edit in it. It sends keys through Hyprland, so it runs on
-  a Hyprland desktop with the window open. `mise run editor-placement
-  [--fixture NAME]` checks design rule 1 in the same app: every line the
-  engine lays out must start where the engine puts it, a click on a line's
-  first or last character must land before that character, a click in the
-  blank part of a dual dialogue column's row must land at that line's end,
+  `TIR_CONFIG_DIR=$(mktemp -d) WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`
+  (the temporary directory keeps the tools' settings changes out of the
+  real settings file), then `mise run editor-timing [--pairs N] [--zoom Z]
+  [--focus]` (`tools/editor-timing/`) prints the findings ("Editor") table
+  for the current code: layout, frame and busy times for each edit in it,
+  at the zoom given (100% by default), then for a zoom step and focus mode
+  on and off. It sends keys through Hyprland, so it runs on a Hyprland
+  desktop with the window open. `mise run editor-placement [--fixture NAME]
+  [--zoom Z] [--focus]` checks design rule 1 in the same app, at the
+  window's zoom or the one given: every line the engine lays out must start
+  where the engine puts it, a click on a line's first or last character
+  must land before that character, a click in the blank part of a dual
+  dialogue column's row must land at that line's end,
   each paragraph must show the engine's text (`innerText`, which applies
   CSS capitals), and each sheet's page number and marks must sit where the
-  engine puts them; it exits 1 on a miss. Both drive the page through
+  engine puts them; it exits 1 on a miss. Both put back the window's
+  settings they found, and both drive the page through
   `tools/inspector.ts`. For other probes, connect to
   `ws://127.0.0.1:9339/socket/1/1/WebPage` through that module
   (`Page.evaluate` runs a script and awaits its promise; `ScriptProfiler`
   messages sample JavaScript). In development, `globalThis.tirView` is the
-  editor's view. The app opens a 120-page script with a forced break before
-  each scene (`?fixture=spike`); `?fixture=feature` opens one without forced
-  breaks, `?fixture=every` one with every element type and format and some
+  editor's view and `globalThis.tirDesk` the window's settings
+  (`tirDesk.set({ zoom: 1.25 })`). The app opens a 120-page script with a
+  forced break before each scene (`?fixture=spike`); `?fixture=feature`
+  opens one without forced breaks, `?fixture=every` one with every element
+  type and format and some
   text typed in lower case where capitals apply, and `?fixture=sample`
   prototype piece 5's script, "Salt Line". For a real click, move the
   pointer with `nix shell nixpkgs#wlrctl --command wlrctl pointer move DX

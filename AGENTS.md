@@ -84,11 +84,13 @@ to the user as a new prototype piece.
 
 ## Project rules
 
-- **Tests and trial runs never use the real library (`~/Screenplays`) or a
-  real GitHub repository.** Use temporary directories and a local bare git
+- **Tests and trial runs never use the real library (`~/Screenplays`), the
+  real settings file or a real GitHub repository.** Use temporary
+  directories (`TIR_CONFIG_DIR` for the settings) and a local bare git
   repository.
-- **Tir writes only inside the library.** Imports never write to their
-  source file; exports never overwrite one.
+- **Tir writes only inside the library**, apart from its own settings file
+  in its config directory (architecture, design rule 4). Imports never
+  write to their source file; exports never overwrite one.
 - **`src/core/` imports nothing from the DOM, ProseMirror or Tauri.**
 - **The browser never wraps script text**; the layout engine places every
   line and page break (architecture, design rule 1).

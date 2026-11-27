@@ -158,6 +158,14 @@ The user has said the V1 list above is everything they need.
   accepting a suggestion gives back what was typed, and Enter, Tab and a
   name take three presses to undo. Undo and redo open no autocomplete
   popup.)*
+- **Window keys**: Ctrl+= (or Ctrl++) zooms in and Ctrl+− zooms out, as
+  Final Draft's Zoom In and Zoom Out (Cmd++ and Cmd+− on a Mac,
+  [findings](findings.md#final-drafts-keys)); no key resets the zoom, since
+  Ctrl+0 is General. Ctrl+Shift+F turns focus mode on and off, and Esc
+  leaves it, as Esc leaves Final Draft's Focus Mode, which has no key of
+  its own *(Ctrl+Shift+F agent-selected, from prototype piece 5)*. F8 goes
+  to the next formatting finding *(agent-selected: Final Draft's Format
+  Assistant has no key; F8 is the next problem in code editors)*.
 
 ## Formatting check
 
@@ -173,8 +181,8 @@ Flags:
 
 Each finding shows as a small mark in the margin beside its element, never
 printed or exported, with an explanation on hover or when the cursor is in
-the element. The top bar shows the number of findings, and a key jumps to
-the next one. What the editor already enforces, such as capitals, is never
+the element. The top bar shows the number of findings, and F8 jumps to the
+next one. What the editor already enforces, such as capitals, is never
 flagged.
 
 ## Title page
@@ -216,7 +224,10 @@ screenplay convention, shows no number.
 Each scene shows its number in order (on screen only, never printed), its
 heading and the page it starts on. The scene containing the cursor is
 highlighted, and clicking a scene jumps to it. The sidebar collapses, and
-focus mode hides it.
+focus mode hides it. A toggle at the top bar's left end collapses the
+sidebar and brings it back ([piece 8](prototype/08-sidebar-collapse.html),
+A, chosen over a rail on 2026-11-26); the page centres in the space left,
+and the paper switch and zoom control go with the sidebar.
 
 *(agent-selected)* Every Scene Heading element is a scene, an empty one
 included, which shows only its number and page; elements before the first
@@ -243,6 +254,31 @@ Esc goes back to the script with the caret where it was. *(agent-selected:
 a number past the last page goes to the last page; anything but a number
 leaves the field open; clicking elsewhere closes it without moving;
 switching to another window leaves it open for the return.)*
+
+## Zoom, focus mode and the paper
+
+- **Zoom** scales the pages from 50% to 200%, in steps of 50, 60, 70, 80,
+  90, 100, 110, 125, 150, 175 and 200% *(agent-selected, as browsers
+  step)*, from the window keys or the − and + in the sidebar's footer
+  beside the zoom shown (piece 5). Every line stays where it prints at any
+  zoom. A zoom step keeps the caret's line where it is in the window, or
+  the window's middle when the caret is out of sight, and the autocomplete
+  popup keeps the interface's size at any zoom *(agent-selected)*.
+- **Focus mode** fades out the sidebar and the top bar, and the page
+  centres in the whole window, staying where it was in height. Entering it,
+  or opening Tir in it, shows "Focus mode · Ctrl+Shift+F or Esc to leave"
+  at the top of the window for a moment (piece 5). Esc closes the
+  autocomplete popup or the Go to page field first, when one is open.
+  *(agent-selected: Go to page still works, showing the top bar while its
+  field is open.)*
+- **The paper switch** in the sidebar's footer turns the page between dark
+  and white paper, the dark and light themes ([Look](#look)).
+- Clicking these controls keeps the caret and focus in the script.
+- Tir remembers the zoom, the paper, focus mode and whether the sidebar is
+  collapsed, and opens as it was left. It keeps them for each machine in
+  its own settings file outside the library *(the user's choice,
+  2026-11-26)*, so each screen keeps its own zoom and no setting becomes a
+  backup commit ([architecture](architecture.md#settings)).
 
 ## Find and replace
 
@@ -350,6 +386,9 @@ intact.
 - **Go to page** ([piece 7](prototype/07-go-to-page.html)): "Page N of M"
   turns into a field in place, chosen over a popover under it
   (2026-11-26).
+- **Collapsing the sidebar** ([piece 8](prototype/08-sidebar-collapse.html)):
+  A, a toggle at the top bar's left end, chosen over B, a rail keeping the
+  paper switch and zoom (2026-11-26).
 - **The design is complete.** The prototype pieces are the reference for
   every screen; [the plan](plan.md) builds them.
 
@@ -454,6 +493,5 @@ The user accepted this as the agent's recommendation.
 No product decision is open. The facts still to establish are tasks in
 [the plan](plan.md): Final Draft's remaining pagination details and the
 page-number style (0.8), the calibration set (0.8), the draft file's
-structure (0.2), the Nix development shell (0.1), and the keys for zoom,
-focus mode and the next finding (1.8). None needs the user unless it turns
-out to change behaviour described above.
+structure (0.2) and the Nix development shell (0.1). None needs the user
+unless it turns out to change behaviour described above.

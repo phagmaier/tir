@@ -104,10 +104,60 @@ button {
   padding: 40px 48px 140px;
 }
 
+/* Focus mode (prototype piece 5) fades the bars out, and the page centres
+   in the whole window. The bars stay in the page, so Go to page shows the
+   top bar again while its field has focus. They fade only for changes made
+   after Tir opens. */
+body.settled #topbar,
+body.settled #sidebar {
+  transition: opacity 0.45s ease;
+}
+body.focus #topbar,
+body.focus #sidebar {
+  opacity: 0;
+  pointer-events: none;
+}
+body.focus #topbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.focus #canvas {
+  padding: 0;
+}
+/* The sidebar collapsed from its toggle (prototype piece 8, A). */
+body.sidebar-collapsed #sidebar {
+  display: none;
+}
+body.sidebar-collapsed #canvas {
+  padding-left: 0;
+}
+
 .bar-left,
 .bar-right {
   flex: 1 1 0;
   min-width: 0;
+}
+.bar-left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.side-toggle {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  margin-right: 2px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.side-toggle:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.side-toggle[aria-pressed="true"] {
+  color: var(--fg);
 }
 .title {
   padding: 3px 8px;
@@ -274,11 +324,102 @@ button {
   letter-spacing: 0.01em;
 }
 
+/* ===== The sidebar's footer: the paper switch and the zoom control (prototype piece 5) ===== */
+.side-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 12px;
+}
+.side-foot svg {
+  flex: none;
+}
+.side-foot .paper {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+}
+.side-foot .paper:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.side-foot .zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.side-foot .zoom button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.side-foot .zoom button:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.side-foot .zoom span {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A short message at the top of the window, as entering focus mode shows
+   (prototype piece 5). */
+#toast {
+  position: fixed;
+  z-index: 50;
+  top: 18px;
+  left: 0;
+  right: 0;
+  width: max-content;
+  margin: 0 auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--pop-bg);
+  color: var(--pop-fg);
+  border: 1px solid var(--pop-border);
+  font-size: 12.5px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.25s,
+    visibility 0s 0.25s;
+}
+#toast.show {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.settled #topbar,
+  body.settled #sidebar,
+  #toast,
+  #toast.show {
+    transition: none;
+  }
+}
+
 /* ===== The script: sheets of paper with the editor's text over them ===== */
+/* The page area at the page's zoom. The editor scales the script from its
+   top left corner and sizes this frame to the scaled script. */
+.script-frame {
+  position: relative;
+  margin: 0 auto;
+}
 .script {
   position: relative;
   width: var(--paper-width);
-  margin: 0 auto;
+  transform-origin: 0 0;
   color: var(--ink);
   font:
     var(--font-size) / var(--row-height) "Courier Prime",

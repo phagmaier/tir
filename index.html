@@ -8,12 +8,13 @@
   </head>
   <body data-theme="dark">
     <header id="topbar">
-      <div class="bar-left"><span class="title" id="title"></span></div>
+      <div class="bar-left" id="bar-left"><span class="title" id="title"></span></div>
       <div class="elements" id="elements" role="toolbar" aria-label="Element"></div>
       <div class="bar-right" id="bar-right"></div>
     </header>
-    <aside id="sidebar" aria-label="Scenes"></aside>
+    <aside id="sidebar" aria-label="Scenes"><div class="side-foot" id="side-foot"></div></aside>
     <main id="canvas"><div id="pages"></div></main>
+    <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/ui/main.ts"></script>
   </body>
 </html>

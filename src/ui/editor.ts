@@ -141,26 +141,58 @@ function directInput(view: EditorView, event: InputEvent): boolean {
   return true;
 }
 
+/** Pixels at the window's top and left that fixed bars cover over the scrolling document. */
+export interface Covered {
+  readonly top: number;
+  readonly left: number;
+}
+
 export interface EditorOptions {
   /**
    * View plugins for interface parts that follow the editor, such as the
    * element toolbar and the scene sidebar, given the projection, which is
-   * up to date whenever they update.
+   * up to date whenever they update, and the page's zoom.
    */
-  readonly plugins?: (projection: Projection) => readonly Plugin[];
-  /**
-   * Pixels at the window's top and left that fixed bars cover over the
-   * scrolling document; scrolling the caret into view keeps clear of them.
-   */
-  readonly covered?: { readonly top: number; readonly left: number };
+  readonly plugins?: (projection: Projection, zoom: () => number) => readonly Plugin[];
+  /** The page's scale at first; 1 by default. */
+  readonly zoom?: number;
 }
 
-/** Mounts the editor, over its sheets of paper, at the end of `place`. */
+/** The editor, with what the window's settings change in it. */
+export interface Editor {
+  readonly view: EditorView;
+  /**
+   * Shows the page at `zoom`, keeping the caret's line where it is in the
+   * window, or the window's middle when the caret is out of sight.
+   */
+  setZoom(zoom: number): void;
+  /** What fixed bars cover: scrolling the caret into view keeps clear of it. */
+  setCovered(covered: Covered): void;
+}
+
+const scrollThreshold = ({ top, left }: Covered) => ({ top, left, right: 0, bottom: 0 });
+const scrollMargin = ({ top, left }: Covered) => ({
+  top: top + 5,
+  left: left + 5,
+  right: 5,
+  bottom: 5,
+});
+
+/**
+ * Mounts the editor, over its sheets of paper, at the end of `place`.
+ *
+ * The zoom scales the script, sheets included, with a transform from its top
+ * left corner, so WebKit lays it out as at 100% and every line stays where
+ * the engine puts it at any zoom; CSS `zoom` drifts from the engine at
+ * scales whose rows are not whole pixels (findings, "Editor"). A transform
+ * leaves the script's own box unscaled, so the frame around it takes the
+ * scaled size, keeping the page centred and the document's height right.
+ */
 export function mountEditor(
   place: HTMLElement,
   elements: readonly Element[],
-  { plugins = () => [], covered = { top: 0, left: 0 } }: EditorOptions = {},
-): EditorView {
+  { plugins = () => [], zoom: initialZoom = 1 }: EditorOptions = {},
+): Editor {
   const state = EditorState.create({
     schema,
     doc: toDocument(elements),
@@ -175,6 +207,8 @@ export function mountEditor(
     ],
   });
   const projection = new Projection(state.doc);
+  let zoom = initialZoom;
+  let covered: Covered = { top: 0, left: 0 };
   const script = document.createElement("div");
   script.className = "script";
   script.style.cssText = `--paper-width: ${PAGE.widthIn}in; --paper-height: ${SHEET_PX}px; --row-height: ${ROW_PX}px; --font-size: ${FONT_SIZE_PT}pt`;
@@ -184,12 +218,27 @@ export function mountEditor(
   // The sheets come first: prosemirror.css positions the editor, so its text
   // paints over them.
   script.append(sheets.dom, root);
-  place.append(script);
-  return new EditorView(
+  const frame = document.createElement("div");
+  frame.className = "script-frame";
+  frame.append(script);
+  place.append(frame);
+  let framed = "";
+  // The frame's size follows the zoom and the page count.
+  const sizeFrame = () => {
+    const css = `width: ${PAGE.widthIn * 96 * zoom}px; height: ${projection.height * zoom}px`;
+    if (css !== framed) frame.style.cssText = framed = css;
+  };
+  // No transform at 100%: a transformed element is a layer of its own.
+  const scale = () => {
+    script.style.transform = zoom === 1 ? "" : `scale(${zoom})`;
+    sizeFrame();
+  };
+  scale();
+  const view = new EditorView(
     { mount: root },
     {
       state,
-      plugins: plugins(projection),
+      plugins: plugins(projection, () => zoom),
       attributes: () => ({
         class: "script-editor",
         "aria-label": "Script",
@@ -197,8 +246,8 @@ export function mountEditor(
         "aria-multiline": "true",
         style: `min-height: ${projection.height}px`,
       }),
-      scrollThreshold: { top: covered.top, left: covered.left, right: 0, bottom: 0 },
-      scrollMargin: { top: covered.top + 5, left: covered.left + 5, right: 5, bottom: 5 },
+      scrollThreshold: scrollThreshold(covered),
+      scrollMargin: scrollMargin(covered),
       decorations: () => projection.decorations,
       nodeViews: {
         element: (node, _view, getPos) =>
@@ -209,7 +258,10 @@ export function mountEditor(
         const { state: next, transactions } = this.state.applyTransaction(transaction);
         const changes = transactions.filter((tr) => tr.docChanged);
         const restyles = changes.flatMap((tr) => projection.apply(tr));
-        if (changes.length) sheets.update(projection.sheets);
+        if (changes.length) {
+          sheets.update(projection.sheets);
+          sizeFrame();
+        }
         // Restyle the paragraphs of unchanged nodes before ProseMirror redraws,
         // so WebKit lays the script out once: each layout that moves the rest
         // of the script costs time for every paragraph it moves (findings,
@@ -236,4 +288,23 @@ export function mountEditor(
       },
     },
   );
+  return {
+    view,
+    setZoom(next) {
+      if (next === zoom) return;
+      const top = frame.getBoundingClientRect().top;
+      const caret = view.coordsAtPos(view.state.selection.head);
+      const seen = caret.top >= covered.top && caret.bottom <= innerHeight;
+      const anchor = seen ? caret.top : (covered.top + innerHeight) / 2;
+      const was = zoom;
+      zoom = next;
+      scale();
+      // Nothing above the frame scales, so its top stays where it was.
+      scrollBy(0, (anchor - top) * (next / was - 1));
+    },
+    setCovered(next) {
+      covered = next;
+      view.setProps({ scrollThreshold: scrollThreshold(next), scrollMargin: scrollMargin(next) });
+    },
+  };
 }

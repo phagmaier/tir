@@ -281,19 +281,20 @@ export const autocomplete: Plugin<State> = new Plugin<State>({
 });
 
 /**
- * Draws the popup and the ghost in the editor's parent, the script, beside
- * the editable element: the popup below the caret's line, or above it when
- * the window has no room below, and the ghost on the line after the caret,
- * in the script's font, so it continues the text.
+ * Draws the ghost in the editor's parent, the script, beside the editable
+ * element, on the line after the caret, in the script's font, so it
+ * continues the text at the page's zoom. The popup goes below the caret's
+ * line, or above it when the window has no room below, in the script's
+ * frame, which the zoom does not scale, so it keeps the interface's size.
  */
 class PopupView {
-  private readonly place: HTMLElement;
+  private readonly script: HTMLElement;
   private readonly ghost = document.createElement("span");
   private readonly list = document.createElement("div");
   private shown: Open | null = null;
 
   constructor(view: EditorView) {
-    this.place = view.dom.parentElement as HTMLElement;
+    this.script = view.dom.parentElement as HTMLElement;
     this.ghost.className = "completion-ghost";
     this.ghost.setAttribute("aria-hidden", "true");
     this.list.className = "completion";
@@ -305,7 +306,8 @@ class PopupView {
       const option = (event.target as HTMLElement).closest<HTMLElement>("[data-index]");
       if (option) accept(Number(option.dataset.index))(view.state, view.dispatch);
     });
-    this.place.append(this.ghost, this.list);
+    this.script.append(this.ghost);
+    this.script.parentElement?.append(this.list);
   }
 
   update(view: EditorView): void {
@@ -319,9 +321,13 @@ class PopupView {
     }
     // Where the caret is, read before anything here changes, so the page is
     // laid out once for it. Its box is its font's height, centred on its line.
+    // Positions inside the script are at 100%: the zoom scales them.
     const caret = view.coordsAtPos(open.to, -1);
-    const origin = this.place.getBoundingClientRect();
-    const top = (caret.top + caret.bottom - ROW_PX) / 2;
+    const origin = this.script.getBoundingClientRect();
+    const frame = (this.list.parentElement as HTMLElement).getBoundingClientRect();
+    const zoom = origin.width / this.script.offsetWidth || 1;
+    const row = ROW_PX * zoom;
+    const top = (caret.top + caret.bottom - row) / 2;
     this.list.setAttribute("aria-label", popup.title);
     this.list.replaceChildren(
       line("completion-title", popup.title),
@@ -343,8 +349,8 @@ class PopupView {
     const marks = view.state.storedMarks ?? view.state.doc.resolve(open.to).marks();
     const has = (name: string) => marks.some((mark) => mark.type.name === name);
     const { style } = this.ghost;
-    style.left = `${caret.left - origin.left}px`;
-    style.top = `${top - origin.top}px`;
+    style.left = `${(caret.left - origin.left) / zoom}px`;
+    style.top = `${(top - origin.top) / zoom}px`;
     style.fontWeight = has("bold") ? "700" : "";
     style.fontStyle = has("italic") ? "italic" : "";
     style.textDecoration = has("underline") ? "underline" : "";
@@ -353,12 +359,12 @@ class PopupView {
     // Below the caret's line, or above it when only that fits in the window;
     // from the caret's column, or further left when the window ends first.
     const { offsetWidth: width, offsetHeight: height } = this.list;
-    const below = top + ROW_PX + 4;
+    const below = top + row + 4;
     const above = top - 4 - height;
     const y = below + height > innerHeight && above >= 0 ? above : below;
     const x = Math.max(0, Math.min(caret.left, document.documentElement.clientWidth - width - 4));
-    this.list.style.top = `${y - origin.top}px`;
-    this.list.style.left = `${x - origin.left}px`;
+    this.list.style.top = `${y - frame.top}px`;
+    this.list.style.left = `${x - frame.left}px`;
   }
 
   private hide(): void {

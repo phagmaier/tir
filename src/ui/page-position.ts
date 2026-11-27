@@ -12,7 +12,7 @@ import type { Projection } from "./projection.ts";
  * scrolls there, Esc goes back to the script. A view plugin in the typing
  * path, so it touches the page only when N or M changes.
  */
-export function pagePosition(dom: HTMLElement, projection: Projection): Plugin {
+export function pagePosition(dom: HTMLElement, projection: Projection, zoom: () => number): Plugin {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "pg";
@@ -63,7 +63,7 @@ export function pagePosition(dom: HTMLElement, projection: Projection): Plugin {
     const n = Math.min(Math.max(Number(field.value), 1), count);
     const start = projection.map.pageStart(n);
     close();
-    if (start) jumpTo(view, projection, start);
+    if (start) jumpTo(view, projection, start, zoom());
     else view.focus();
   };
 
