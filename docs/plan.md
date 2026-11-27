@@ -34,12 +34,13 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; 1.10 done, its fixes uncommitted
-- Blockers: none. 1.10 asked the user four questions (Known gaps: drag
-  and drop and middle click, Backspace across elements, closing with
-  changes, keys for the paper switch, sidebar toggle and scene list); an
-  answer that changes Stage 1 becomes a task before 1.11
-- Next: 1.11 User check: Stage 1, run by the user
+- Active: none; Stage 1 is finished (1.11 passed)
+- Blockers: none. The four questions 1.10 asked the user (Known gaps:
+  drag and drop and middle click, Backspace across elements, closing with
+  changes, keys for the paper switch, sidebar toggle and scene list) are
+  still unanswered; none blocks 2.1, and an answer becomes a task where it
+  fits
+- Next: 2.1 Library and project storage
 
 ## Stages
 
@@ -976,7 +977,7 @@ saving arrive in Stage 2.
     window from 110%; the document then scrolls sideways.
   - Evidence: 2026-11-27, reviewed with user-code-review at HEAD
     `ad3301449d05aff1fcd1a423d5e7e282c7e1577a` (clean at the start; Stage 1
-    is `c9a85c3..ad33014`; the fixes below are uncommitted), with three
+    is `c9a85c3..ad33014`; the fixes below are in `30f8d14`), with three
     read-only reviewers (editor core; clipboard and autocomplete; shell,
     files and tools) whose findings were checked against the code or the
     app before acting. Design rule 1 and one source of truth: `mise run
@@ -1041,12 +1042,15 @@ saving arrive in Stage 2.
     question. `vite build` built; `mise run check` passed (532 Vitest
     tests, both type checks, Biome, rustfmt, clippy, 12 Rust tests).
 
-- [ ] 1.11 — User check: Stage 1
-  - Status: todo
+- [x] 1.11 — User check: Stage 1
+  - Status: done
   - Depends on: 1.10
   - Check: the user writes a short scene from scratch using only the
     keyboard, then opens a long Fountain script, scrolls and types in it,
     and judges whether it feels right.
+  - Evidence: 2026-11-27, the user: "Yes i it feels right from testing
+    it's actually suprisingly good and smooth i had no issues." No notes,
+    so no tasks were added before Stage 2.
 
 ## Stage 2: library, projects and drafts
 
