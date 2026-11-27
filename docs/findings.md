@@ -568,6 +568,30 @@ measured the same in alternating 20-pair runs with the file keys'
 listener switched off (16 and 16 ms; 12 and 12 ms) and on (15, 16 and
 17 ms; 13, 13 and 12 ms): the day's, not the change.
 
+**The review's fixes leave typing as it was** (task 1.10). Before them,
+two full runs of `mise run editor-timing` at 100% gave ordinary typing
+10–11 ms layout (p95 13–25), 17–18 ms frame, 19–22 ms busy; a line added
+or removed 11–12 ms (13–22), 18–19 ms, 20–22 ms; a page added 15–16 ms
+(20–23), 23–25 ms, 29–33 ms, and the Backspace removing it 56–58 ms
+(62–64), 61–63 ms, 68 ms; the `feature` line change 15–16 ms (18–23),
+22–25 ms, 27–30 ms; typing in a cue with the popup open 11 ms (13–17),
+18–21 ms, 22–23 ms; a zoom step 3 ms (4–5), 9–10 ms; focus mode on
+13–14 ms, 20–21 ms, off 15 ms, 28 ms. After them (every paragraph's style
+checked after each change, Up and Down across a page gap, the white space
+hidden at a split, the popup following a zoom step), three runs gave
+ordinary typing 11–12 ms (p95 15–23), 17–21 ms, 18–21 ms; a line 11–12 ms,
+18–20 ms, 22–24 ms; a page added 16–17 ms, 24–26 ms, 24–37 ms, and its
+Backspace 57–59 ms, 62–65 ms, 67–70 ms; the `feature` line change
+15–17 ms, 22–25 ms, 28–31 ms; typing in a cue 11–12 ms, 18–20 ms,
+20–23 ms; a zoom step 2–3 ms, 9–13 ms; focus mode on 13 ms, 20 ms and off
+15 ms, 28 ms in the last run. Checking every paragraph took 0.35 ms an
+edit in the page (2,280 paragraphs), and four alternating runs with the
+check off and on measured alike to the timer's millisecond: ordinary
+typing 10–11 and 11 ms layout, 17 and 17–19 ms frame; a page added 16–18
+and 17–18 ms. Making the sidebar inert in focus mode, as first built, took
+focus mode on to 25 ms layout and off to 31 ms (13 and 15 ms without), so
+a bar holding focus shows itself instead.
+
 **Opening the 120-page script takes a quarter of a second, and saving it
 waits on the disk** (task 1.9, through the real dialogs, timed in the page
 from the reply to `open_script`, which brings the file's text; five opens
@@ -582,12 +606,13 @@ new):
 *Reading the text* is `readDraft` or `readFountain` with the check for
 changes not saved; *view update* is ProseMirror's `updateState`, drawing
 2,280 new paragraphs; *layout* and *frame* run from the reply to a forced
-layout of the editor after `Editor.open`, and to the next frame. About
-22 ms of the layout is restyling every paragraph after the update:
-`nodeDOM` walks the document's children from the start each time, so
-2,280 calls took 21–24 ms in the page. The reply came within 5 ms of the
-window's `focus` event as the dialog closed, so the Rust side's read and
-the IPC are a few milliseconds. A Ctrl+S save of the
+layout of the editor after `Editor.open`, and to the next frame. In that
+build about 22 ms of the layout was restyling every paragraph after the
+update: `nodeDOM` walks the document's children from the start each time,
+so 2,280 calls took 21–24 ms in the page; since task 1.10 the editor walks
+the paragraphs once instead (not timed for an open). The reply came within
+5 ms of the window's `focus` event as the dialog closed, so the Rust side's
+read and the IPC are a few milliseconds. A Ctrl+S save of the
 same draft, ten times: 3–9 ms of the page's work (`fromDocument`, and
 `writeDraft` reading its output back), then 117–172 ms until the Rust side
 replied (the write, both syncs and the IPC), which the page awaits without
@@ -616,6 +641,28 @@ to layout (at most 4), 13.5 ms to the frame (at most 23), 14.5–15 ms busy
 16–17 ms (at most 27). Every jump landed on the engine's scroll position,
 (page − 1) × 1,086 px plus the row. WebKitGTK and Tauri deliver Ctrl+G to
 the page's `keydown`.
+
+**Scrolling keeps 60 Hz; a scene click and bringing the sidebar back take
+longer** (task 1.10, through the inspector on the 120-page fixture at 100%
+in the tiled 931×1010 window; no target is agreed). Scrolling the
+document from `requestAnimationFrame`, 120 frames at 40 px a frame (2,400
+px a second) down from the top, up, and mid-script, and at 150 px a frame,
+drew every frame 17 ms after the one before (none over 20 ms), with the
+main thread busy 1–4% of the time and never more than 4–10 ms at once.
+Scrolling the scene list 20 px a frame did the same. With the caret in the
+script, PageDown and PageUp reached the next frame in 13–16 ms (p95 19)
+with 12–17 ms busy (at most 63), and Down from line to line in 6–9 ms (at
+most 15), the scene list's highlight moving at headings. A real click on a
+scene took 8 ms to layout (at most 11), 26–27 ms to the next frame (p95
+29–32) and 29–32 ms busy, and a synthetic click the same; Go to page
+5–6 ms (at most 7), 16–21 ms (at most 27) and 16–19 ms busy. Task 1.7
+recorded 2–2.5 ms and 13.5 ms for the click, and 4.5–5 ms and 14.5–16.5 ms
+for Go to page; patching the page put 5 ms of the click in the selection's
+change with the bars' updates and 4 ms in the scroll, each with its layout
+forced, and the difference from task 1.7 was not traced. Collapsing the
+sidebar took 3–11 ms to layout and 9–18 ms to the frame; bringing it back
+48–54 ms and 51–58 ms in nine of ten (once 22 and 25 ms), not traced
+either. Two runs, before and after the review's fixes, measured alike.
 
 **CSS `zoom` moves lines off the engine's rows; a transform keeps them**
 (task 1.8, `mise run editor-placement`'s check with positions scaled,
@@ -693,14 +740,56 @@ changed nothing, even after composed input that WebKit inserted itself.
 
 **Native editing still works** (Hyprland dispatcher and `wtype`, after the
 changes above): Up and Down kept the caret's column across an engine line
-break and across the gap between pages 1 and 2, and Shift+Down selected
-across both; typing, Backspace, Ctrl+Backspace (a word), Delete, typing
+break and across the gap between pages 1 and 2, which on that fixture falls
+between two elements, and Shift+Down selected across both; typing,
+Backspace, Ctrl+Backspace (a word), Delete, typing
 over a selection, Backspace at an element's start (joining it to the
 previous one) and Ctrl+Z each changed the ProseMirror document as expected;
 the dead acute then `e`, and Compose then `o` `c`, entered `é` and `©`.
 This proves the input sequences, not how they feel on the laptop. On the
 Desk (task 1.3), the dead key and Compose sequences still entered `é` and
 `©`, and Backspace through the dispatcher removed them.
+
+**WebKit's Up and Down mishandle a page gap inside an element** (task
+1.10, the Hyprland dispatcher on `?fixture=feature`): where an action or a
+speech splits across pages, the gap is a block inside the paragraph
+(`.page-gap::after`), and in six of six such elements Down from the last
+line on a page landed at the start of the next page's line, losing the
+column, and Up from there went two lines up, skipping the line above the
+gap. Across a page break between two elements (a paragraph's padding) both
+kept the column. Tir moves the caret across such a gap itself, to the
+engine's line beyond it at the caret's place across (`crossPageGap` in
+`editor.ts`); the block keeps every line box one row high.
+
+**ProseMirror can draw an element in the paragraph of an equal one**
+(task 1.10; prosemirror-view 1.44, `ViewTreeUpdater`): after matching the
+unchanged end of the document by node identity, ProseMirror gives a node
+the first of the next few paragraphs whose node is equal (`Node.eq`), and a
+change that replaces an element with an equal one (the same text typed
+over it in one step) keeps the paragraph with its old node, so the identity
+match stops there next time. With 26 one-line actions and three actions
+"Same.", the last one's text replaced by itself, deleting actions 25 and 26
+left the last "Same." in the paragraph that had been page 2's first, 222 px
+too low (`mise run editor-placement`). The editor now checks every
+paragraph's block after ProseMirror draws a change, setting only those
+that differ.
+
+**Typed line breaks where an element splits across pages** (task 1.10):
+the engine drops the white space where it splits an action or a speech,
+typed line breaks included, and each typed break ends a line in a
+`white-space: pre` paragraph, so a blank line at the split ("Five.\n\nSix.")
+put every later line of the element 16 px below the engine's
+(`editor-placement`). The projection hides that white space but its last
+line break, which carries the page's gap.
+
+**A middle click pastes the clipboard, not the primary selection** (task
+1.10, `wl-copy`, `wl-copy --primary` and `wlrctl pointer click middle`):
+with "clipboardtext" on the clipboard and "primarytext" selected, a middle
+click in the script inserted "clipboardtext" at the caret. WebKitGTK sends
+the page a `paste` event for a middle click, carrying the clipboard's data
+(by the WebKitGTK 2.54.2 source, `Editor::paste` with the global
+selection's pasteboard dispatches it first), and Tir's paste handler,
+which cancels the native insertion, read it as any paste.
 
 **The script's keys reach the page** (task 1.4, the Hyprland dispatcher):
 WebKitGTK and Tauri deliver Enter, Tab, Shift+Tab, Ctrl+0 to Ctrl+7,
@@ -785,8 +874,12 @@ sequences.
   (`tools/inspector.ts` does).
 - While a connection to the page's inspector socket stayed open, a new one
   was not sent `Target.targetCreated`, so it could not reach the page; close
-  every connection before opening the next (`tools/inspector.ts` closes one
-  that names no target).
+  every connection before opening the next (`tools/inspector.ts` closes
+  every one it does not hand back, and the tools close theirs on failure).
+- `wlrctl pointer scroll` (0.2.2) moved nothing in Tir's window (at 1, 15
+  and 120 units the document stayed at the top) while `wlrctl pointer
+  click` worked, so no real wheel scrolling could be sent; scrolling was
+  measured by scrolling the document from `requestAnimationFrame`.
 
 ## NixOS development shell
 

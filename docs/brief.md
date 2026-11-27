@@ -119,6 +119,9 @@ The user has said the V1 list above is everything they need.
   a selection touches.
   A forced page break starts the element holding the caret on a new page,
   and the key again removes it, as Final Draft's Page Break does.
+  *(agent-selected: a forced break keeps two speeches apart, so dual
+  dialogue refuses to pair speeches a break parts, and the break key
+  refuses to part speeches side by side.)*
 - **Automatic**: capitals in scene headings, character cues, transitions
   and shots; parentheses around parentheticals; (MORE) and (CONT'D) where
   dialogue crosses a page break; (CONT'D) on a cue when the same character
@@ -126,7 +129,8 @@ The user has said the V1 list above is everything they need.
   keeps the text as typed; capitals are only how it shows and prints. A
   parenthetical gains its parentheses when it becomes one and loses them
   when it stops being one; typing ")" before the closing one steps over it,
-  and Backspace in an empty one removes it *(agent-selected)*.
+  and Backspace in an empty one removes it, or makes it an empty Action
+  when it is the script's only element *(agent-selected)*.
 - **Autocomplete**: while the writer types at the end of a character cue,
   scene heading or transition, a popup below the line lists what continues
   the part being typed, ignoring case, most used in the script first, and

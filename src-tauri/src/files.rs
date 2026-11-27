@@ -1,31 +1,28 @@
 //! Reading and writing Tir's files (architecture, "Writing files"): the
 //! settings file and draft files. A write never leaves a file damaged.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 /// Replaces the file at `path` with `bytes`. They go to a temporary file
-/// beside it, `NAME.tmp`, which is synced and then renamed over the old
-/// file, and the directory is synced so the rename itself reaches the disk:
-/// the file is always whole, old or new. A write that fails removes its
-/// temporary file; an error syncing the directory comes after the rename,
-/// with the new file in place.
+/// beside it, new to this write, which is synced and then renamed over the
+/// old file, and the directory is synced so the rename itself reaches the
+/// disk: the file is always whole, old or new. A write that fails removes
+/// its temporary file; an error syncing the directory comes after the
+/// rename, with the new file in place.
 pub fn replace(path: &Path, bytes: &[u8]) -> io::Result<()> {
     replace_with(path, |file| file.write_all(bytes))
 }
 
 /// `replace`, with `write` filling the temporary file.
 fn replace_with(path: &Path, write: impl FnOnce(&mut File) -> io::Result<()>) -> io::Result<()> {
-    let temporary = temporary_for(path)?;
-    let written = File::create(&temporary)
-        .and_then(|mut file| {
-            write(&mut file)?;
-            file.sync_all()
-        })
+    let (temporary, mut file) = create_temporary(path)?;
+    let written = write(&mut file)
+        .and_then(|()| file.sync_all())
         .and_then(|()| fs::rename(&temporary, path));
     if let Err(error) = written {
-        // The old file was not touched; leave nothing beside it.
+        // The old file was not touched; leave nothing of this write beside it.
         let _ = fs::remove_file(&temporary);
         return Err(error);
     }
@@ -36,13 +33,32 @@ fn replace_with(path: &Path, write: impl FnOnce(&mut File) -> io::Result<()>) ->
     File::open(directory)?.sync_all()
 }
 
-fn temporary_for(path: &Path) -> io::Result<PathBuf> {
-    let mut name = path
+/// A file beside `path` that did not exist before, `NAME.<pid>-<n>.tmp` with
+/// the first `n` free, so a file of that kind Tir did not make is never
+/// opened, replaced or removed.
+fn create_temporary(path: &Path) -> io::Result<(PathBuf, File)> {
+    let name = path
         .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?
-        .to_owned();
-    name.push(".tmp");
-    Ok(path.with_file_name(name))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
+    let pid = std::process::id();
+    for n in 0..=u32::MAX {
+        let mut temporary = name.to_owned();
+        temporary.push(format!(".{pid}-{n}.tmp"));
+        let temporary = path.with_file_name(temporary);
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => return Ok((temporary, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "no free temporary file name",
+    ))
 }
 
 /// The file's text. Bytes that are not UTF-8 are refused, as
@@ -138,6 +154,19 @@ pub mod tests {
         assert!(replace(&path, b"{}\n").is_err());
         assert!(path.is_dir());
         assert_eq!(dir.names(), ["draft.tir"]);
+    }
+
+    #[test]
+    fn a_tmp_file_tir_did_not_make_survives_a_replace() {
+        let dir = TempDir::new();
+        let path = dir.0.join("draft.tir");
+        replace(&path, b"old\n").unwrap();
+        let theirs = dir.0.join("draft.tir.tmp");
+        fs::write(&theirs, b"someone else's notes\n").unwrap();
+        replace(&path, b"new\n").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new\n");
+        assert_eq!(fs::read(&theirs).unwrap(), b"someone else's notes\n");
+        assert_eq!(dir.names(), ["draft.tir", "draft.tir.tmp"]);
     }
 
     #[test]

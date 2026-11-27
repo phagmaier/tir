@@ -313,6 +313,25 @@ describe("automatic (CONT'D)", () => {
   });
 });
 
+describe("a centred cue", () => {
+  it("is centred between the cue's indents, its automatic (CONT'D) included", () => {
+    // "MAYA" is 0.4 in wide: (3.5 + 7.25 - 0.4) / 2 = 5.175 in. With
+    // " (CONT’D)" it is 13 characters, 1.3 in: (3.5 + 7.25 - 1.3) / 2 = 4.725 in.
+    const script = [
+      el("character", "Maya", { centred: true }),
+      el("dialogue", "Hello?"),
+      el("action", "She turns."),
+      el("character", "Maya", { centred: true }),
+      el("dialogue", "Again."),
+    ];
+    const cues = paginate(script)[0]?.lines.filter((line) => line.element % 3 === 0);
+    expect(cues?.map((line) => [line.element, line.x])).toEqual([
+      [0, 5.175],
+      [3, 4.725],
+    ]);
+  });
+});
+
 describe("dual dialogue", () => {
   it("sets the two speeches side by side from the same row", () => {
     const script = [

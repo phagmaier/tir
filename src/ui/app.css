@@ -104,10 +104,19 @@ button {
   padding: 40px 48px 140px;
 }
 
+/* The sidebar collapsed from its toggle (prototype piece 8, A). */
+body.sidebar-collapsed #sidebar {
+  display: none;
+}
+body.sidebar-collapsed #canvas {
+  padding-left: 0;
+}
 /* Focus mode (prototype piece 5) fades the bars out, and the page centres
-   in the whole window. The bars stay in the page, so Go to page shows the
-   top bar again while its field has focus. They fade only for changes made
-   after Tir opens. */
+   in the whole window. The bars stay in the page, so a bar holding focus
+   shows again: the top bar while Go to page's field is open, or either
+   when a key moves focus into it. (Making the sidebar inert instead made
+   turning focus mode on or off 12 to 16 ms slower.) They fade only for
+   changes made after Tir opens. */
 body.settled #topbar,
 body.settled #sidebar {
   transition: opacity 0.45s ease;
@@ -117,19 +126,13 @@ body.focus #sidebar {
   opacity: 0;
   pointer-events: none;
 }
-body.focus #topbar:focus-within {
+body.focus #topbar:focus-within,
+body.focus #sidebar:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
 body.focus #canvas {
   padding: 0;
-}
-/* The sidebar collapsed from its toggle (prototype piece 8, A). */
-body.sidebar-collapsed #sidebar {
-  display: none;
-}
-body.sidebar-collapsed #canvas {
-  padding-left: 0;
 }
 
 .bar-left,
@@ -478,6 +481,10 @@ body.sidebar-collapsed #canvas {
   content: "";
   display: block;
   height: var(--gap);
+}
+/* White space the engine drops where an element splits across pages. */
+.script-editor .skipped {
+  display: none;
 }
 
 /* ===== Autocomplete (prototype piece 5's popup): beside the editable element,

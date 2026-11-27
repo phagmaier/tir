@@ -12,7 +12,10 @@ import { type Command, Plugin, PluginKey, type Transaction } from "prosemirror-s
 
 const own = new PluginKey("ownStep");
 
-/** Starts a new undo step with `tr`; typing straight after it joins that step. */
+/**
+ * Starts a new undo step with `tr`; typing straight after it joins that step
+ * when the caret is where `tr`'s last change ends.
+ */
 export const newStep = (tr: Transaction): Transaction => closeHistory(tr);
 
 /** Makes `tr` an undo step of its own, joined by neither the change before nor the one after. */

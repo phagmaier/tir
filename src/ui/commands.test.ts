@@ -120,6 +120,18 @@ describe("Enter elsewhere", () => {
       [action("The "), action("| door")],
     ],
     [
+      "at the start, leaves a forced break, dual and centring on the text",
+      [cue("|MARA", { centred: true, dual: true, pageBreakBefore: true })],
+      "Enter",
+      [cue(""), cue("|MARA", { centred: true, dual: true, pageBreakBefore: true })],
+    ],
+    [
+      "at a parenthetical's start, opens one with its parentheses",
+      [paren("|(quietly)")],
+      "Enter",
+      [paren("()"), paren("|(quietly)")],
+    ],
+    [
       "leaves a forced break and dual on the first part, centring on both",
       [cue("TO|MÁS", { centred: true, dual: true, pageBreakBefore: true })],
       "Enter",
@@ -275,6 +287,12 @@ describe("automatic parentheses around a parenthetical", () => {
       "Backspace",
       [dialogue("|Hi.")],
     ],
+    [
+      "Backspace in the script's only element leaves an empty Action",
+      [paren("(|)")],
+      "Backspace",
+      [action("|")],
+    ],
   ]);
 
   test("typing inside an empty one goes between the two", () => {
@@ -376,6 +394,12 @@ describe("Ctrl+Alt+D puts two speeches side by side, as Final Draft's Dual Dialo
       "Ctrl-Alt-d",
       [cue("MAYA"), dialogue("|Six."), ...tomas],
     ],
+    [
+      "from the right column with a forced break, back to one column",
+      [...maya, cue("TOMÁS", { dual: true, pageBreakBefore: true }), dialogue("Sev|en.")],
+      "Ctrl-Alt-d",
+      [...maya, cue("TOMÁS", { pageBreakBefore: true }), dialogue("Sev|en.")],
+    ],
   ]);
 
   test.each([
@@ -385,6 +409,14 @@ describe("Ctrl+Alt+D puts two speeches side by side, as Final Draft's Dual Dialo
       [cue("ELLIS|"), dialogue("No."), ...maya, cue("TOMÁS", { dual: true }), dialogue("Seven.")],
     ],
     ["for a lone speech", [action("Rain."), cue("MAYA|"), dialogue("Six.")]],
+    [
+      "when the cue it would mark starts a new page",
+      [cue("MA|YA"), dialogue("Six."), cue("TOMÁS", { pageBreakBefore: true }), dialogue("Seven.")],
+    ],
+    [
+      "when a forced break inside the speech before keeps the two apart",
+      [cue("MAYA"), dialogue("Six.", { pageBreakBefore: true }), cue("TOMÁS"), dialogue("Sev|en.")],
+    ],
   ])("does nothing %s", (_name, before) => {
     expect(pressAll(before, ["Ctrl-Alt-d"])).toEqual({ elements: before, handled: false });
   });
@@ -417,7 +449,20 @@ describe("Ctrl+E centres, and Ctrl+Enter forces a page break, as commands on who
       "Ctrl-Enter",
       [action("Lat|er.")],
     ],
+    [
+      "again, removes it from a speech beside another",
+      [cue("MAYA"), dialogue("Six."), cue("TO|MÁS", { dual: true, pageBreakBefore: true })],
+      "Ctrl-Enter",
+      [cue("MAYA"), dialogue("Six."), cue("TO|MÁS", { dual: true })],
+    ],
   ]);
+
+  test.each([
+    ["on the right column's cue", [cue("MAYA"), dialogue("Six."), cue("TO|MÁS", { dual: true })]],
+    ["inside the left column", [cue("MAYA"), dialogue("Si|x."), cue("TOMÁS", { dual: true })]],
+  ])("Ctrl+Enter adds no break that would part two speeches side by side, %s", (_name, before) => {
+    expect(pressAll(before, ["Ctrl-Enter"])).toEqual({ elements: before, handled: false });
+  });
 });
 
 describe("autocomplete", () => {
@@ -515,6 +560,20 @@ describe("autocomplete", () => {
       "ma",
       ["Escape", "Enter"],
       [...speeches, cue("ma"), dialogue("|")],
+    ],
+    [
+      "Esc closes it, and Ctrl+E reopens nothing, so Enter starts the dialogue",
+      [...speeches, cue("|")],
+      "ma",
+      ["Escape", "Ctrl-e", "Enter"],
+      [...speeches, cue("ma", { centred: true }), dialogue("|")],
+    ],
+    [
+      "Esc closes it, and Ctrl+Enter reopens nothing, so Enter starts the dialogue",
+      [...speeches, cue("|")],
+      "ma",
+      ["Escape", "Ctrl-Enter", "Enter"],
+      [...speeches, cue("ma", { pageBreakBefore: true }), dialogue("|")],
     ],
     [
       "a name typed in full opens nothing, so Enter starts the dialogue",
@@ -685,6 +744,12 @@ describe("undo and redo", () => {
     state = typeEach(press(state, "Enter").state, "Wind.");
     expect(show(state)).toEqual([action("Rain."), action("Wind.|")]);
     expect(undoSteps(state)).toEqual([[action("Rain.|")], [action("|")]]);
+  });
+
+  test("Enter at an element's start is a step that typing straight after joins", () => {
+    const state = typeEach(press(stateOf([cue("|MARA")]), "Enter").state, "x");
+    expect(show(state)).toEqual([cue(""), cue("x|MARA")]);
+    expect(undoSteps(state)).toEqual([[cue("|MARA")]]);
   });
 
   test("Tab starting an element is a step that typing joins, as Enter is", () => {

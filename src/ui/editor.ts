@@ -1,15 +1,15 @@
 import { baseKeymap } from "prosemirror-commands";
 import { keymap } from "prosemirror-keymap";
 import type { Node, NodeType } from "prosemirror-model";
-import { EditorState, type Plugin } from "prosemirror-state";
+import { EditorState, type Plugin, TextSelection } from "prosemirror-state";
 import { EditorView, type NodeView, type ViewMutationRecord } from "prosemirror-view";
 import { DUAL_FORMATS, ELEMENT_FORMATS, FONT_SIZE_PT, PAGE } from "../core/format.ts";
 import type { Element, ElementType } from "../core/model.ts";
-import { autocomplete } from "./autocomplete.ts";
+import { autocomplete, placePopup, popupOf } from "./autocomplete.ts";
 import { clipboard } from "./clipboard.ts";
 import { screenplayKeys } from "./commands.ts";
 import { schema, toDocument } from "./editor-model.ts";
-import { type Block, Projection, ROW_PX, SHEET_PX } from "./projection.ts";
+import { type Block, Projection, ROW_PX, SHEET_PX, sameBlock } from "./projection.ts";
 import { SheetLayer } from "./sheets.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
 
@@ -20,13 +20,18 @@ import { undoHistory, undoKeys } from "./undo.ts";
  */
 const DUAL_SPLIT_IN = (DUAL_FORMATS.left.dialogue.right + DUAL_FORMATS.right.dialogue.left) / 2;
 
-const written = new WeakMap<HTMLElement, string>();
+/** The block each paragraph was last set to. */
+const written = new WeakMap<HTMLElement, Block>();
 
 /**
  * Places an element's paragraph: the space above and below it, its first
  * line's indent, and its column in dual dialogue.
  */
-function setBlock(dom: HTMLElement, { gap, x, column, below }: Block): void {
+function setBlock(dom: HTMLElement, block: Block): void {
+  const was = written.get(dom);
+  if (was && sameBlock(was, block)) return;
+  written.set(dom, block);
+  const { gap, x, column, below } = block;
   // A negative gap sets a column beside the one before it (dual dialogue).
   let css = `${gap < 0 ? "margin" : "padding"}-top: ${gap}px; `;
   if (column === "left") {
@@ -38,8 +43,6 @@ function setBlock(dom: HTMLElement, { gap, x, column, below }: Block): void {
     css += `padding-left: ${x}in`;
   }
   if (below) css += `; padding-bottom: ${below}px`;
-  if (written.get(dom) === css) return;
-  written.set(dom, css);
   dom.style.cssText = css;
 }
 
@@ -138,6 +141,36 @@ function directInput(view: EditorView, event: InputEvent): boolean {
   if (!view.someProp("handleTextInput", (f) => f(view, from, to, text, insert))) {
     view.dispatch(insert().scrollIntoView());
   }
+  return true;
+}
+
+/**
+ * Up and Down across a page gap inside an element, which WebKit gets wrong:
+ * the gap is a block inside the paragraph, so Down lands at the start of the
+ * next page's line and Up skips the line above the gap (findings, "Editor").
+ * They go to the engine's line beyond the gap at the caret's place across,
+ * extending the selection with Shift, as everywhere else.
+ */
+function crossPageGap(view: EditorView, event: KeyboardEvent, projection: Projection): boolean {
+  const down = event.key === "ArrowDown";
+  if (!down && event.key !== "ArrowUp") return false;
+  if (event.ctrlKey || event.altKey || event.metaKey || view.composing) return false;
+  // The autocomplete popup's arrows choose a suggestion.
+  if (popupOf(view.state)) return false;
+  const { selection } = view.state;
+  if (!(selection instanceof TextSelection) || selection.$head.depth !== 1) return false;
+  const { $head } = selection;
+  const line = projection.lineAcrossGap($head.index(0), $head.parentOffset, down);
+  if (!line) return false;
+  const start = $head.start();
+  const x = view.coordsAtPos($head.pos, $head.parentOffset === line.from ? 1 : -1).left;
+  const target = view.coordsAtPos(start + line.start, 1);
+  const found = view.posAtCoords({ left: x, top: (target.top + target.bottom) / 2 });
+  const pos = Math.min(Math.max(found?.pos ?? 0, start + line.start), start + line.end);
+  const anchor = event.shiftKey ? selection.anchor : pos;
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, anchor, pos)).scrollIntoView(),
+  );
   return true;
 }
 
@@ -246,11 +279,17 @@ export function mountEditor(
     sizeFrame();
   };
   scale();
-  // Sets element `index`'s paragraph to its block once ProseMirror has drawn it.
-  const restyle = (view: EditorView, index: number) => {
-    const dom = view.nodeDOM(projection.positionOf(index) ?? -1);
-    const block = projection.block(index);
-    if (dom instanceof HTMLElement && block) setBlock(dom, block);
+  // Sets each paragraph to its element's block where it holds another.
+  // ProseMirror may draw an element in the paragraph that showed an equal
+  // element elsewhere, without its node view knowing (findings, "Editor"),
+  // so every paragraph is checked once ProseMirror has drawn; most are as
+  // they were.
+  const restyleAll = (view: EditorView) => {
+    let index = 0;
+    for (let dom = view.dom.firstElementChild; dom; dom = dom.nextElementSibling) {
+      const block = projection.block(index++);
+      if (dom instanceof HTMLElement && block) setBlock(dom, block);
+    }
   };
   const view = new EditorView(
     { mount: root },
@@ -272,6 +311,7 @@ export function mountEditor(
           new ElementView(node, () => projection.block(projection.indexAt(getPos() ?? 0))),
       },
       handleDOMEvents: { beforeinput: directInput },
+      handleKeyDown: (view, event) => crossPageGap(view, event, projection),
       dispatchTransaction(this: EditorView, transaction) {
         const { state: next, transactions } = this.state.applyTransaction(transaction);
         const changes = transactions.filter((tr) => tr.docChanged);
@@ -284,21 +324,15 @@ export function mountEditor(
         // so WebKit lays the script out once: each layout that moves the rest
         // of the script costs time for every paragraph it moves (findings,
         // "Editor"). With several transactions, indices may have shifted.
-        let later: number[] = [];
-        if (changes.length > 1) {
-          later = Array.from({ length: next.doc.childCount }, (_, i) => i);
-        } else {
+        if (changes.length === 1) {
           for (const { index, before } of restyles) {
             const dom = before === undefined ? null : this.nodeDOM(before);
             const block = projection.block(index);
             if (dom instanceof HTMLElement && block) setBlock(dom, block);
-            else later.push(index);
           }
         }
         this.updateState(next);
-        // Node views style the paragraphs ProseMirror redrew; this catches
-        // changed elements whose paragraphs it kept.
-        for (const index of later) restyle(this, index);
+        if (changes.length) restyleAll(this);
       },
     },
   );
@@ -314,9 +348,7 @@ export function mountEditor(
       sheets.update(projection.sheets);
       sizeFrame();
       view.updateState(next);
-      // ProseMirror keeps the paragraph of an element equal to the one it
-      // showed there, without its node view restyling it.
-      for (let index = 0; index < next.doc.childCount; index++) restyle(view, index);
+      restyleAll(view);
       scrollTo(0, 0);
       view.focus();
     },
@@ -331,6 +363,8 @@ export function mountEditor(
       scale();
       // Nothing above the frame scales, so its top stays where it was.
       scrollBy(0, (anchor - top) * (next / was - 1));
+      // The popup keeps the interface's size, so it follows the caret itself.
+      placePopup(view);
     },
     setCovered(next) {
       covered = next;

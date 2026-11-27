@@ -75,14 +75,24 @@ const PAPER: Readonly<Record<Theme, { icon: keyof typeof ICONS; name: string }>>
   light: { icon: "sun", name: "White paper" },
 };
 
-/** A button that leaves focus, and the caret, in the editor when pressed. */
-function button(className: string, html: string, title: string): HTMLButtonElement {
+/**
+ * A button that leaves focus, and the caret, in the editor when pressed. A
+ * field with focus, such as Go to page's, gives it to the editor, so it
+ * closes as a click elsewhere closes it.
+ */
+function button(editor: Editor, className: string, html: string, title: string): HTMLButtonElement {
   const dom = document.createElement("button");
   dom.type = "button";
   dom.className = className;
   dom.title = title;
   dom.innerHTML = html;
-  dom.addEventListener("mousedown", (event) => event.preventDefault());
+  dom.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      editor.view.focus();
+    }
+  });
   return dom;
 }
 
@@ -107,15 +117,15 @@ export class Desk {
     this.parts = parts;
     this.shown = settings;
 
-    this.paper = button("paper", "", "Switch the page between dark and white paper");
+    this.paper = button(editor, "paper", "", "Switch the page between dark and white paper");
     this.paper.addEventListener("click", () =>
       this.set({ theme: this.shown.theme === "dark" ? "light" : "dark" }),
     );
-    const out = button("", svg("minus", 14), "Zoom out · Ctrl+−");
+    const out = button(editor, "", svg("minus", 14), "Zoom out · Ctrl+−");
     out.setAttribute("aria-label", "Zoom out");
     out.setAttribute("aria-keyshortcuts", "Control+-");
     out.addEventListener("click", () => this.set({ zoom: zoomOut(this.shown.zoom) }));
-    const into = button("", svg("plus", 14), "Zoom in · Ctrl+=");
+    const into = button(editor, "", svg("plus", 14), "Zoom in · Ctrl+=");
     into.setAttribute("aria-label", "Zoom in");
     into.setAttribute("aria-keyshortcuts", "Control+=");
     into.addEventListener("click", () => this.set({ zoom: zoomIn(this.shown.zoom) }));
@@ -126,7 +136,7 @@ export class Desk {
     zoom.append(out, shown, into);
     parts.footer.append(this.paper, zoom);
 
-    this.toggle = button("side-toggle", svg("sidebar", 16), "");
+    this.toggle = button(editor, "side-toggle", svg("sidebar", 16), "");
     this.toggle.setAttribute("aria-label", "Scene sidebar");
     this.toggle.addEventListener("click", () =>
       this.set({ sidebarCollapsed: !this.shown.sidebarCollapsed }),

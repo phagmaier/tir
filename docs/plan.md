@@ -34,9 +34,12 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: none; stopped after 1.9 as the user asked
-- Blockers: none
-- Next: 1.10 Review: Stage 1, when the user says to continue
+- Active: none; 1.10 done, its fixes uncommitted
+- Blockers: none. 1.10 asked the user four questions (Known gaps: drag
+  and drop and middle click, Backspace across elements, closing with
+  changes, keys for the paper switch, sidebar toggle and scene list); an
+  answer that changes Stage 1 becomes a task before 1.11
+- Next: 1.11 User check: Stage 1, run by the user
 
 ## Stages
 
@@ -934,8 +937,8 @@ saving arrive in Stage 2.
     natively: a save failing on disk (Rust tests cover it), and the
     laptop.
 
-- [ ] 1.10 — Review: Stage 1
-  - Status: todo
+- [x] 1.10 — Review: Stage 1
+  - Status: done
   - Depends on: 1.9
   - Scope: everything changed since 1.2's recorded state.
   - Check:
@@ -971,6 +974,72 @@ saving arrive in Stage 2.
     zoom and focus mode have keys. In the tiled 931 px window the page is
     wider than the space beside the sidebar at 100%, and than the whole
     window from 110%; the document then scrolls sideways.
+  - Evidence: 2026-11-27, reviewed with user-code-review at HEAD
+    `ad3301449d05aff1fcd1a423d5e7e282c7e1577a` (clean at the start; Stage 1
+    is `c9a85c3..ad33014`; the fixes below are uncommitted), with three
+    read-only reviewers (editor core; clipboard and autocomplete; shell,
+    files and tools) whose findings were checked against the code or the
+    app before acting. Design rule 1 and one source of truth: `mise run
+    editor-placement` on `every`, `feature` (5,040 lines, 83 marks),
+    `spike` (4,200 lines), and `feature` at 110% in focus mode: every line,
+    click, shown text and mark in place. Found and fixed: ProseMirror can
+    draw an element in the paragraph of an equal element elsewhere (a
+    reviewer's sequence left a line 222 px low), so the editor checks every
+    paragraph's style after each change; a typed blank line where an
+    element splits across pages put the rest 16 px low, so the projection
+    hides the white space the engine drops there (the placement tool now
+    expects that); a centred cue ignored its centring in the engine. Keys,
+    natively through the dispatcher and `wtype` on `?fixture=feature`: Down
+    and Up kept the column across an engine line break and a page break
+    between elements, but across a page gap inside an element Down lost
+    the column and Up skipped a line (6 of 6); Tir now moves the caret
+    there itself, and 6 of 6 keep the column, Shift+Down selecting across.
+    Ctrl+3, Ctrl+2, typing, the dead acute then `e` and Compose `o` `c`
+    ("é©"), Backspace, Ctrl+Z, Ctrl+Shift+Z, Ctrl+= and Ctrl+−, Ctrl+G and
+    Esc, Ctrl+Shift+F and Esc did what the brief says. Fixed in the keys
+    (tests in `commands.test.ts`): Ctrl+E or Ctrl+Enter reopening the
+    autocomplete popup, so Enter accepted a name; Ctrl+Alt+D marking a
+    pair that a forced break keeps apart, and Ctrl+Enter parting a pair
+    side by side (both now refuse; brief updated); Backspace in a lone
+    empty parenthetical leaving ")". Undo: fixed Enter at an element's
+    start not joining the typing after it; natively, accepting TEO from
+    "te" then Ctrl+Z gave back "te", a pasted Fountain scene went in as
+    four typed elements and one Ctrl+Z took it out, and a burst with
+    composed input undid at once. Also fixed: a cut starting at an
+    element's end not restored by pasting there; the popup left behind by
+    a zoom step (now 3 px below the caret at 100% and 110%); a jump
+    keeping the window scrolled sideways; the editor without focus at
+    start (the body had it); desk buttons leaving Go to page's field
+    open; `files.rs` overwriting and removing an existing `NAME.tmp` it
+    did not make (its temporary file is now new to each write; Rust test);
+    the tools leaving inspector connections open or settings changed on
+    failure. Performance: `mise run editor-timing` at 100%, two runs
+    before the fixes and three after, typing as in findings (layout
+    10–12 ms, frame 17–21 ms); the paragraph check costs 0.35 ms an edit
+    and four alternating runs with it off and on measured alike; making
+    the sidebar inert in focus mode, as first done, slowed focus mode by
+    12–16 ms and was replaced (findings, "Editor"). Scrolling and the
+    sidebar, no target: findings ("Scrolling keeps 60 Hz…"), brought to
+    the user. Accessibility: every top bar, sidebar and footer control has
+    a name (text, `aria-label`) and the editor is a named multi-line
+    textbox; controls reached by key show look.css's ring; the editor's
+    focus shows only as its 1 px brass caret, its ring off by design; the
+    paper switch, the sidebar's toggle and the scene list cannot be
+    reached by key (asked the user), and the popup is not announced
+    (Known gaps). Screenshots at 1440×900 of `?fixture=sample` beside piece
+    5 on both papers: the sidebar footer equal at 2% tolerance, the page
+    differing in 0.2–0.35% of pixels (the caret, three action lines
+    wrapping at 61 rather than the prototype's 60, the prototype's bar),
+    the top bar by design as in 1.3, 1.7 and 1.8. WebKitGTK quirks and a
+    measuring trap recorded in findings. Not reproduced: the document
+    scrolling past the last sheet below 100% (its height matched the frame
+    at 50% and 80%). Dismissed: a scene click read against a list one frame
+    stale. Deferred to Known gaps: drag and drop and middle-click paste,
+    Backspace across elements against cut, closing with changes, keys for
+    the controls (all asked of the user), the popup for screen readers, a
+    style boundary inside a grapheme, keys typed during an open's
+    question. `vite build` built; `mise run check` passed (532 Vitest
+    tests, both type checks, Biome, rustfmt, clippy, 12 Rust tests).
 
 - [ ] 1.11 — User check: Stage 1
   - Status: todo
@@ -1382,14 +1451,37 @@ that will close it.
 - Dragging a selection within the script, and dropping text from elsewhere,
   still go through ProseMirror's own handling (1.6): by ProseMirror's
   source, a drag carries its own slice, element types included, and places
-  it by its rules, not the paste rules, and a drop from elsewhere becomes
-  plain paragraphs, so it arrives as action. Neither is checked natively, nor
-  middle-click (primary selection) paste. The brief names none of them;
-  1.10 to judge.
+  it by its rules, not the paste rules (text dragged into an element can
+  join it and take its type), and a drop from elsewhere becomes plain
+  paragraphs, so it arrives as action. Neither is checked natively. A
+  middle click pastes the clipboard's text, not the primary selection,
+  through the paste rules (1.10, findings "Editor"). The brief names none
+  of them; 1.10 asked the user (2026-11-27).
 - Backspace, Delete and typing over a selection across elements join its
   ends into the first element's type, ProseMirror's rule, while cut (1.6)
-  removes the elements it covers whole and leaves the last one its type.
-  1.10 to judge whether the keys should follow cut.
+  removes the elements it covers whole and leaves a part-covered last one
+  its type: a selection from an element's start into the next leaves the
+  rest as the first's type by the keys and the second's by cut, and one
+  ending at an element's start joins that element on by the keys and not
+  by cut. 1.10 asked the user (2026-11-27) whether the keys should follow
+  cut.
 - Closing the window or reloading the page with changes not saved loses
   them: 1.9's stand-in asks only before opening another file over them.
-  2.2 saves on close.
+  2.2 saves on close; 1.10 asked the user (2026-11-27) whether to ask
+  before closing until then.
+- The paper switch, the sidebar's toggle and the scene list have no key,
+  and Tab never leaves the script (brief, "Elements and keys"), so no key
+  reaches them; zoom, focus mode and Go to page have keys (1.10). 1.10
+  asked the user (2026-11-27) how they should be reached.
+- A screen reader is not told of autocomplete suggestions: the popup is a
+  named listbox, but the editor's root names no active option (1.5, 1.10).
+  Attributes on the root change with every popup update, so measure typing
+  with them before adding them.
+- A style boundary inside one grapheme at the end of a line (a combining
+  accent styled apart from its letter) would give the line two line-end
+  decorations and an extra row (1.10 review, from the source). The editor
+  selects whole graphemes, so only an opened or pasted script could hold
+  one.
+- Keys typed while Tir asks before opening over changes, or in the moment
+  it tells the Rust side which file it opened, are replaced by the opened
+  script without a question (1.10 review). 2.2 replaces this stand-in.

@@ -70,7 +70,10 @@ export interface Sheet {
 
 interface Placement {
   readonly block: Block;
-  /** For each line after the first: its start offset, its indent (in), and pixels above it. */
+  /**
+   * For each line after the first: its start offset, its indent (in), the
+   * pixels above it, and where the line before it ends.
+   */
   readonly breaks: readonly number[];
 }
 
@@ -193,6 +196,37 @@ export class Projection {
   }
 
   /**
+   * The line that Up (`down` false) or Down from `offset` in element `index`
+   * reaches when it crosses a page gap inside the element: where that line
+   * starts and ends, and where the line holding `offset` starts. Null when
+   * the move crosses no gap.
+   */
+  lineAcrossGap(
+    index: number,
+    offset: number,
+    down: boolean,
+  ): { from: number; start: number; end: number } | null {
+    const placement = this.placements[index];
+    if (!placement) return null;
+    const { breaks } = placement;
+    const starts = [0];
+    const ends: number[] = [];
+    const gaps = [0];
+    for (let j = 0; j < breaks.length; j += 4) {
+      starts.push(breaks[j] as number);
+      gaps.push(breaks[j + 2] as number);
+      ends.push(breaks[j + 3] as number);
+    }
+    ends.push(this.doc.child(index).textContent.length);
+    let line = 0;
+    while (line + 1 < starts.length && (starts[line + 1] as number) <= offset) line++;
+    const to = down ? line + 1 : line - 1;
+    const gap = gaps[down ? line + 1 : line] as number | undefined;
+    if (to < 0 || to >= starts.length || !(gap && gap > 0)) return null;
+    return { from: starts[line] as number, start: starts[to] as number, end: ends[to] as number };
+  }
+
+  /**
    * Projects `doc` afresh, for a document put in place without a
    * transaction (an opened script) or one that is not the document it
    * last followed.
@@ -218,7 +252,7 @@ export class Projection {
   }
 }
 
-/** Each element's lines as start, indent and top in pixels, then its placement. */
+/** Each element's lines as start, end, indent and top in pixels, then its placement. */
 function place(pages: readonly Page[], count: number): Placement[] {
   const lines: number[][] = Array.from({ length: count }, () => []);
   const columns: (Column | undefined)[] = [];
@@ -226,7 +260,7 @@ function place(pages: readonly Page[], count: number): Placement[] {
     const pageTop = p * PITCH_PX + PAGE.topMarginIn * 96;
     for (const line of page.lines) {
       if (line.kind === "element") {
-        lines[line.element]?.push(line.start, line.x, pageTop + line.row * ROW_PX);
+        lines[line.element]?.push(line.start, line.end, line.x, pageTop + line.row * ROW_PX);
         columns[line.element] = line.column;
       }
     }
@@ -252,20 +286,21 @@ function place(pages: readonly Page[], count: number): Placement[] {
   let bottom = 0;
   return lines.map((own, index) => {
     // Every element has a line; the fallback only guards a broken engine.
-    if (own.length === 0) own.push(0, 0, bottom);
+    if (own.length === 0) own.push(0, 0, 0, bottom);
     const breaks: number[] = [];
-    for (let j = 3; j < own.length; j += 3) {
+    for (let j = 4; j < own.length; j += 4) {
       breaks.push(
         own[j] as number,
-        own[j + 1] as number,
-        (own[j + 2] as number) - (own[j - 1] as number) - ROW_PX,
+        own[j + 2] as number,
+        (own[j + 3] as number) - (own[j - 1] as number) - ROW_PX,
+        own[j - 3] as number,
       );
     }
     const column = columns[index];
     const extra = below[index];
     const block: Block = {
-      gap: (own[2] as number) - bottom,
-      x: own[1] as number,
+      gap: (own[3] as number) - bottom,
+      x: own[2] as number,
       ...(column ? { column } : {}),
       ...(extra ? { below: extra } : {}),
     };
@@ -304,14 +339,24 @@ function decorate(node: Node, pos: number, { block, breaks }: Placement, out: De
   const text = node.textContent;
   const at = pos + 1;
   if (ELEMENT_FORMATS[node.attrs.type as ElementType].capitals) keepCase(text, at, out);
-  for (let j = 0; j < breaks.length; j += 3) {
+  for (let j = 0; j < breaks.length; j += 4) {
     const start = breaks[j] as number;
     const x = breaks[j + 1] as number;
     const gap = breaks[j + 2] as number;
-    // A typed line break ends its line already, unless a page gap follows.
-    if (start > 0 && (text[start - 1] !== "\n" || gap > 0)) {
-      const attrs =
-        gap > 0 ? { class: "page-gap", style: `--gap: ${gap}px` } : { class: "line-end" };
+    const end = breaks[j + 3] as number;
+    const attrs = gap > 0 ? { class: "page-gap", style: `--gap: ${gap}px` } : { class: "line-end" };
+    // Where an element splits across pages the engine drops the white space
+    // between the two parts, typed line breaks included. Each typed break
+    // ends a line in the editor, so only the last shows, carrying the gap.
+    const newline = gap > 0 ? text.lastIndexOf("\n", start - 1) : -1;
+    if (newline >= end) {
+      if (newline > end) out.push(Decoration.inline(at + end, at + newline, SKIPPED, SKIPPED));
+      if (start > newline + 1) {
+        out.push(Decoration.inline(at + newline + 1, at + start, SKIPPED, SKIPPED));
+      }
+      out.push(Decoration.inline(at + newline, at + newline + 1, attrs, attrs));
+    } else if (start > 0 && (text[start - 1] !== "\n" || gap > 0)) {
+      // A typed line break ends its line already, unless a page gap follows.
       out.push(Decoration.inline(at + graphemeBefore(text, start), at + start, attrs, attrs));
     }
     if (x !== block.x && start < text.length && text[start] !== "\n") {
@@ -320,6 +365,8 @@ function decorate(node: Node, pos: number, { block, breaks }: Placement, out: De
     }
   }
 }
+
+const SKIPPED = { class: "skipped" };
 
 const KEEP_CASE = { class: "keep-case" };
 
@@ -396,7 +443,7 @@ function changedRange(tr: Transaction): { from: number; to: number } | null {
   return from <= to ? { from, to } : null;
 }
 
-function sameBlock(a: Block, b: Block): boolean {
+export function sameBlock(a: Block, b: Block): boolean {
   return a.gap === b.gap && a.x === b.x && a.column === b.column && a.below === b.below;
 }
 

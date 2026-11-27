@@ -393,12 +393,13 @@ class Pager {
   }
 
   private cueLayout(cue: number, kind: PageLineKind, column?: Column): Layout {
-    const own = (this.elements[cue] as Element).text;
+    const { text: own, centred } = this.elements[cue] as Element;
     let text = own;
     if (kind === "continued" || this.continueds.has(cue)) {
       text = hasContinued(own) ? own : `${own} ${CONTINUED}`;
     }
-    const layout = this.layouts.layout({ type: "character", text }, column);
+    const input = { type: "character" as const, text, ...(centred ? { centred } : {}) };
+    const layout = this.layouts.layout(input, column);
     // A suffix shown after the cue is not part of its text.
     const clamp = (offset: number) => Math.min(offset, own.length);
     return {

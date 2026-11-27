@@ -109,6 +109,29 @@ describe("line breaks", () => {
       [pos + 1 + 205, pos + 1 + 206, { class: "line-end" }],
     ]);
   });
+
+  it("shows only the last of the typed line breaks the engine drops where a speech splits", () => {
+    // As in "sheets" below, page 1's rows 49 to 53 take "One." to "Five.";
+    // the engine drops the white space after "Five." (offsets 28 and 29), so
+    // "Six." (30) starts page 2. The first line break would add a row: it is
+    // hidden, and the second carries the gap of a page split at row 53, 222 px.
+    const script: Element[] = [
+      ...Array.from({ length: 24 }, (): Element => ({ type: "action", text: "Rain." })),
+      { type: "character", text: "MAYA" },
+      { type: "dialogue", text: "One.\nTwo.\nThree.\nFour.\nFive.\n\nSix.\nSeven." },
+    ];
+    const projection = new Projection(toDocument(script));
+    const pos = startOf(projection.doc, 25) + 1;
+    expect(drawn(projection).filter(([from]) => (from as number) >= pos)).toEqual([
+      [pos + 28, pos + 29, { class: "skipped" }],
+      [pos + 29, pos + 30, { class: "page-gap", style: "--gap: 222px" }],
+    ]);
+    // Up and Down across that gap go between "Five." (23 to 28) and "Six." (30 to 34).
+    expect(projection.lineAcrossGap(25, 26, true)).toEqual({ from: 23, start: 30, end: 34 });
+    expect(projection.lineAcrossGap(25, 31, false)).toEqual({ from: 30, start: 23, end: 28 });
+    expect(projection.lineAcrossGap(25, 18, true)).toBeNull();
+    expect(projection.lineAcrossGap(25, 36, false)).toBeNull();
+  });
 });
 
 describe("capitals", () => {

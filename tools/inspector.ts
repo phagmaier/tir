@@ -143,17 +143,19 @@ export async function load(query: string): Promise<Page> {
   old.close();
   for (let attempt = 0; attempt < 60; attempt++) {
     await sleep(500);
+    let page: Page | undefined;
     try {
-      const page = await Page.open();
+      page = await Page.open();
       const ready = `!!globalThis.tirView && location.search === ${JSON.stringify(query)}`;
       if (await page.evaluate<boolean>(ready)) {
         await dispatch(`hl.dsp.focus({ window = "title:^Tir$" })`);
         return page;
       }
-      page.close();
     } catch {
       // The page is still loading.
     }
+    // An open connection keeps the next one from being named the target.
+    page?.close();
   }
   throw new Error(`The app did not load ${query} with tirView (is it the dev build?).`);
 }

@@ -98,14 +98,25 @@ const CHECK = `(async () => {
   // What each paragraph shows, against the engine's text for its lines.
   // innerText applies CSS capitals and leaves out the line breaks drawn as
   // generated content; ProseMirror's trailing break adds a final "\\n".
+  // Where an element splits across pages, the editor shows only the last
+  // typed line break of the white space the engine drops there.
   const want = [];
   doc.forEach((node) => want.push(node.textContent));
-  for (const page of pages) {
+  const skips = [];
+  const lastLine = new Map();
+  pages.forEach((page, p) => {
     for (const line of page.lines) {
       if (line.kind !== "element") continue;
       const text = want[line.element];
       want[line.element] = text.slice(0, line.start) + line.text.slice(0, line.end - line.start) + text.slice(line.end);
+      const before = lastLine.get(line.element);
+      if (before && before.page !== p) skips.push([line.element, before.end, line.start]);
+      lastLine.set(line.element, { page: p, end: line.end });
     }
+  });
+  for (const [element, from, to] of skips.reverse()) {
+    const text = want[element];
+    if (text.slice(from, to).includes("\\n")) want[element] = text.slice(0, from) + "\\n" + text.slice(to);
   }
   [...view.dom.children].forEach((p, element) => {
     let got = p.innerText;
@@ -206,11 +217,18 @@ async function main(args: string[]): Promise<number> {
     ...(zoom ? { zoom: Number(zoom) } : {}),
     ...(args.includes("--focus") ? { focus: true } : {}),
   };
-  const found = await page.evaluate<object>("tirDesk.settings");
-  await page.evaluate(`(tirDesk.set(${JSON.stringify(change)}), true)`);
-  const result = await page.evaluate<Result>(CHECK);
-  await page.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
-  page.close();
+  let result: Result;
+  try {
+    const found = await page.evaluate<object>("tirDesk.settings");
+    try {
+      await page.evaluate(`(tirDesk.set(${JSON.stringify(change)}), true)`);
+      result = await page.evaluate<Result>(CHECK);
+    } finally {
+      await page.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
+    }
+  } finally {
+    page.close();
+  }
   console.log(
     `At ${Math.round(result.zoom * 100)}%${result.focus ? " in focus mode" : ""}: ${result.pages} pages, ${result.lines} lines checked (${result.empty} of them empty), and ${result.marks} printed marks besides page numbers.`,
   );

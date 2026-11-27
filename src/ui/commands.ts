@@ -132,7 +132,15 @@ const enter: Command = (state, dispatch) => {
   if (endsText(node, $from.parentOffset)) {
     startElement(tr, $from.after(), blank(NEXT_ON_RETURN[type]));
   } else if ($from.parentOffset === 0) {
-    tr.insert($from.before(), blank(type));
+    // A split at the start, so the step ends at the caret and typing
+    // straight after joins it (`undo.ts`). The empty first part is a new
+    // element; a forced break, dual and centring stay with the text.
+    const empty = blank(type);
+    tr.setNodeMarkup($from.before(), undefined, empty.attrs);
+    tr.insert($from.pos, empty.content);
+    tr.split($from.pos + empty.content.size, 1, [
+      { type: schema.nodes.element, attrs: node.attrs },
+    ]);
   } else {
     // The second part keeps the type and centring; a forced break and dual
     // stay with the first.
@@ -189,14 +197,23 @@ const openParenthesis: Command = (state) => {
 /**
  * Backspace in an empty parenthetical removes it with its parentheses; the
  * caret goes to the end of the element before (or the start of the next).
+ * The script's only element becomes an empty Action, as a script always
+ * has an element.
  */
 const removeBlankParenthetical: Command = (state, dispatch) => {
   const $caret = caretInParenthetical(state);
-  if (!$caret || !isBlank($caret.parent) || state.doc.childCount === 1) return false;
+  if (!$caret || !isBlank($caret.parent)) return false;
   if (dispatch) {
     const before = $caret.before();
-    const tr = state.tr.delete(before, $caret.after());
-    const caret = $caret.index(0) > 0 ? before - 1 : before + 1;
+    const tr = state.tr;
+    let caret: number;
+    if (state.doc.childCount === 1) {
+      tr.replaceWith(before, $caret.after(), blank("action"));
+      caret = before + 1;
+    } else {
+      tr.delete(before, $caret.after());
+      caret = $caret.index(0) > 0 ? before - 1 : before + 1;
+    }
     dispatch(tr.setSelection(TextSelection.create(tr.doc, caret)).scrollIntoView());
   }
   return true;
@@ -237,20 +254,42 @@ function dualTarget(doc: Node, cue: number): number | undefined {
 }
 
 /**
+ * Whether the speech that `cue` starts sits beside the speech before it,
+ * as paginate.ts's `toBlocks` pairs them: a forced break on its cue, or
+ * within the speech before, keeps the two apart.
+ */
+function sitsBeside(doc: Node, cue: number): boolean {
+  const before = cue > 0 ? cueOf(doc, cue - 1) : undefined;
+  if (before === undefined) return false;
+  for (let i = before + 1; i <= cue; i++) if (doc.child(i).attrs.pageBreakBefore) return false;
+  return true;
+}
+
+/** Whether a forced break before element `index` would part two speeches side by side. */
+function partsDual(doc: Node, index: number): boolean {
+  const cue = cueOf(doc, index);
+  if (cue === undefined) return false;
+  const right = cue === index ? cue : nextCue(doc, cue);
+  return right !== undefined && !!doc.child(right).attrs.dual && sitsBeside(doc, right);
+}
+
+/**
  * Dual dialogue, as Final Draft's command: the speech holding the selection
  * goes beside the speech after it (marking that one's cue dual), or, when
  * none follows directly, beside the speech before it. On a speech already
- * beside another, it puts both back in one column.
+ * beside another, it puts both back in one column. It marks nothing that a
+ * forced break keeps apart, which would change nothing on the page.
  */
 const toggleDual: Command = (state, dispatch) => {
   const { doc } = state;
   const cue = cueOf(doc, state.selection.$from.index(0));
   const target = cue === undefined ? undefined : dualTarget(doc, cue);
   if (target === undefined) return false;
+  const node = doc.child(target);
+  if (!node.attrs.dual && !sitsBeside(doc, target)) return false;
   if (dispatch) {
     let pos = 0;
     for (let i = 0; i < target; i++) pos += doc.child(i).nodeSize;
-    const node = doc.child(target);
     const attrs = { ...node.attrs, dual: !node.attrs.dual };
     dispatch(ownStep(state.tr.setNodeMarkup(pos, undefined, attrs)));
   }
@@ -275,13 +314,15 @@ const toggleCentred: Command = (state, dispatch) => {
 
 /**
  * A forced page break before the element holding the selection's start, as
- * Final Draft's Page Break: the element starts a new page; again, it does not.
+ * Final Draft's Page Break: the element starts a new page; again, it does
+ * not. It adds none that would part two speeches side by side.
  */
 const togglePageBreak: Command = (state, dispatch) => {
   const { $from } = state.selection;
   if ($from.depth === 0) return false;
+  const node = $from.node(1);
+  if (!node.attrs.pageBreakBefore && partsDual(state.doc, $from.index(0))) return false;
   if (dispatch) {
-    const node = $from.node(1);
     const attrs = { ...node.attrs, pageBreakBefore: !node.attrs.pageBreakBefore };
     dispatch(ownStep(state.tr.setNodeMarkup($from.before(1), undefined, attrs).scrollIntoView()));
   }

@@ -140,12 +140,15 @@ diff of a draft reads like the script:
 ## Writing files
 
 `src-tauri/src/files.rs` replaces a file so that it is always whole, old or
-new: the bytes go to `NAME.tmp` beside it, which is synced and renamed over
-the file, and then the directory is synced so that the rename reaches the
-disk. A write that fails removes `NAME.tmp`; a crash between the two can
-leave one, which the next save replaces. The settings file and draft files
-are written this way. A script's file is read as UTF-8 and refused, rather
-than read with replacement characters, when it is not.
+new: the bytes go to a temporary file beside it, `NAME.<pid>-<n>.tmp`
+created new (the first `n` with no file of that name), which is synced
+and renamed over the file, and then the directory is synced so that the
+rename reaches the disk. A file Tir did not make is never opened, replaced
+or removed. A write that fails removes its temporary file; a crash
+between the two can leave one behind, which no later save replaces or
+removes. The settings file and draft files are written this way. A
+script's file is read as UTF-8 and refused, rather than read with
+replacement characters, when it is not.
 
 ## Opening and saving (until Stage 2)
 
@@ -237,6 +240,16 @@ editable element, redrawing a sheet only when its marks change. In dual
 dialogue each column's paragraphs keep to their half of the page, divided
 halfway across the gutter, and the shorter column's last paragraph reaches
 down to the longer one's end, so a click lands in the column it is in.
+
+Each element's paragraph gets its space above and indent from the
+projection as a style. After ProseMirror draws a change, the editor checks
+every paragraph's style against its element's, since ProseMirror may draw
+an element in the paragraph that showed an equal element elsewhere
+(findings, "Editor"). Where an element splits across pages, the page's gap
+is a block inside the paragraph, after the last character on the page; the
+projection hides the white space the engine drops there, except its last
+typed line break, and Up and Down across that gap are Tir's own
+(`crossPageGap`), since WebKit's lose the column there.
 
 The keys and the top bar's buttons run ProseMirror commands from
 `commands.ts`, so a key's whole effect is a change to the document and

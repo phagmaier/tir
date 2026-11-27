@@ -273,6 +273,18 @@ describe("cutting removes what copying takes", () => {
       dialogue("Hi| there."),
     ]);
   });
+
+  test("and pasting it back restores the script when the cut starts at an element's end", () => {
+    const script = [action("Rain.{"), cue("MA}RA", { centred: true, pageBreakBefore: true })];
+    const state = stateOf(script);
+    const clipping = clippingOf(state) as Clipping;
+    const removed = run(state, cut);
+    expect(show(removed)).toEqual([action("Rain."), cue("|RA", { centred: true })]);
+    expect(show(run(removed, paste(clipping)))).toEqual([
+      action("Rain."),
+      cue("MA|RA", { centred: true, pageBreakBefore: true }),
+    ]);
+  });
 });
 
 describe("the three paths", () => {

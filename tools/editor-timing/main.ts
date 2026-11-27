@@ -180,9 +180,14 @@ const middle = `(() => {
  */
 async function load(query: string, settings: object, windowKeys: boolean): Promise<Page> {
   const page = await loadApp(query);
-  await page.evaluate(`(tirDesk.set(${JSON.stringify(settings)}), true)`);
-  await page.evaluate(windowKeys ? probe(150, true) : probe(70, false));
-  await page.evaluate("tirView.focus(), true");
+  try {
+    await page.evaluate(`(tirDesk.set(${JSON.stringify(settings)}), true)`);
+    await page.evaluate(windowKeys ? probe(150, true) : probe(70, false));
+    await page.evaluate("tirView.focus(), true");
+  } catch (error) {
+    page.close();
+    throw error;
+  }
   return page;
 }
 
@@ -235,63 +240,83 @@ async function main(args: string[]): Promise<number> {
   const zoom = Number(option("--zoom") ?? 1);
   const focus = args.includes("--focus");
   const open = await Page.open();
-  const found = await open.evaluate<object>("tirDesk.settings");
-  open.close();
-
-  const at = `${Math.round(zoom * 100)}%${focus ? " in focus mode" : ""}`;
-  console.log(
-    `At ${at}, ${pairs} pairs of a letter and Backspace per edit; times in ms, median (p95).\n`,
-  );
-  console.log("| Edit | Key | Layout | Frame | Busy median |");
-  console.log("| --- | --- | --- | --- | --- |");
-  for (const { edit, query, setup, key = "x", check } of SCENARIOS) {
-    const page = await load(query, { zoom, focus }, false);
-    await page.evaluate(setup);
-    const before = await page.evaluate<string>("tirView.state.doc.textContent");
-    const keys = [
-      { name: key, key },
-      { name: "Backspace", key: "BackSpace" },
-    ];
-    const rows = await pressPairs(page, pairs, false, keys, 140);
-    const busyRows = await pressPairs(page, pairs, true, keys, 140);
-    if ((await page.evaluate<string>("tirView.state.doc.textContent")) !== before) {
-      console.error(`${edit}: the text changed, so a key was lost; the times are suspect.`);
-    }
-    if (check && !(await page.evaluate<boolean>(check))) {
-      console.error(`${edit}: the page was not in the state measured; the times are suspect.`);
-    }
-    page.close();
-    for (const typed of [key, "Backspace"]) {
-      const own = (list: Row[]) => list.filter((row) => row.key === typed);
-      console.log(tableRow(edit, typed, own(rows), own(busyRows)));
-    }
+  let found: object;
+  try {
+    found = await open.evaluate<object>("tirDesk.settings");
+  } finally {
+    open.close();
   }
 
-  console.log(
-    `\nThe window's keys from ${Math.round(zoom * 100)}%, ${pairs} pairs each, on ?fixture=spike with the caret in the middle; busy over 150 ms.\n`,
-  );
-  console.log("| Change | Key | Layout | Frame | Busy median |");
-  console.log("| --- | --- | --- | --- | --- |");
-  for (const keys of WINDOW_KEYS) {
-    const page = await load("?fixture=spike", { zoom, focus: false }, true);
-    await page.evaluate(middle);
-    // Long enough apart for the bars' fade to end.
-    const rows = await pressPairs(page, pairs, false, keys, 700);
-    const busyRows = await pressPairs(page, pairs, true, keys, 700);
-    page.close();
-    if (rows.length !== 2 * pairs || busyRows.length !== 2 * pairs) {
-      console.error(`${keys[0].name}: a key was lost; the times are suspect.`);
+  try {
+    const at = `${Math.round(zoom * 100)}%${focus ? " in focus mode" : ""}`;
+    console.log(
+      `At ${at}, ${pairs} pairs of a letter and Backspace per edit; times in ms, median (p95).\n`,
+    );
+    console.log("| Edit | Key | Layout | Frame | Busy median |");
+    console.log("| --- | --- | --- | --- | --- |");
+    for (const { edit, query, setup, key = "x", check } of SCENARIOS) {
+      const page = await load(query, { zoom, focus }, false);
+      const keys = [
+        { name: key, key },
+        { name: "Backspace", key: "BackSpace" },
+      ];
+      let rows: Row[];
+      let busyRows: Row[];
+      try {
+        await page.evaluate(setup);
+        const before = await page.evaluate<string>("tirView.state.doc.textContent");
+        rows = await pressPairs(page, pairs, false, keys, 140);
+        busyRows = await pressPairs(page, pairs, true, keys, 140);
+        if ((await page.evaluate<string>("tirView.state.doc.textContent")) !== before) {
+          console.error(`${edit}: the text changed, so a key was lost; the times are suspect.`);
+        }
+        if (check && !(await page.evaluate<boolean>(check))) {
+          console.error(`${edit}: the page was not in the state measured; the times are suspect.`);
+        }
+      } finally {
+        page.close();
+      }
+      for (const typed of [key, "Backspace"]) {
+        const own = (list: Row[]) => list.filter((row) => row.key === typed);
+        console.log(tableRow(edit, typed, own(rows), own(busyRows)));
+      }
     }
-    keys.forEach(({ name, key, mods }, i) => {
-      const own = (list: Row[]) => list.filter((_, n) => n % 2 === i);
-      const combo = `${mods ? `${mods.replace(" ", "+")}+` : ""}${key}`;
-      console.log(tableRow(name, combo, own(rows), own(busyRows)));
-    });
-  }
 
-  const restore = await Page.open();
-  await restore.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
-  restore.close();
+    console.log(
+      `\nThe window's keys from ${Math.round(zoom * 100)}%, ${pairs} pairs each, on ?fixture=spike with the caret in the middle; busy over 150 ms.\n`,
+    );
+    console.log("| Change | Key | Layout | Frame | Busy median |");
+    console.log("| --- | --- | --- | --- | --- |");
+    for (const keys of WINDOW_KEYS) {
+      const page = await load("?fixture=spike", { zoom, focus: false }, true);
+      let rows: Row[];
+      let busyRows: Row[];
+      try {
+        await page.evaluate(middle);
+        // Long enough apart for the bars' fade to end.
+        rows = await pressPairs(page, pairs, false, keys, 700);
+        busyRows = await pressPairs(page, pairs, true, keys, 700);
+      } finally {
+        page.close();
+      }
+      if (rows.length !== 2 * pairs || busyRows.length !== 2 * pairs) {
+        console.error(`${keys[0].name}: a key was lost; the times are suspect.`);
+      }
+      keys.forEach(({ name, key, mods }, i) => {
+        const own = (list: Row[]) => list.filter((_, n) => n % 2 === i);
+        const combo = `${mods ? `${mods.replace(" ", "+")}+` : ""}${key}`;
+        console.log(tableRow(name, combo, own(rows), own(busyRows)));
+      });
+    }
+  } finally {
+    // After a failure too, with every connection closed so this one is named the target.
+    const restore = await Page.open();
+    try {
+      await restore.evaluate(`(tirDesk.set(${JSON.stringify(found)}), true)`);
+    } finally {
+      restore.close();
+    }
+  }
   return 0;
 }
 

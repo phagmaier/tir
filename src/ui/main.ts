@@ -31,6 +31,9 @@ const desk = new Desk(editor, settings, settingsSaver(), {
   pages: byId("pages"),
   toast: byId("toast"),
 });
+// The writer can type at once, from the script's start; ProseMirror's
+// focus leaves the scroll where it is.
+editor.view.focus();
 const title = byId("title");
 const files = new ScriptFiles(
   {

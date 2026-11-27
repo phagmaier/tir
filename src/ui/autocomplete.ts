@@ -120,18 +120,22 @@ function follow(tally: Tally, before: Node, after: Node): { tally: Tally; only: 
 
 /**
  * Whether `tr` is typing or deleting in the caret's element, which keeps its
- * type: the only edits that open the popup. Paste, drop and cut name
- * themselves in `uiEvent`, ProseMirror marks composed input, and undo and
- * redo are the history's.
+ * type: the only edits that open the popup. A format key changes the
+ * element but not its text. Paste, drop and cut name themselves in
+ * `uiEvent`, ProseMirror marks composed input, and undo and redo are the
+ * history's.
  */
 function isTyping(tr: Transaction, only: number | null): boolean {
   if (only === null || tr.getMeta("composition") || tr.getMeta("uiEvent")) return false;
   if (isHistoryTransaction(tr)) return false;
   const { selection } = tr;
+  const before = tr.before.child(only);
+  const after = tr.doc.child(only);
   return (
     selection.empty &&
     selection.$from.index(0) === only &&
-    tr.before.child(only).attrs.type === tr.doc.child(only).attrs.type
+    before.attrs.type === after.attrs.type &&
+    before.textContent !== after.textContent
   );
 }
 
@@ -226,6 +230,9 @@ export function popupOf(state: EditorState): Popup | null {
   };
 }
 
+/** Each editor's popup view; ProseMirror makes a new one when the editor takes new plugins. */
+const popups = new WeakMap<EditorView, PopupView>();
+
 export const autocomplete: Plugin<State> = new Plugin<State>({
   key,
   state: {
@@ -277,8 +284,32 @@ export const autocomplete: Plugin<State> = new Plugin<State>({
       },
     },
   },
-  view: (view) => new PopupView(view),
+  view(view) {
+    const popup = new PopupView(view);
+    popups.set(view, popup);
+    return popup;
+  },
 });
+
+/**
+ * Moves an open popup and its ghost to the caret's place in the current
+ * layout, as after a zoom change, which moves the caret but changes no state.
+ */
+export function placePopup(view: EditorView): void {
+  popups.get(view)?.place(view);
+}
+
+/** Where the caret is on screen, and the script's zoom. */
+interface CaretPlace {
+  readonly caret: { readonly left: number; readonly top: number; readonly bottom: number };
+  readonly origin: DOMRect;
+  readonly frame: DOMRect;
+  readonly zoom: number;
+  /** A line's height at the zoom. */
+  readonly row: number;
+  /** The top of the caret's line. */
+  readonly top: number;
+}
 
 /**
  * Draws the ghost in the editor's parent, the script, beside the editable
@@ -320,14 +351,8 @@ class PopupView {
       return;
     }
     // Where the caret is, read before anything here changes, so the page is
-    // laid out once for it. Its box is its font's height, centred on its line.
-    // Positions inside the script are at 100%: the zoom scales them.
-    const caret = view.coordsAtPos(open.to, -1);
-    const origin = this.script.getBoundingClientRect();
-    const frame = (this.list.parentElement as HTMLElement).getBoundingClientRect();
-    const zoom = origin.width / this.script.offsetWidth || 1;
-    const row = ROW_PX * zoom;
-    const top = (caret.top + caret.bottom - row) / 2;
+    // laid out once for it.
+    const at = this.measure(view, open);
     this.list.setAttribute("aria-label", popup.title);
     this.list.replaceChildren(
       line("completion-title", popup.title),
@@ -349,13 +374,36 @@ class PopupView {
     const marks = view.state.storedMarks ?? view.state.doc.resolve(open.to).marks();
     const has = (name: string) => marks.some((mark) => mark.type.name === name);
     const { style } = this.ghost;
-    style.left = `${(caret.left - origin.left) / zoom}px`;
-    style.top = `${(top - origin.top) / zoom}px`;
     style.fontWeight = has("bold") ? "700" : "";
     style.fontStyle = has("italic") ? "italic" : "";
     style.textDecoration = has("underline") ? "underline" : "";
     this.ghost.textContent = popup.ghost;
     this.ghost.hidden = false;
+    this.position(at);
+  }
+
+  /** Moves the popup and the ghost, when open, to the caret's place in the current layout. */
+  place(view: EditorView): void {
+    if (this.shown) this.position(this.measure(view, this.shown));
+  }
+
+  /**
+   * The caret's place, read from the layout. The caret's box is its font's
+   * height, centred on its line. Positions inside the script are at 100%:
+   * the zoom scales them.
+   */
+  private measure(view: EditorView, open: Open): CaretPlace {
+    const caret = view.coordsAtPos(open.to, -1);
+    const origin = this.script.getBoundingClientRect();
+    const frame = (this.list.parentElement as HTMLElement).getBoundingClientRect();
+    const zoom = origin.width / this.script.offsetWidth || 1;
+    const row = ROW_PX * zoom;
+    return { caret, origin, frame, zoom, row, top: (caret.top + caret.bottom - row) / 2 };
+  }
+
+  private position({ caret, origin, frame, zoom, row, top }: CaretPlace): void {
+    this.ghost.style.left = `${(caret.left - origin.left) / zoom}px`;
+    this.ghost.style.top = `${(top - origin.top) / zoom}px`;
     // Below the caret's line, or above it when only that fits in the window;
     // from the caret's column, or further left when the window ends first.
     const { offsetWidth: width, offsetHeight: height } = this.list;

@@ -295,7 +295,7 @@ export function paste(clipping: Clipping): Command {
  * Removes what copying the selection takes, as one undo step. Elements it
  * covers whole go; one it covers in part keeps the rest and its type; when
  * both ends are covered in part, what is left of them joins, as Backspace
- * joins them.
+ * joins them. The caret goes where a paste puts the clipping back.
  */
 export const cut: Command = (state, dispatch) => {
   const r = state.selection.empty ? null : reach(state);
@@ -307,7 +307,14 @@ export const cut: Command = (state, dispatch) => {
   } else {
     const { before, after } = remainders(r);
     let nodes = [before, after].filter((node): node is Node => node !== null);
-    let caret = before ? r.start + before.nodeSize - 1 : r.start + 1;
+    // A clipping that ends inside the last element but covers none of the
+    // first goes back at the start of what is left of the last.
+    let caret =
+      before && after && r.firstCover === "none" && r.lastCover === "part"
+        ? r.start + before.nodeSize + 1
+        : before
+          ? r.start + before.nodeSize - 1
+          : r.start + 1;
     if (before && after && r.firstCover === "part" && r.lastCover === "part") {
       nodes = [before.copy(before.content.append(after.content))];
     } else if (nodes.length === 0 && r.start === 0 && r.end === state.doc.content.size) {
