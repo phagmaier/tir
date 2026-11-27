@@ -88,20 +88,75 @@ The user has said the V1 list above is everything they need.
   italic and underline.
 - **Shortcuts**, as in Final Draft: Ctrl+1 to Ctrl+7 for Scene Heading,
   Action, Character, Parenthetical, Dialogue, Transition, Shot; Ctrl+0 for
-  General.
+  General. Like the top bar, they change the element holding the caret, or
+  every element a selection touches *(agent-selected: Final Draft's keys add
+  a new paragraph unless the current one is blank; the brief asks for
+  switching)*.
 - **Enter** ends the element and starts the next one by Final Draft's
   Return column in [findings](findings.md#final-drafts-default-screenplay-format):
   Scene Heading → Action, Character → Dialogue, Dialogue → Action,
-  Transition → Scene Heading.
+  Transition → Scene Heading. Inside the text it splits the element into two
+  of its type, and at its start it opens an empty one of its type above
+  *(agent-selected)*.
 - **Tab** on an empty element changes its type by Final Draft's Tab column:
   Action → Character → Transition → Scene Heading, and Dialogue ↔
-  Parenthetical.
+  Parenthetical. At the end of an element's text, Tab starts a new element by
+  the same column, except that a cue with a name gives a Parenthetical, as
+  Final Draft does ([findings](findings.md#final-drafts-keys)); elsewhere it
+  does nothing. Neither Tab nor Shift+Tab moves focus out of the script
+  *(agent-selected)*.
 - **Top bar** shows all eight elements, highlights the current element's
-  type, and changes it on click.
-- **Automatic**: capitals in scene headings, character cues and transitions;
-  parentheses around parentheticals; (MORE) and (CONT'D) where dialogue
-  crosses a page break; (CONT'D) on a cue when the same character speaks
-  again after action, as Final Draft does by default.
+  type, and changes it on click; the caret stays where it was.
+- **Format keys**: Ctrl+B, Ctrl+I and Ctrl+U for bold, italic and
+  underline, and Ctrl+Alt+D for dual dialogue, as in Final Draft for
+  Windows. Final Draft has no key for centring or a page break: Ctrl+E
+  centres and Ctrl+Enter forces a page break *(agent-selected, as word
+  processors do)*. Dual dialogue, as Final Draft's, puts the speech holding
+  the caret beside the speech after it, or, when none follows, beside the one
+  before *(that fallback agent-selected)*; on a speech already beside
+  another it puts both back in one column. Centring applies to every element
+  a selection touches.
+  A forced page break starts the element holding the caret on a new page,
+  and the key again removes it, as Final Draft's Page Break does.
+- **Automatic**: capitals in scene headings, character cues, transitions
+  and shots; parentheses around parentheticals; (MORE) and (CONT'D) where
+  dialogue crosses a page break; (CONT'D) on a cue when the same character
+  speaks again after action, as Final Draft does by default. The script
+  keeps the text as typed; capitals are only how it shows and prints. A
+  parenthetical gains its parentheses when it becomes one and loses them
+  when it stops being one; typing ")" before the closing one steps over it,
+  and Backspace in an empty one removes it *(agent-selected)*.
+- **Autocomplete**: while the writer types at the end of a character cue,
+  scene heading or transition, a popup below the line lists what continues
+  the part being typed, ignoring case, most used in the script first, and
+  grey ghost text after the caret shows the rest of the highlighted one
+  (prototype piece 5). A cue offers character names, and after a "(" cue
+  extensions; a scene heading offers its prefix (INT., EXT., INT./EXT.,
+  I/E., EST.), after the prefix and a space the locations already used, and
+  after " - " the times of day; a transition offers transitions. Extensions,
+  times and transitions start from Final Draft's lists
+  ([findings](findings.md#final-drafts-smarttype)). Enter or Tab accepts the
+  highlighted suggestion *(Tab: the user's choice, 2026-11-26)*, the arrows
+  choose and Esc closes; with the popup closed these keys do what this
+  section says above. Accepting a prefix adds the space after it and
+  accepting a location adds " - ", so the popup goes on to the next part, as
+  Final Draft's Tab does. Only typing or deleting opens the popup; moving
+  the caret closes it. *(agent-selected: an accepted suggestion is written
+  as the script writes it most often, or as Final Draft's list does; a part
+  that already matches a suggestion in full opens nothing, so Enter after a
+  whole name starts the dialogue; the arrows wrap round; at most ten
+  suggestions show; a click on one accepts it.)*
+- **Undo and redo**: Ctrl+Z undoes, Ctrl+Shift+Z and Ctrl+Y redo, and each
+  puts the caret back at the change. A burst of typing is one step, and an
+  element change is one step. *(agent-selected: a burst ends at a pause of
+  more than half a second or when the typing moves elsewhere. Enter, and Tab
+  that starts an element, begin a step that the typing straight after joins.
+  Every other change is a step of its own, apart from the typing before and
+  after it: an element change by key, Tab or the top bar, a format key, an
+  accepted autocomplete suggestion, a paste and a cut. So Ctrl+Z after
+  accepting a suggestion gives back what was typed, and Enter, Tab and a
+  name take three presses to undo. Undo and redo open no autocomplete
+  popup.)*
 
 ## Formatting check
 
@@ -178,6 +233,28 @@ intact.
 - Text pasted from elsewhere is read as Fountain, so a scene from a Fountain
   file or a plain-text script arrives as elements; anything ambiguous becomes
   Action.
+- *(agent-selected)* A selection within one element copies text. One across
+  elements copies the elements it covers whole and the part it covers of an
+  element at either end, each with its type and formats; a part from an
+  element's middle leaves its forced page break and dual with the element's
+  start. A parenthetical's parentheses go with it.
+- *(agent-selected)* Text, copied from within an element or a single
+  paragraph of action from elsewhere such as a line of prose, goes in at the
+  caret as typing does, and the element there keeps its type. Elements go
+  in whole: in place of an empty element at the caret, before an element
+  from its start, after it from its end, and inside its text splitting it as
+  Enter does. A copied part of an element joins the text it is pasted
+  beside, so cutting and then pasting in the same place restores the
+  script. Pasting over a selection puts what is pasted where it was.
+- *(agent-selected)* Cutting removes what copying takes: elements the
+  selection covers whole go entirely, an element it covers in part keeps the
+  rest and its type, and when both ends are covered in part, what is left of
+  them joins, as Backspace joins it.
+- *(agent-selected)* A paste is part of a script, so it reads no title page
+  and never changes the title page: a block of `Key: value` lines arrives as
+  script. What an import would leave out (notes, boneyard, sections,
+  synopses, scene numbers) is left out, without a report. A paste closes the
+  autocomplete popup.
 
 ## PDF export
 

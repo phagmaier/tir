@@ -7,7 +7,13 @@
     <link rel="stylesheet" href="/src/ui/app.css" />
   </head>
   <body data-theme="dark">
-    <div id="app"><div id="pages"></div></div>
+    <header id="topbar">
+      <div class="bar-left"><span class="title" id="title"></span></div>
+      <div class="elements" id="elements" role="toolbar" aria-label="Element"></div>
+      <div class="bar-right"></div>
+    </header>
+    <aside id="sidebar" aria-label="Scenes"></aside>
+    <main id="canvas"><div id="pages"></div></main>
     <script type="module" src="/src/ui/main.ts"></script>
   </body>
 </html>

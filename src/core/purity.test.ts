@@ -7,7 +7,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const bin = (name: string) => join(root, "node_modules", ".bin", name);
@@ -20,17 +20,51 @@ beforeAll(() => {
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function lintCoreFile(name: string, source: string) {
-  writeFileSync(join(dir, "src", "core", name), source);
-  const run = spawnSync(bin("biome"), ["lint", "--vcs-enabled=false", `src/core/${name}`], {
-    cwd: dir,
-    encoding: "utf8",
+it("rejects only forbidden core imports", () => {
+  const rejected = {
+    "prosemirror.ts": 'import "prosemirror-model";',
+    "prosemirror-css.ts": 'import "prosemirror-view/style/prosemirror.css";',
+    "tauri.ts": 'import "@tauri-apps/api";',
+    "tauri-core.ts": 'import "@tauri-apps/api/core";',
+    "ui.ts": 'import "../ui/main.ts";',
+    "node.ts": 'import "node:fs";',
+    // Exercise the guard on dynamic imports as well as static imports.
+    "dynamic.ts": 'export const api = await import("@tauri-apps/api/core");',
+  };
+  const probes = {
+    ...rejected,
+    "local.ts": 'import "./format.ts";',
+    "node.test.ts": 'import "node:fs";',
+  };
+  const paths = Object.entries(probes).map(([name, source]) => {
+    const path = `src/core/${name}`;
+    writeFileSync(join(dir, path), `${source}\n`);
+    return path;
   });
-  return { status: run.status, output: run.stdout + run.stderr };
-}
+  const run = spawnSync(
+    bin("biome"),
+    ["lint", "--vcs-enabled=false", "--reporter=github", ...paths],
+    { cwd: dir, encoding: "utf8" },
+  );
+  const output = run.stdout + run.stderr;
+  expect(run.status, output).toBeGreaterThan(0);
+  const actual = output
+    .split("\n")
+    .filter((line) => line.startsWith("::error "))
+    .map((line) =>
+      line.replace(/^::error title=([^,]+),file=.*\/(src\/core\/[^,]+),.*$/, "$2: $1"),
+    );
+  const expected = Object.keys(rejected).map(
+    (name) => `src/core/${name}: lint/style/noRestrictedImports`,
+  );
+  expect(actual.sort()).toEqual(expected.sort());
+});
 
-function typeCheckCoreSource(source: string) {
-  writeFileSync(join(dir, "probe.ts"), source);
+it("rejects DOM and Node globals but accepts plain ES2024", () => {
+  writeFileSync(
+    join(dir, "probe.ts"),
+    "export const probe = [document.title, window.innerWidth, process.env, [1, 2].at(-1)];\n",
+  );
   writeFileSync(
     join(dir, "tsconfig.json"),
     JSON.stringify({
@@ -39,48 +73,15 @@ function typeCheckCoreSource(source: string) {
       exclude: [],
     }),
   );
-  const run = spawnSync(bin("tsc"), ["-p", join(dir, "tsconfig.json")], { encoding: "utf8" });
-  return { status: run.status, output: run.stdout + run.stderr };
-}
-
-describe("src/core/ import guard", () => {
-  it.each([
-    'import "prosemirror-model";',
-    'import "prosemirror-view/style/prosemirror.css";',
-    'import "@tauri-apps/api";',
-    'import "@tauri-apps/api/core";',
-    'import "../ui/main.ts";',
-    'import "node:fs";',
-    'export const api = await import("@tauri-apps/api/core");',
-  ])("rejects %s", (source) => {
-    const { status, output } = lintCoreFile("probe.ts", `${source}\n`);
-    expect(status).not.toBe(0);
-    expect(output).toContain("noRestrictedImports");
+  const run = spawnSync(bin("tsc"), ["-p", "tsconfig.json", "--pretty", "false"], {
+    cwd: dir,
+    encoding: "utf8",
   });
-
-  it("allows imports within the core", () => {
-    expect(lintCoreFile("probe.ts", 'import "./format.ts";\n').status).toBe(0);
-  });
-
-  it("lets core tests use Node", () => {
-    expect(lintCoreFile("probe.test.ts", 'import "node:fs";\n').status).toBe(0);
-  });
-});
-
-describe("src/core/ type guard", () => {
-  it.each([
-    ["document.title", "document"],
-    ["window.innerWidth", "window"],
-    ["process.env", "process"],
-  ])("rejects %s", (expression, name) => {
-    const { status, output } = typeCheckCoreSource(`export const probe = ${expression};\n`);
-    expect(status).not.toBe(0);
-    expect(output).toContain(`Cannot find name '${name}'`);
-  });
-
-  it("accepts plain ES2024", () => {
-    const { status, output } = typeCheckCoreSource("export const probe = [1, 2].at(-1);\n");
-    expect(output).toBe("");
-    expect(status).toBe(0);
-  });
+  const output = run.stdout + run.stderr;
+  expect(run.status, output).toBeGreaterThan(0);
+  expect(output.trim().split("\n")).toEqual([
+    expect.stringContaining("Cannot find name 'document'"),
+    expect.stringContaining("Cannot find name 'window'"),
+    expect.stringContaining("Cannot find name 'process'"),
+  ]);
 });

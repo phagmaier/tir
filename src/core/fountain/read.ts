@@ -87,7 +87,15 @@ interface Draft {
 const LEFT_OUT = "\uE000";
 const MARKER = "\uE001";
 
-export function readFountain(source: string): FountainRead {
+export interface ReadOptions {
+  /**
+   * Whether an opening block of `Key: value` lines is a title page, as at the
+   * start of a file. Without it, that block is script like any other.
+   */
+  readonly titlePage?: boolean;
+}
+
+export function readFountain(source: string, options: ReadOptions = {}): FountainRead {
   const lines = splitLines(source);
   const start = lines.findIndex((line) => !isBlank(line));
   let titleEnd = start < 0 ? lines.length : start;
@@ -97,7 +105,7 @@ export function readFountain(source: string): FountainRead {
   const leftOut: LeftOut[] = [];
   let titlePage = emptyTitlePage();
   let body = lines;
-  if (isTitlePage(titleLines)) {
+  if (options.titlePage !== false && isTitlePage(titleLines)) {
     titlePage = readTitlePage(titleLines, leftOut);
     body = lines.slice(titleEnd);
   }

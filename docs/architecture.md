@@ -35,14 +35,22 @@ The user delegated these technical choices during planning.
 ```
 docs/         brief, architecture, findings, plan; prototype/ (design pieces; index.html marks the chosen ones)
 src/core/     pure TypeScript: format.ts holds every Final Draft format value; the model, draft file,
-              Fountain, FDX, line layout, pagination and checks join it
-src/ui/       the interface: main.ts (a placeholder page until Stage 1), app.css, theme.css (colours
-              from docs/prototype/look.css), fonts/ (Courier Prime and its licence)
+              Fountain, FDX, line layout, pagination, autocomplete's suggestions (suggestions.ts),
+              the clipboard's forms (clipping.ts) and checks join it
+src/ui/      the interface: main.ts, app.css, theme.css (colours from docs/prototype/look.css),
+              fonts/ (Courier Prime, IBM Plex Sans, Newsreader and their licences); editor-model.ts
+              maps the model to and from ProseMirror, projection.ts turns the engine's pages into
+              decorations, paragraph styles and sheets edit by edit, editor.ts is the ProseMirror
+              view, commands.ts its keys and commands, undo.ts how undo groups changes,
+              clipboard.ts copy, cut and paste, autocomplete.ts its autocomplete popup, sheets.ts
+              draws the sheets of paper behind it, toolbar.ts the top bar's element buttons,
+              dev-fixtures.ts holds the scripts `?fixture=NAME` opens, and editor-harness.ts runs
+              the editor's state and keys for tests
 src-tauri/    Rust: the Tauri shell; tauri.conf.json, capabilities/, icons/ (icon.svg is the source)
 tools/parity/ the parity check against Final Draft PDFs: pdf-text.ts (reads runs with unpdf),
               rebuild.ts (script from positions), compare.ts (page starts against paginate),
               write-pdf.ts (test PDFs in Final Draft's layout), main.ts (the command)
-index.html    the page Vite serves and Tauri loads
+index.html    the page Vite serves and Tauri loads: the Desk's top bar, sidebar and canvas
 flake.nix     the Nix development shell (system libraries); mise.toml pins runtimes and holds the tasks
 ```
 
@@ -117,7 +125,9 @@ diff of a draft reads like the script:
 it back (`write.ts`); `inline.ts` handles emphasis and escapes, and
 `syntax.ts` holds the line rules both use. Reading reports what Tir does not
 keep (notes, boneyard, sections, synopses, scene numbers, unknown title page
-fields), each with the element it sat beside, for the import report.
+fields), each with the element it sat beside, for the import report. A
+paste reads with `titlePage: false`, so an opening `Key: value` block is
+script.
 
 The writer uses plain Fountain where inference reads an element back
 correctly, a forcing character (`!`, `.`, `>`, `@`) where needed, and
@@ -127,15 +137,112 @@ A draft date that is not shown goes under `Hidden draft date:`. Each
 paragraph is checked by reading it back. What a round trip cannot keep is
 listed at the top of `write.ts`.
 
+## The editor
+
+One ProseMirror view edits the whole draft; findings ("Editor") records the
+technique and what it costs in WebKitGTK. Three constraints follow from
+it: the document scrolls (no overflow scroll container around the script),
+the page has no touch or wheel listeners, and the editor's focus ring stays
+off. Each of the three added work over the whole script to every keystroke.
+
+The window is prototype piece 5's Desk. The top bar and sidebar are fixed
+over the scrolling document, and the editor's scroll threshold keeps the
+caret clear of them. Under the editor, `sheets.ts` draws each page's paper
+and what it prints that no element holds (its number, (MORE), repeated
+cues, the automatic (CONT'D)), from the engine's lines and outside the
+editable element, redrawing a sheet only when its marks change. In dual
+dialogue each column's paragraphs keep to their half of the page, divided
+halfway across the gutter, and the shorter column's last paragraph reaches
+down to the longer one's end, so a click lands in the column it is in.
+
+The keys and the top bar's buttons run ProseMirror commands from
+`commands.ts`, so a key's whole effect is a change to the document and
+tests check it in the model without a browser. The model keeps text as
+typed: a paragraph whose element calls for capitals shows them with CSS,
+and the projection exempts each character whose capital is longer ("ß"),
+as the engine does, so the screen never shows a line longer than the
+engine's.
+
+Autocomplete (`autocomplete.ts`) is a plugin placed before the screenplay's
+keys, so its Enter, Tab, arrows and Esc win while its popup is open and
+pass through when it is closed. It keeps a tally of every suggestion's uses
+(`src/core/suggestions.ts`) that follows each edit by the elements the edit
+changed, as the projection does, so a keystroke never reads the whole
+script. The popup and its ghost text are drawn in the script's container
+beside the editable element, at the caret's coordinates, so they move no
+line and WebKit's editing never sees them.
+
+Undo (`undo.ts`) is ProseMirror's history. Commands mark where a step
+starts (`newStep`: Enter, Tab starting an element) or a change that is a
+step of its own (`ownStep`); an unmarked transaction is typing, which the
+history groups by time and place. Copy, cut and paste (`clipboard.ts`)
+replace ProseMirror's own handling, whose HTML keeps no element type
+(findings, "Editor"). A copy puts the selection on the clipboard as
+Fountain text for other applications and as a clipping
+(`src/core/clipping.ts`) under Tir's type, `application/x-tir-clipping`,
+which WebKitGTK keeps in a clipboard entry of its own that other
+applications are not offered. Tests drive the editor's state and key
+plugins without a browser through `editor-harness.ts`, which keeps
+`editor.ts`'s plugin order.
+
 ## Working here
 
-Everything runs inside the Nix development shell, which supplies Tauri's
-system libraries (WebKitGTK, GTK, libsoup, OpenSSL) from the nixpkgs revision
-in `flake.lock`. mise supplies Node, pnpm and Rust at the versions in
-`mise.toml`, and runs the tasks.
+The Nix development shell supplies Tauri's system libraries (WebKitGTK,
+GTK, libsoup, OpenSSL) from the nixpkgs revision in `flake.lock`. mise
+supplies Node, pnpm and Rust at the versions in `mise.toml`, and runs the
+tasks. `mise run dev` and `mise run check` need the shell and enter it
+themselves when started outside it (the shell sets `TIR_DEV_SHELL`); other
+commands that build the Rust side, such as a bare `cargo build`, must run
+inside `nix develop` (`nix develop --command zsh` keeps zsh).
 
-- **First time:** `mise trust`, then `nix develop`, then `mise run install`.
-  `nix develop` starts bash; `nix develop --command zsh` keeps zsh.
+### Setting up a machine
+
+The user works on two NixOS machines, a desktop (often remotely) and a
+laptop, and moves work between them through GitHub. A clone holds
+everything else the build needs, or fetches it in the steps below; "Not in
+git" lists the rest. Keep both lists current when a change needs something
+new.
+
+The machine's NixOS configuration must provide:
+
+- Flakes: `nix.settings.experimental-features = [ "nix-command" "flakes" ];`
+- nix-ld: `programs.nix-ld.enable = true;`. mise downloads prebuilt Node
+  and Rust (through rustup), which need a standard dynamic loader on NixOS.
+- `mise` and `git` on the PATH, from the system or home-manager packages.
+- A Wayland desktop to see the window (both machines run Hyprland).
+
+Then, in a fresh clone:
+
+1. `mise trust`: mise ignores a project's `mise.toml` until trusted.
+2. `mise install`: Node, pnpm, and Rust with clippy and rustfmt, at the
+   versions in `mise.toml`.
+3. `mise run install`: the JavaScript packages in `pnpm-lock.yaml`.
+4. `mise run check`, then `mise run dev`. The first run downloads the
+   nixpkgs revision in `flake.lock` and the crates in `Cargo.lock`, and
+   builds the Rust side, which takes some minutes.
+
+After a pull, repeat steps 2 and 3 if `mise.toml` or `pnpm-lock.yaml`
+changed. `flake.lock` pins nixpkgs to the desktop's NixOS revision, so
+WebKitGTK uses the same Mesa as the desktop's graphics driver. The laptop,
+on its own revision, ran the window on 2026-11-26; if a machine's window
+opens blank or WebKit reports EGL or DRI errors, compare
+`nixos-version --revision` with `flake.lock` first.
+
+Not in git:
+
+- `calibration/`, ignored because it holds other people's scripts. Only
+  `mise run parity` needs it. It lives on the desktop: copy it with
+  `rsync -a desktop:Code/tir/calibration/ calibration/` (use the desktop's
+  SSH host name), or download the PDFs that findings ("Calibration") lists.
+  It also holds `calibration/scripts/`, task 0.8's one-off analyses.
+- Things each machine fetches or generates: `node_modules/`,
+  `src-tauri/target/`, `src-tauri/gen/` (Tauri's schemas, rewritten by each
+  build) and `dist/`.
+- The implement and user-code-review skills that agents use come from the
+  user's setup repository (`~/.claude/skills`), not from this one.
+
+### Running and checking
+
 - **Nix sees only files git knows.** A flake ignores untracked files, so
   `flake.nix` and `flake.lock` must be committed or at least added with
   `git add -N`.
@@ -144,7 +251,8 @@ in `flake.lock`. mise supplies Node, pnpm and Rust at the versions in
 - **`mise run check`** runs, in order and stopping at the first failure:
   Biome (lint and format), the type check of the whole project, the type check
   of `src/core/` without the DOM, Vitest, `cargo fmt --check`, clippy with
-  warnings as errors, and `cargo test`. It must pass before a task is done.
+  warnings as errors, and `cargo test`. Run it once at stage reviews and
+  before completing a broad or cross-stack change.
 - **`mise run parity [files…] [--lines N] [--all] [--show PAGE]`**
   compares Tir's page breaks with Final Draft PDFs (every PDF in the
   ignored `calibration/` folder by default; set-aside ones live in
@@ -153,12 +261,19 @@ in `flake.lock`. mise supplies Node, pnpm and Rust at the versions in
   Final Draft's does when Tir starts it where Final Draft does; then what
   it could not read for certain. `--lines` sets lines per page, `--all`
   lists every page, and `--show` prints one page as Final Draft and Tir set
-  it, row by row. It needs no Nix shell. The one-off analyses behind
-  task 0.8 (line widths, split sizes, residual pages) are in
-  `calibration/scripts/`, which git ignores: run one with
+  it, row by row. It needs no Nix shell. Run one of task 0.8's analyses
+  (line widths, split sizes, residual pages) with
   `mise exec -- node calibration/scripts/<name>.ts`.
-- **Single steps:** `mise exec -- pnpm exec vitest run src/core` runs some
-  tests; `mise exec -- pnpm exec biome check --write .` fixes formatting.
+- **Focused checks are the default.** Inspect docs-only diffs; for
+  type-only changes, use `mise exec -- pnpm exec tsc -p tsconfig.json`.
+  For behaviour changes, use `mise exec -- pnpm exec vitest run <test-files>`
+  with the relevant tests and affected callers' tests. Don't rerun a
+  passing check just because review happened; rerun checks affected by
+  review fixes.
+- **`mise run pagination-timing`** measures the median time to paginate a
+  roughly 120-page draft against a 16 ms target. Run it on the same machine
+  when pagination performance is in scope; it is not part of `check` and
+  needs no Nix shell.
 - **TypeScript** is strict, and imports use explicit `.ts` extensions with
   only erasable syntax (no enums or parameter properties), so Node runs a
   tool directly: `node tools/<tool>.ts`. TypeScript 7 ships only the native
@@ -166,6 +281,60 @@ in `flake.lock`. mise supplies Node, pnpm and Rust at the versions in
 - **pnpm's supply-chain settings** are in `pnpm-workspace.yaml`. Install
   scripts are off; allow one by name under `allowBuilds` only when a package
   needs it.
+- **Seeing the window from an agent's shell:** the shell may lack
+  `HYPRLAND_INSTANCE_SIGNATURE`; set it to the folder name in
+  `$XDG_RUNTIME_DIR/hypr/`, and `hyprctl clients -j` lists a window titled
+  "Tir" with its position (`at`) and `size`. Screenshot it with
+  `nix shell nixpkgs#grim --command grim -g "X,Y WxH" shot.png`, which
+  installs nothing. Tiled beside another window it is too narrow for the
+  sidebar and a whole page; for a screenshot, float and size it with
+  Hyprland 0.57's dispatchers, then tile it again:
+  `hyprctl dispatch 'hl.dsp.window.float({action="enable",window="title:^Tir$"})'`,
+  then `hl.dsp.window.resize({x=1440,y=900,window="title:^Tir$"})` and
+  `hl.dsp.window.move({x=240,y=90,window="title:^Tir$"})` the same way, and
+  `action="disable"` afterwards. Prototype pieces open in the same webview
+  (and engine) at `http://localhost:1420/docs/prototype/`, for comparing
+  side by side. Stop the app with `pkill -x tir`: `pkill -f` also matches
+  the shell running it.
 - **Rust** builds inside the shell only. The shell sets `RUSTFLAGS` to link
   without Rust's bundled LLD ([findings](findings.md#nixos-development-shell)),
   so a build outside it differs and rebuilds everything.
+- **Measuring the editor:** start the app with
+  `WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`, then
+  `mise run editor-timing [--pairs N]` (`tools/editor-timing/`) prints the
+  findings ("Editor") table for the current code: layout, frame and busy
+  times for each edit in it. It sends keys through Hyprland, so it runs on
+  a Hyprland desktop with the window open. `mise run editor-placement
+  [--fixture NAME]` checks design rule 1 in the same app: every line the
+  engine lays out must start where the engine puts it, a click on a line's
+  first or last character must land before that character, a click in the
+  blank part of a dual dialogue column's row must land at that line's end,
+  each paragraph must show the engine's text (`innerText`, which applies
+  CSS capitals), and each sheet's page number and marks must sit where the
+  engine puts them; it exits 1 on a miss. Both drive the page through
+  `tools/inspector.ts`. For other probes, connect to
+  `ws://127.0.0.1:9339/socket/1/1/WebPage` through that module
+  (`Page.evaluate` runs a script and awaits its promise; `ScriptProfiler`
+  messages sample JavaScript). In development, `globalThis.tirView` is the
+  editor's view. The app opens a 120-page script with a forced break before
+  each scene (`?fixture=spike`); `?fixture=feature` opens one without forced
+  breaks, `?fixture=every` one with every element type and format and some
+  text typed in lower case where capitals apply, and `?fixture=sample`
+  prototype piece 5's script, "Salt Line". For a real click, move the
+  pointer with `nix shell nixpkgs#wlrctl --command wlrctl pointer move DX
+  DY` (relative to `hyprctl cursorpos`; the window's `at` plus the
+  element's client position is its place on screen) and press with `wlrctl
+  pointer click left`. Dead-key and Compose sequences go through `wtype`
+  (findings, "Editor"): `nix shell nixpkgs#wtype --command wtype -k
+  dead_acute -k e` types "é" and `-k Multi_key -k o -k c` types "©".
+  `press` in `tools/inspector.ts` takes Hyprland's modifiers, such as
+  `press("z", "CTRL SHIFT")`. Read and set the system clipboard with
+  `nix shell nixpkgs#wl-clipboard --command wl-paste` (`--list-types`
+  lists what a copy offered) and `... wl-copy`.
+  Findings ("Editor") lists measuring traps. For WebKit's own time, run the
+  binary under `perf` from the Nix shell:
+  `nix develop --command bash -c 'exec $(nix build --no-link --print-out-paths nixpkgs#perf)/bin/perf record -e task-clock:u -g --user-callchains -o /tmp/tir.perf -- src-tauri/target/debug/tir'`
+  (start Vite with `mise exec -- pnpm exec vite` first). Only user-space
+  events work with `perf_event_paranoid` at 2, and `perf -p` cannot attach
+  to a running WebKit process under Yama's ptrace scope 1, so launch the
+  app under `perf`; libwebkit2gtk carries its symbols.

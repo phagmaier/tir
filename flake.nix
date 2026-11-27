@@ -31,6 +31,8 @@
           xdotool
         ];
         shellHook = ''
+          # mise's dev and check tasks enter this shell unless they see this.
+          export TIR_DEV_SHELL=1
           # GTK needs the schemas to report Wayland's display scale and to
           # open file dialogs; keep the desktop's own data directories too.
           export XDG_DATA_DIRS="$GSETTINGS_SCHEMAS_PATH''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"

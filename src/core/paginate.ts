@@ -9,7 +9,7 @@
  * after action gets an automatic (CONT'D). Settings live in format.ts.
  */
 import { CONTINUED, type Column, ELEMENT_FORMATS, MORE, PAGINATION } from "./format.ts";
-import { type Layout, type Line, layoutElement } from "./layout.ts";
+import { type Layout, LayoutCache, type Line } from "./layout.ts";
 import type { Element, ElementType } from "./model.ts";
 
 export type PageLineKind = "element" | "more" | "continued";
@@ -24,6 +24,8 @@ export interface PageLine extends Line {
    * -1, above the first line, and (MORE) may sit at the row after the last.
    */
   readonly row: number;
+  /** The column of dual dialogue the line sits in, if any. */
+  readonly column?: Column;
 }
 
 export interface Page {
@@ -34,6 +36,11 @@ export interface Page {
 export interface PaginateOptions {
   /** Body lines on a page; provisional until task 0.8 settles it. */
   readonly linesPerPage?: number;
+  /**
+   * Layouts kept from earlier runs. An editor passes the same cache on every
+   * edit, so only changed elements are laid out again.
+   */
+  readonly layouts?: LayoutCache;
 }
 
 /** The number a page shows, or null on page 1. */
@@ -42,7 +49,9 @@ export function pageLabel(number: number): string | null {
 }
 
 export function paginate(elements: readonly Element[], options: PaginateOptions = {}): Page[] {
-  const pager = new Pager(elements, options.linesPerPage ?? PAGINATION.linesPerPage);
+  const layouts = options.layouts ?? new LayoutCache();
+  layouts.startRun();
+  const pager = new Pager(elements, options.linesPerPage ?? PAGINATION.linesPerPage, layouts);
   const blocks = toBlocks(elements);
   blocks.forEach((block, i) => {
     pager.place(block, blocks[i + 1]);
@@ -143,11 +152,11 @@ function hasContinued(cue: string): boolean {
 }
 
 /** Lays out a piece, with offsets into its element's whole text. */
-function layoutPiece(piece: Piece, column?: Column): Layout {
+function layoutPiece(layouts: LayoutCache, piece: Piece, column?: Column): Layout {
   const element: Element = piece.centred
     ? { type: piece.type, text: piece.text, centred: true }
     : { type: piece.type, text: piece.text };
-  const layout = layoutElement(element, column);
+  const layout = layouts.layout(element, column);
   if (piece.offset === 0) return layout;
   return {
     spaceBefore: layout.spaceBefore,
@@ -217,7 +226,12 @@ interface SpeechCut {
  * a parenthetical end the page that way ("(beat)" then "(MORE)"; findings,
  * "Pagination").
  */
-function speechCuts(items: readonly Piece[], anyLine: boolean, column?: Column): SpeechCut[] {
+function speechCuts(
+  layouts: LayoutCache,
+  items: readonly Piece[],
+  anyLine: boolean,
+  column?: Column,
+): SpeechCut[] {
   const cuts: SpeechCut[] = [];
   // A speech longer than a page must split somewhere, so the minimum relaxes.
   const min = anyLine ? 1 : PAGINATION.minSplitLines;
@@ -225,11 +239,11 @@ function speechCuts(items: readonly Piece[], anyLine: boolean, column?: Column):
   // Final Draft puts at least `min` lines of dialogue above a (MORE).
   let dialogue = 0;
   items.forEach((piece, j) => {
-    const layout = layoutPiece(piece, column);
+    const layout = layoutPiece(layouts, piece, column);
     if (piece.type === "dialogue") {
       for (const split of splitPoints(piece, layout, anyLine)) {
-        const first = layoutPiece(head(piece, split), column).lines.length;
-        const rest = layoutPiece(tail(piece, split), column).lines.length;
+        const first = layoutPiece(layouts, head(piece, split), column).lines.length;
+        const rest = layoutPiece(layouts, tail(piece, split), column).lines.length;
         if (dialogue + first < min || first < min || rest < min) continue;
         cuts.push({
           height: before + first,
@@ -257,15 +271,19 @@ function firstIndex(block: Block): number {
 }
 
 /** The ways a piece can split, from least placed to most, with the lines it puts first. */
-function cuts(piece: Piece, anyLine: boolean): { split: Split; first: number }[] {
-  const layout = layoutPiece(piece);
+function cuts(
+  layouts: LayoutCache,
+  piece: Piece,
+  anyLine: boolean,
+): { split: Split; first: number }[] {
+  const layout = layoutPiece(layouts, piece);
   // An element longer than a page must split somewhere, so the minimum relaxes.
   const min = anyLine ? 1 : PAGINATION.minSplitLines;
   return splitPoints(piece, layout, anyLine)
     .map((split) => ({
       split,
-      first: layoutPiece(head(piece, split)).lines.length,
-      rest: layoutPiece(tail(piece, split)).lines.length,
+      first: layoutPiece(layouts, head(piece, split)).lines.length,
+      rest: layoutPiece(layouts, tail(piece, split)).lines.length,
     }))
     .filter(({ first, rest }) => first >= min && rest >= min);
 }
@@ -277,11 +295,17 @@ class Pager {
   private readonly continueds: Set<number>;
   private readonly elements: readonly Element[];
   private readonly perPage: number;
+  private readonly layouts: LayoutCache;
 
-  constructor(elements: readonly Element[], perPage: number) {
+  constructor(elements: readonly Element[], perPage: number, layouts: LayoutCache) {
     this.elements = elements;
     this.perPage = perPage;
+    this.layouts = layouts;
     this.continueds = automaticContinueds(elements);
+  }
+
+  private layout(piece: Piece, column?: Column): Layout {
+    return layoutPiece(this.layouts, piece, column);
   }
 
   finish(): Page[] {
@@ -304,7 +328,7 @@ class Pager {
     if (next?.kind !== "single" || next.piece.type !== "transition" || this.breaksBefore(next)) {
       return 0;
     }
-    const layout = layoutPiece(next.piece);
+    const layout = this.layout(next.piece);
     return layout.spaceBefore + layout.lines.length;
   }
 
@@ -329,7 +353,7 @@ class Pager {
   }
 
   private placeSingle(piece: Piece, next: Block | undefined): void {
-    const layout = layoutPiece(piece);
+    const layout = this.layout(piece);
     const height = layout.lines.length;
     // A scene heading or shot needs room for the start of what follows.
     const keep =
@@ -354,11 +378,11 @@ class Pager {
   /** Puts as much of a piece as fits, split at a sentence end (or any line), and the rest after. */
   private split(piece: Piece, layout: Layout, anyLine: boolean): boolean {
     const gap = this.gap(layout.spaceBefore);
-    const cut = cuts(piece, anyLine)
+    const cut = cuts(this.layouts, piece, anyLine)
       .filter(({ first }) => gap + first <= this.room)
       .at(-1);
     if (!cut) return false;
-    this.put(layoutPiece(head(piece, cut.split)).lines, piece.index, "element", gap);
+    this.put(this.layout(head(piece, cut.split)).lines, piece.index, "element", gap);
     this.newPage();
     this.placeSingle(tail(piece, cut.split), undefined);
     return true;
@@ -374,7 +398,7 @@ class Pager {
     if (kind === "continued" || this.continueds.has(cue)) {
       text = hasContinued(own) ? own : `${own} ${CONTINUED}`;
     }
-    const layout = layoutElement({ type: "character", text }, column);
+    const layout = this.layouts.layout({ type: "character", text }, column);
     // A suffix shown after the cue is not part of its text.
     const clamp = (offset: number) => Math.min(offset, own.length);
     return {
@@ -402,32 +426,32 @@ class Pager {
         if (above) this.putAbove(cue.lines, speech.cue);
         else this.put(cue.lines, speech.cue, kind, gap);
       };
-      const layouts = items.map((piece) => layoutPiece(piece));
-      const height = layouts.reduce((sum, layout) => sum + layout.lines.length, 0);
+      const itemLayouts = items.map((piece) => this.layout(piece));
+      const height = itemLayouts.reduce((sum, layout) => sum + layout.lines.length, 0);
       if (gap + cueRows + height + trailing <= this.room) {
         placeCue();
         items.forEach((piece, j) => {
-          this.put((layouts[j] as Layout).lines, piece.index, "element");
+          this.put((itemLayouts[j] as Layout).lines, piece.index, "element");
         });
         return;
       }
       const fits = (cut: SpeechCut) => gap + cueRows + cut.height <= this.room;
-      let cut = speechCuts(items, false).filter(fits).at(-1);
+      let cut = speechCuts(this.layouts, items, false).filter(fits).at(-1);
       if (!cut && this.row > 0) {
         this.newPage();
         continue;
       }
       // Taller than a page: split dialogue at a line if no sentence end fits.
-      cut ??= speechCuts(items, true).filter(fits).at(-1);
+      cut ??= speechCuts(this.layouts, items, true).filter(fits).at(-1);
       if (!cut) {
         placeCue();
         items.forEach((piece, j) => {
-          this.put((layouts[j] as Layout).lines, piece.index, "element");
+          this.put((itemLayouts[j] as Layout).lines, piece.index, "element");
         });
         return;
       }
       placeCue();
-      for (const piece of cut.placed) this.put(layoutPiece(piece).lines, piece.index, "element");
+      for (const piece of cut.placed) this.put(this.layout(piece).lines, piece.index, "element");
       const last = cut.placed.at(-1) as Piece;
       this.put(
         [{ start: 0, end: 0, text: MORE, x: ELEMENT_FORMATS.character.left }],
@@ -459,18 +483,18 @@ class Pager {
       const lines = [
         ...cue.lines.map((line) => ({ line, element: speech.cue })),
         ...speech.items.flatMap((piece) =>
-          layoutPiece(piece, column).lines.map((line) => ({ line, element: piece.index })),
+          this.layout(piece, column).lines.map((line) => ({ line, element: piece.index })),
         ),
       ];
-      return { spaceBefore: cue.spaceBefore, lines };
+      return { column, spaceBefore: cue.spaceBefore, lines };
     });
     const height = Math.max(...columns.map((column) => column.lines.length));
     if (this.gap(columns[0]?.spaceBefore ?? 0) + height > this.room && this.row > 0) this.newPage();
     this.row += this.gap(columns[0]?.spaceBefore ?? 0);
     const top = this.row;
-    for (const column of columns) {
-      column.lines.forEach(({ line, element }, k) => {
-        this.lines.push({ ...line, kind: "element", element, row: top + k });
+    for (const { column, lines } of columns) {
+      lines.forEach(({ line, element }, k) => {
+        this.lines.push({ ...line, kind: "element", element, row: top + k, column });
       });
     }
     this.lines.sort((a, b) => a.row - b.row || a.x - b.x);
@@ -480,23 +504,24 @@ class Pager {
   /** Lines a block needs at the foot of a page to start there, space before included. */
   private lead(block: Block): number {
     if (block.kind === "single") {
-      const layout = layoutPiece(block.piece);
+      const layout = this.layout(block.piece);
       const whole = layout.lines.length;
-      const cut = block.piece.type === "action" ? cuts(block.piece, false)[0] : undefined;
+      const cut =
+        block.piece.type === "action" ? cuts(this.layouts, block.piece, false)[0] : undefined;
       return layout.spaceBefore + Math.min(whole, cut?.first ?? whole);
     }
     if (block.kind === "speech") {
       const cue = this.cueLayout(block.speech.cue, "element");
       const whole = block.speech.items.reduce(
-        (sum, piece) => sum + layoutPiece(piece).lines.length,
+        (sum, piece) => sum + this.layout(piece).lines.length,
         0,
       );
-      const cut = speechCuts(block.speech.items, false)[0];
+      const cut = speechCuts(this.layouts, block.speech.items, false)[0];
       return cue.spaceBefore + cue.lines.length + Math.min(whole, cut?.height ?? whole);
     }
     const height = (speech: Speech, column: Column) =>
       this.cueLayout(speech.cue, "element", column).lines.length +
-      speech.items.reduce((sum, piece) => sum + layoutPiece(piece, column).lines.length, 0);
+      speech.items.reduce((sum, piece) => sum + this.layout(piece, column).lines.length, 0);
     return (
       ELEMENT_FORMATS.character.spaceBefore +
       Math.max(height(block.left, "left"), height(block.right, "right"))

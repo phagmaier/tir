@@ -143,6 +143,20 @@ function readTitlePage(data: unknown): TitlePage {
   };
 }
 
+/**
+ * Reads a list of elements as a draft file holds them, for other places
+ * Tir writes elements (the clipboard); null when any is invalid.
+ */
+export function readElementList(data: unknown): Element[] | null {
+  if (!Array.isArray(data)) return null;
+  try {
+    return data.map((element, index) => readElement(element, index + 1));
+  } catch (error) {
+    if (error instanceof Refusal) return null;
+    throw error;
+  }
+}
+
 function readElement(data: unknown, number: number): Element {
   const where = `element ${number}`;
   if (!isRecord(data)) throw damaged(`${where} is not an element`);

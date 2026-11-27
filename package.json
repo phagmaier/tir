@@ -13,5 +13,13 @@
     "unpdf": "^2.2.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.2"
+  },
+  "dependencies": {
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.2",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.44.0"
   }
 }

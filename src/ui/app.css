@@ -1,6 +1,9 @@
+@import "prosemirror-view/style/prosemirror.css";
 @import "./theme.css";
 
-/* Courier Prime, SIL Open Font License 1.1 (fonts/OFL-courierprime.txt). */
+/* Courier Prime for the script; IBM Plex Sans and Newsreader for the
+   interface, as in docs/prototype/look.css. Each under the SIL Open Font
+   License 1.1 (fonts/OFL-*.txt). */
 @font-face {
   font-family: "Courier Prime";
   src: url("./fonts/CourierPrime-Regular.ttf") format("truetype");
@@ -25,49 +28,250 @@
   font-weight: 700;
   font-style: italic;
 }
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./fonts/IBMPlexSans-Variable.ttf") format("truetype");
+  font-weight: 100 700;
+  font-stretch: 85% 100%;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("./fonts/Newsreader-Variable.ttf") format("truetype");
+  font-weight: 200 800;
+}
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
 }
-html,
 body {
-  height: 100%;
   margin: 0;
-}
-body {
   background: var(--canvas);
   color: var(--fg);
-  font-family: system-ui, sans-serif;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
 
-#app {
+/* ===== The Desk: the top bar and sidebar stay put over the scrolling document ===== */
+#topbar {
   position: fixed;
-  inset: 0;
-  overflow: auto;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--rule);
+}
+#sidebar {
+  position: fixed;
+  z-index: 10;
+  top: 50px;
+  bottom: 0;
+  left: 0;
+  width: 264px;
+  background: var(--chrome);
+  border-right: 1px solid var(--rule);
+}
+/* The document scrolls, not a container: in WebKitGTK an overflow scroller
+   repositions its layers and repaints its scrollbar on every edit
+   (findings, "Editor"). Block layout, not flex: a flex container sizes the
+   editor by laying out all of its lines again. */
+#canvas {
+  padding: 50px 0 0 264px;
 }
 #pages {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 30px;
   padding: 40px 48px 140px;
 }
 
-/* A sheet's size, font size and line height come from src/core/format.ts;
-   the layout engine places every line on it, so script text never wraps in
-   the browser (design rule 1). */
-.sheet {
-  position: relative;
-  flex: none;
-  background: var(--paper);
-  color: var(--ink);
-  box-shadow: var(--sheet-shadow);
-  font-family: "Courier Prime", monospace;
+.bar-left,
+.bar-right {
+  flex: 1 1 0;
+  min-width: 0;
 }
-.sheet .line {
+.title {
+  padding: 3px 8px;
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.003em;
+  white-space: nowrap;
+}
+.elements {
+  display: flex;
+  gap: 2px;
+}
+.elements button {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.elements button:hover {
+  color: var(--fg);
+  background: var(--hover);
+}
+.elements button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 550;
+}
+.elements .short {
+  display: none;
+}
+@media (max-width: 1560px) {
+  .elements .full {
+    display: none;
+  }
+  .elements .short {
+    display: inline;
+  }
+}
+
+/* ===== The script: sheets of paper with the editor's text over them ===== */
+.script {
+  position: relative;
+  width: var(--paper-width);
+  margin: 0 auto;
+  color: var(--ink);
+  font:
+    var(--font-size) / var(--row-height) "Courier Prime",
+    monospace;
+}
+.sheets {
+  position: absolute;
+  inset: 0;
+}
+.sheet {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: var(--paper-height);
+  background: var(--paper);
+  box-shadow: var(--sheet-shadow);
+}
+.sheet .page-number {
+  position: absolute;
+  top: 0.5in;
+  right: 1in;
+}
+.sheet .printed {
   position: absolute;
   white-space: pre;
+}
+/* `white-space: pre` overrides prosemirror.css's pre-wrap, imported above:
+   the browser must never wrap script text (architecture, design rule 1). */
+.script-editor {
+  white-space: pre;
+  caret-color: var(--caret, var(--ink));
+}
+/* WebKitGTK's focus ring traces every line of the script on each repaint
+   (findings, "Editor"); the caret shows focus. */
+.script-editor,
+.script-editor:focus-visible {
+  outline: none;
+}
+.script-editor p {
+  margin: 0;
+}
+/* Capitals where the element calls for them, with the text kept as typed. A
+   character whose capital is longer ("ß" to "SS") keeps its case, as in the
+   engine, so no line grows. */
+.script-editor p.caps {
+  text-transform: uppercase;
+}
+.script-editor .keep-case {
+  text-transform: none;
+}
+/* The engine's line breaks: on the last character of a line, and with a page's gap. */
+.script-editor .line-end::after {
+  content: "\a";
+}
+.script-editor .page-gap::after {
+  content: "";
+  display: block;
+  height: var(--gap);
+}
+
+/* ===== Autocomplete (prototype piece 5's popup): beside the editable element,
+   at the caret, so neither moves a line ===== */
+.completion-ghost {
+  position: absolute;
+  white-space: pre;
+  color: var(--ghost);
+  pointer-events: none;
+}
+.completion {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 2.2in;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--pop-bg);
+  color: var(--pop-fg);
+  border: 1px solid var(--pop-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  font:
+    13px / 1.3 "IBM Plex Sans",
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+}
+.completion[hidden] {
+  display: none;
+}
+.completion-title {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.completion-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-family: "Courier Prime", monospace;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.completion-option[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+.completion-option i {
+  font:
+    normal 11px "IBM Plex Sans",
+    system-ui,
+    sans-serif;
+  opacity: 0.6;
+  align-self: center;
+}
+.completion-keys {
+  padding: 6px 8px 3px;
+  font-size: 11px;
+  opacity: 0.55;
 }

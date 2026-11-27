@@ -75,6 +75,36 @@ export const ELEMENT_FORMATS: Readonly<Record<ElementType, ElementFormat>> = {
   general: format(1.5, 7.5, 0, 61),
 };
 
+/**
+ * The element each key starts or gives (findings, the table's "Return
+ * gives" and "Tab gives" columns, and "Final Draft's keys"). Return at the
+ * end of an element starts the next one; Tab changes an empty element, and
+ * at the end of one with text starts a new one, where a cue with a name
+ * gives a Parenthetical. Shot and General have no Tab.
+ */
+export const NEXT_ON_RETURN: Readonly<Record<ElementType, ElementType>> = {
+  sceneHeading: "action",
+  action: "action",
+  character: "dialogue",
+  parenthetical: "dialogue",
+  dialogue: "action",
+  transition: "sceneHeading",
+  shot: "action",
+  general: "general",
+};
+export const NEXT_ON_TAB: Readonly<Partial<Record<ElementType, ElementType>>> = {
+  sceneHeading: "action",
+  action: "character",
+  character: "transition",
+  parenthetical: "dialogue",
+  dialogue: "parenthetical",
+  transition: "sceneHeading",
+};
+export const NEXT_ON_TAB_AFTER_TEXT: Readonly<Partial<Record<ElementType, ElementType>>> = {
+  ...NEXT_ON_TAB,
+  character: "parenthetical",
+};
+
 export type SpeechType = "character" | "parenthetical" | "dialogue";
 export type Column = "left" | "right";
 

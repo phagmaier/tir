@@ -175,7 +175,7 @@ function signature(element: Element, strict: boolean): string {
 }
 
 /** An element's lines, styled and escaped, so no line reads as Fountain syntax. */
-function elementLines(element: Element): string[] {
+export function elementLines(element: Element): string[] {
   const lines: string[] = [];
   let start = 0;
   for (const text of element.text.split("\n")) {

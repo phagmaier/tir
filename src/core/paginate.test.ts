@@ -2,6 +2,8 @@
 // shows in a few lines. Rows count down from the top margin; dialogue wraps
 // at 35 characters and action at 60 (findings, the table).
 import { describe, expect, it } from "vitest";
+import { featureScript } from "./fixtures/scripts.ts";
+import { LayoutCache } from "./layout.ts";
 import type { Element, ElementType } from "./model.ts";
 import { automaticContinueds, type Page, pageLabel, paginate } from "./paginate.ts";
 
@@ -319,81 +321,38 @@ describe("dual dialogue", () => {
       el("character", "TOMÁS", { dual: true }),
       el("dialogue", "Right."),
     ];
-    const lines = paginate(script)[0]?.lines.map((line) => [line.row, line.x, line.text]);
+    const lines = paginate(script)[0]?.lines.map((line) => [
+      line.row,
+      line.x,
+      line.text,
+      line.column,
+    ]);
     // Each cue centred in its column; dialogue at 1.5 and 4.625 in.
     expect(lines).toEqual([
-      [0, 2.7375, "MAYA"],
-      [0, 5.8125, "TOMÁS"],
-      [1, 1.5, "Left."],
-      [1, 4.625, "Right."],
+      [0, 2.7375, "MAYA", "left"],
+      [0, 5.8125, "TOMÁS", "right"],
+      [1, 1.5, "Left.", "left"],
+      [1, 4.625, "Right.", "right"],
     ]);
   });
 });
 
-// A seeded generator keeps the script the same on every run.
-function random(seed: number): () => number {
-  let state = seed;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** An original feature script in the usual proportions of scenes, action and speeches. */
-function featureScript(scenes: number): Element[] {
-  const next = random(120);
-  const pick = <T>(items: readonly T[]) => items[Math.floor(next() * items.length)] as T;
-  const words =
-    "the lamp harbour keeper glass night wall boat tide stair window rope salt bell light cold dark water old long slow".split(
-      " ",
-    );
-  const sentence = () => {
-    const text = Array.from({ length: 4 + Math.floor(next() * 12) }, () => pick(words)).join(" ");
-    return `${text[0]?.toUpperCase()}${text.slice(1)}${pick([".", ".", ".", "?", "!"])}`;
-  };
-  const sentences = (most: number) =>
-    Array.from({ length: 1 + Math.floor(next() * most) }, sentence).join(" ");
-  const names = ["MAYA", "TOMÁS", "THE KEEPER", "ISLA", "OLD FINN"];
-  const script: Element[] = [];
-  for (let s = 0; s < scenes; s++) {
-    script.push(
-      el(
-        "sceneHeading",
-        `${pick(["INT.", "EXT."])} ${pick(words).toUpperCase()} - ${pick(["DAY", "NIGHT"])}`,
-      ),
-    );
-    for (let beat = 0; beat < 4 + Math.floor(next() * 12); beat++) {
-      if (next() < 0.4) {
-        script.push(el("action", sentences(5)));
-      } else {
-        script.push(el("character", pick(names)));
-        if (next() < 0.2) script.push(el("parenthetical", `(${pick(words)})`));
-        script.push(el("dialogue", sentences(4)));
-      }
+describe("a layout cache kept between runs", () => {
+  it("paginates an edited script as a fresh run does", () => {
+    let script = featureScript(30);
+    const layouts = new LayoutCache();
+    paginate(script, { layouts });
+    // Lengthen, shorten and retype elements so lines and page breaks move.
+    for (const [index, change] of [
+      [3, (text: string) => `${text} And the tide comes in again over the wall.`],
+      [10, (text: string) => text.slice(0, 5)],
+      [11, (text: string) => text.toUpperCase()],
+      [40, () => ""],
+    ] as const) {
+      script = script.map((element, i) =>
+        i === index ? { ...element, text: change(element.text) } : element,
+      );
+      expect(paginate(script, { layouts })).toEqual(paginate(script));
     }
-    if (next() < 0.15) script.push(el("transition", "CUT TO:"));
-  }
-  return script;
-}
-
-describe("speed", () => {
-  it("paginates a 120-page script in under 16 ms", () => {
-    // 150 scenes come to about 122 pages and 1,970 elements.
-    const script = featureScript(150);
-    const pages = paginate(script);
-    expect(pages.length).toBeGreaterThanOrEqual(110);
-    expect(pages.length).toBeLessThanOrEqual(135);
-    const times: number[] = [];
-    for (let run = 0; run < 25; run++) {
-      const start = performance.now();
-      paginate(script);
-      times.push(performance.now() - start);
-    }
-    times.sort((a, b) => a - b);
-    // The fastest run shows the work itself; slower ones include other test
-    // files running at the same time.
-    expect(times[0]).toBeLessThan(16);
   });
 });

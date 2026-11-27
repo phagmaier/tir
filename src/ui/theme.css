@@ -44,4 +44,6 @@ body[data-theme="light"] {
   --paper: #fdfcf8;
   --ink: #141414;
   --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 18px 44px rgba(0, 0, 0, 0.5);
+  /* look.css leaves white paper's ghost text to page.css's default. */
+  --ghost: #a8a8a8;
 }

@@ -1,7 +1,7 @@
 // Expected lines are worked by hand from docs/findings.md's table: 10
 // characters to the inch, so a line of n characters is n/10 inch wide.
 import { describe, expect, it } from "vitest";
-import { type Layout, layoutElement } from "./layout.ts";
+import { type Layout, LayoutCache, layoutElement } from "./layout.ts";
 import type { Element, ElementType } from "./model.ts";
 
 const el = (type: ElementType, text: string, more: Partial<Element> = {}): Element => ({
@@ -230,5 +230,27 @@ describe('dual dialogue columns (findings, "Dual dialogue")', () => {
 
   it("leaves other elements in their usual place", () => {
     expect(xs(layoutElement(el("action", "Rain."), "right"))).toEqual([1.5]);
+  });
+});
+
+describe("the layout cache", () => {
+  it("keeps the same text apart when type, centring or column differ", () => {
+    const text = "The lamp went out before the boat came in.";
+    const cases: [Element, ("left" | "right")?][] = [
+      [el("action", text)],
+      [el("action", text, { centred: true })],
+      [el("dialogue", text)],
+      [el("dialogue", text), "left"],
+      [el("dialogue", text), "right"],
+      [el("character", text)],
+    ];
+    const cache = new LayoutCache();
+    // The second run reads what the first kept.
+    for (let run = 0; run < 2; run++) {
+      cache.startRun();
+      for (const [element, column] of cases) {
+        expect(cache.layout(element, column)).toEqual(layoutElement(element, column));
+      }
+    }
   });
 });

@@ -20,10 +20,10 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 - **Review tasks** (titled "Review: …") are tasks like any other. Run the
   user-code-review skill (not the bundled `/code-review`) on the scope the
   task names, work through its checklist, fix concrete findings within the
-  stage's scope, and rerun the affected checks. Record in `Evidence:` the
-  commit or working-tree state reviewed (`git rev-parse HEAD`, plus
-  "uncommitted changes" if any), the findings, and what was fixed or
-  deferred. A deferred finding goes under "Known gaps".
+  stage's scope, and rerun checks affected by those fixes. Record in
+  `Evidence:` the commit or working-tree state reviewed (`git rev-parse
+  HEAD`, plus "uncommitted changes" if any), the findings, and what was
+  fixed or deferred. A deferred finding goes under "Known gaps".
 - **User check tasks** (titled "User check: …"): stop. Tell the user exactly
   how to run the check, and wait. Check it off only when the user reports
   it passed, quoting them and the date in `Evidence:`. Notes from the user
@@ -34,9 +34,10 @@ outside facts in [findings.md](findings.md), and the chosen screens in
 
 ## Current status
 
-- Active: 0.10 User check: Stage 0 (waiting for the user to run it)
+- Active: none; stopped after 1.6 as the user asked
 - Blockers: none
-- Next: 1.1 Editor spike, after the user passes 0.10
+- Next: 1.7 Scene sidebar, page position, Go to page, when the user says to
+  continue
 
 ## Stages
 
@@ -178,9 +179,9 @@ anything else. V1 is done when 7.4 is checked.
     parts. Add (MORE) and (CONT'D) to a split speech, and the automatic
     (CONT'D) for a speaker who returns after action. Honour forced page
     breaks. Number pages from page 2.
-  - Done when: unit tests with worked examples pass for each rule, and a
-    test shows paginating a 120-page script takes under 16 ms on this
-    machine.
+  - Done when: unit tests with worked examples pass for each rule, and
+    `mise run pagination-timing` shows a median under 16 ms for a
+    roughly 120-page script on this machine.
   - Evidence: 2026-11-26, `src/core/paginate.test.ts` (22 tests, worked by
     hand on short pages): space before dropped at a page top; forced breaks
     without a blank first page; headings and shots moved with what follows;
@@ -191,9 +192,9 @@ anything else. V1 is done when 7.4 is checked.
     cue; automatic (CONT'D) and its four exceptions; dual columns; numbers
     shown from page 2. Speed: an original 122-page script (1,970 elements)
     paginated in 3.6 ms fastest, 4.6 ms median over 40 runs (Node 24, this
-    machine); the test asserts the fastest of 25 runs is under 16 ms. Lines
-    per page is the `linesPerPage` option. Rules still provisional are
-    listed in findings for 0.8. `mise run check` exited 0 (238 tests).
+    machine). Lines per page is the `linesPerPage` option. Rules still
+    provisional are listed in findings for 0.8. `mise run check` exited 0
+    (238 tests).
 
 - [x] 0.6 — Review: the core and the page engine
   - Status: done
@@ -335,20 +336,26 @@ anything else. V1 is done when 7.4 is checked.
     pages. Not changed: `tools/parity/rebuild.ts` is long (807 lines) but
     holds one job. `mise run check` exited 0 (255 tests).
 
-- [ ] 0.10 — User check: Stage 0
-  - Status: in progress (waiting for the user)
+- [x] 0.10 — User check: Stage 0
+  - Status: done
   - Depends on: 0.9
-  - Check: in the development shell, the user runs `mise run parity` and
-    reads its summary for the calibration scripts, then runs `mise run dev`
-    and sees the app's window.
+  - Check: in a terminal in the project, the user runs `mise run parity`
+    and reads its summary for the calibration scripts, then runs
+    `mise run dev` and sees the app's window.
+  - Evidence: 2026-11-26. The user's first `mise run dev`, outside the Nix
+    shell, failed (`gdk-pixbuf-2.0` not found); `dev` and `check` now enter
+    the shell themselves. The user then ran Tir on their laptop and
+    reported that it passed the visual check. A copy holding only the files
+    git would commit was set up and checked from scratch on the desktop
+    ("Setting up a machine" in architecture.md).
 
 ## Stage 1: writing
 
 Stage 1 edits one draft file opened directly. Projects and automatic
 saving arrive in Stage 2.
 
-- [ ] 1.1 — Editor spike: ProseMirror showing the engine's breaks
-  - Status: todo
+- [x] 1.1 — Editor spike: ProseMirror showing the engine's breaks
+  - Status: done
   - Depends on: 0.10
   - Spec: architecture design rule 1
   - Do: Build a minimal ProseMirror editor over the model whose text is
@@ -359,13 +366,56 @@ saving arrive in Stage 2.
     page gaps, selection, undo, and composed characters (dead keys and the
     compose key) under WebKitGTK.
   - Done when: findings.md ("Editor") records the technique and
-    measurements; typing a character on a 120-page script re-lays out and
-    redraws in under 16 ms typically; cursor movement and selection behave
-    as in a normal text editor. If any of these fails, stop and bring the
-    alternatives to the user.
+    measurements; typing a character on a 120-page script re-lays out in
+    under 16 ms typically and reaches the screen within about two frames
+    (the user accepted this target on 2026-11-26, replacing a full redraw
+    in under 16 ms); cursor movement and selection behave as in a normal
+    text editor. If any of these fails, stop and bring the alternatives to
+    the user.
+  - Evidence: 2026-11-26, `mise run check` passed (256 Vitest tests, both
+    type checks, Biome and Rust checks). Native WebKitGTK verified caret
+    motion and selection across wraps and a page gap, Backspace, undo,
+    and dead-key and Compose input. The 120-page typing check measured
+    38 ms median and 41 ms p95 before paint. See findings.md, "Editor".
+  - Decision (2026-11-26): the user approved keeping one editable
+    ProseMirror surface and updating it incrementally. Profile the
+    complete edit path before choosing what to optimize; reuse unchanged
+    layout and decorations where useful. Recheck the same 120-page
+    fixture with ordinary typing and edits that shift a page break, and
+    repeat the native editing checks. Do not switch to a windowed editor
+    without a new decision. The 16 ms target and stop conditions stand.
+  - Evidence: 2026-11-26, second attempt. Profiling found the time in
+    `DecorationSet.create` and in WebKitGTK work over the whole editable
+    element; the projection is now incremental (`src/ui/projection.ts`),
+    line breaks survive styled text, and typing goes from `beforeinput`
+    straight to the document. On the 120-page fixture, typing lays out in
+    9–11 ms median before paint, but reaches the end of the next rendering
+    update in 18–21 ms and keeps the main thread busy 18–25 ms; Backspace
+    that removes a page takes 47–63 ms. Native checks passed for caret
+    motion and selection across a line break and a page gap, Backspace,
+    Ctrl+Backspace, Delete, joining elements, undo, dead keys and Compose.
+    `mise run check` passed (264 Vitest tests, both type checks, Biome and
+    Rust checks); reviewed with user-code-review (four small fixes to the
+    input handler and naming). Measurements and causes: findings.md,
+    "Editor".
+  - Options (2026-11-26): (a) keep this editor and accept a redraw of about
+    one and a half frames, with 50–70 ms when a page in the middle is
+    removed; judge the feel on the laptop first. (b) Keep one surface but
+    group elements under scene nodes in the ProseMirror document, so
+    WebKit lays out about 150 blocks instead of 2,280; the surrounding
+    text cost (3.5 ms) stays; needs its own spike. (c) A windowed editor:
+    only the pages around the caret are editable, the rest drawn from the
+    engine; removes the whole-script costs but needs caret, selection and
+    find handling across the window's edge.
+  - Decision (2026-11-26): the user chose option (a): "yes that seems like
+    an acceptable speed and should be fine. so we can change that to
+    acceptable and mark that fine." The measured speed meets the revised
+    "Done when" above: 9–11 ms layout and 18–21 ms to the end of the next
+    rendering update for typing; the 50–70 ms pause when Backspace removes
+    a page mid-script is accepted.
 
-- [ ] 1.2 — Review: the editor approach
-  - Status: todo
+- [x] 1.2 — Review: the editor approach
+  - Status: done
   - Depends on: 1.1
   - Scope: the spike from 1.1. This is a design review before building on
     it.
@@ -378,9 +428,33 @@ saving arrive in Stage 2.
       highlights, margin marks, spelling squiggles, (MORE) and (CONT'D).
   - Done when: findings are fixed, or the user has decided on a change of
     approach.
+  - Evidence: 2026-11-26, reviewed with user-code-review at HEAD
+    `c9a85c391e66cc0b537aecb1ecfc2748d14a6669` plus uncommitted changes
+    (all of 1.1 is uncommitted). The approach holds; no change of approach
+    needed. Checklist: design rule 1 measured by a new
+    `mise run editor-placement` (every engine line starts within a pixel of
+    its engine position and a click there lands before its first
+    character): 4,200 lines on the 120-page fixture, 5,040 on
+    `?fixture=feature`, and the new `?fixture=every` (dual dialogue,
+    centred, transition, parenthetical, styles, typed line breaks), all in
+    place; trailing and doubled typed line breaks placed too. One mapping,
+    `editor-model.ts`, which the projection also uses; its round-trip test
+    now covers all eight types, every format and a 1,970-element script.
+    Speed re-measured with `mise run editor-timing`: typing 10–14 ms layout,
+    16–22 ms frame, Backspace removing a page 56–57 ms, as in findings. A
+    probe plugin with 6,240 find highlights, 1,080 squiggles, 228 margin
+    dots and a ghost completion kept every line in place and typing at
+    12–13 ms layout, 16–18 ms frame (findings, "Editor"). (MORE), the
+    repeated cue and page numbers have their rows reserved by the engine
+    and will be drawn outside the editable element (1.3). Fixed:
+    `tools/editor-timing` did not await its async setup scripts (the
+    inspector returns promises unawaited) and focused the editor with Tab,
+    which 1.4 makes an editing key; both fixed, with the shared inspector
+    code moved to `tools/inspector.ts`. `mise run check` exited 0 (254
+    Vitest tests).
 
-- [ ] 1.3 — Pages in the settled look
-  - Status: todo
+- [x] 1.3 — Pages in the settled look
+  - Status: done
   - Depends on: 1.2
   - Spec: brief "Look"; prototype piece 5; docs/prototype/look.css
   - Do: Render the editor as separate sheets: Night paper and white paper,
@@ -389,9 +463,58 @@ saving arrive in Stage 2.
     `src/ui/`.
   - Done when: screenshots of the app match prototype piece 5 in both
     papers at 100% zoom, checked side by side.
+  - Note (from 1.1): the Desk layout must keep the document as the
+    scroller and add no touch or wheel listeners (architecture, "The
+    editor"). Dual dialogue is not drawn side by side yet: the projection
+    pulls the right column up with a negative margin, so the right
+    column's paragraphs overlap the left column's rows. 1.2's placement
+    check found every line placed and clicks on each line's first character
+    landing on the `every` fixture; check clicks in the columns again here.
+  - Note (from 1.2): draw (MORE), repeated cues, the automatic (CONT'D)
+    after a cue and page numbers outside the editable element, at the
+    engine's rows, so they add nothing to WebKit's editing work.
+  - Evidence: 2026-11-26. Screenshots at 1440×900 and 100% zoom of
+    `?fixture=sample` (piece 5's script) beside piece 5 in the same webview,
+    Night and white paper, at the top of page 1 and across pages 2 and 3
+    and the dual dialogue: the top bar, title, element buttons with the
+    current one highlighted, sidebar and canvas chrome, sheet size,
+    position, gap and shadow, paper and ink colours, text, the page number
+    "3.", (MORE), the repeated cue and the automatic (CONT'D) match; a pixel
+    diff at 2% tolerance differs only where listed here. Differs, by
+    design: three action paragraphs and where ELLIS's speech splits (the
+    prototype's rough paginator wraps action at 60, the engine at 61), dual
+    dialogue cues centred in their columns and the right column at
+    4.625 in, and (CONT’D)'s curly apostrophe (all per findings); the
+    document's scrollbar runs the window's full height beside the top bar,
+    since the document scrolls; WebKit's 1 px caret, not the prototype's
+    drawn 2 px one. Left for their tasks: clicking an element button (1.4;
+    the buttons only show the current element), the scene list (1.7),
+    "Page N of M" (1.7), the paper switch and zoom (1.8; white paper is
+    `body[data-theme="light"]` until then), the saved indicator (1.9, 2.2),
+    the draft name and menu (2.4), the Title page row (2.5), the findings
+    count, margin dots and squiggles (Stage 5). `mise run editor-placement`
+    on `every`, `feature` (121 pages, 5,040 lines, 83 marks) and `spike`
+    (120 pages, 4,200 lines): every line in place, clicks on each line's
+    first and last character and in the blank part of both dual columns'
+    rows land, and every page number and mark sits at the engine's
+    position; the check was seen to fail on a moved page number and on the
+    old overlapping columns. `mise run editor-timing`, four runs, and
+    alternating runs with the new layers switched off: the Desk leaves each
+    edit's times as they were except typing that adds or removes a page,
+    about 1 ms slower. Against the findings table, that edit's layout
+    (12–14 ms against 10–11) and the `feature` line change's busy time
+    (26–28 ms against 20–25) are higher; 1.2's page measured the same day
+    11 ms and 27–28 ms (findings, "Editor"). Native: dead acute then `e`
+    and Compose `o` `c` entered é and ©; typing with the caret under the
+    top bar scrolled it clear. Reviewed with user-code-review at HEAD
+    `c9a85c391e66cc0b537aecb1ecfc2748d14a6669` plus uncommitted changes:
+    fixed a click beside the shorter dual column landing in the next
+    element (the shorter column's last paragraph now reaches the block's
+    end) and two stale comments; no other findings. `mise run check`
+    passed (257 Vitest tests, both type checks, Biome and Rust checks).
 
-- [ ] 1.4 — Elements and keys
-  - Status: todo
+- [x] 1.4 — Elements and keys
+  - Status: done
   - Depends on: 1.3
   - Spec: brief "Elements and keys"
   - Do: The eight elements; Enter and Tab by Final Draft's table; the
@@ -400,12 +523,52 @@ saving arrive in Stage 2.
     capitals and parentheses; bold, italic and underline; commands for dual
     dialogue, centred text and a forced page break. Record any key chosen
     here in brief.md.
-  - Done when: tests drive each key and command through the editor and
-    check the resulting model, and the user's flow (Enter after dialogue,
-    then Tab, gives a new cue) works in the app.
+  - Done when: table-driven editor-state tests cover the result of each
+    key and command in the model. A short native check confirms shortcut
+    delivery and that Enter after dialogue, then Tab, gives a new cue.
+  - Note (from 1.2): the model keeps text as typed and layout applies
+    capitals, keeping a character whose capital is longer ("ß"); a CSS
+    capital would make it two ("SS") and move the rest of the line, so
+    show capitals without changing any character's count.
+  - Note (from 1.3): `src/ui/toolbar.ts` draws the eight buttons and
+    highlights the current element's; they have no click handler yet, so a
+    click only moves focus out of the editor. Changing the element on click
+    should keep the caret in the editor.
+  - Evidence: 2026-11-26. `src/ui/commands.test.ts` presses each key
+    through the editor's keymap and checks the model, 88 table rows with
+    results taken from the brief and Final Draft's table and keys: Enter
+    and Tab from each of the eight types (Tab on an empty element and at the
+    end of one with text), Enter inside, at the start and over a selection,
+    Tab and Shift+Tab claiming the key everywhere, Enter after dialogue then
+    Tab giving a cue, Ctrl+1 to Ctrl+7 and Ctrl+0, each top bar button,
+    automatic parentheses (added, removed, ")" stepping over, "(" ignored,
+    Backspace), capitals (text kept as typed, set in capitals by layout,
+    "ß" kept), Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+Alt+D (pairing, unpairing and
+    three refusals), Ctrl+E and Ctrl+Enter; `projection.test.ts` covers the
+    "ß" exemption, also through edits. Native, through the Hyprland
+    dispatcher: every key reached the page and did that; Enter after
+    dialogue gave an action and Tab made it a cue; Ctrl+= zoomed nothing and
+    Ctrl+0 gave General; Shift+Tab and Tab kept focus; in a cue the dead
+    acute then `e`, Compose `o` `c` and `ß` entered "é©ß", shown "É©ß"; a
+    real click (`wlrctl`) on Transition changed the element and kept the
+    caret and focus. `mise run editor-placement` on `every` (now with text
+    typed in lower case and "ß"), `feature` (5,040 lines, 83 marks) and
+    `spike` (4,200 lines): every line in place and every paragraph showing
+    the engine's text; the new shown-text check was seen to fail with the
+    "ß" exemption or the capitals switched off. `mise run editor-timing`,
+    two full runs (a third was cut short by a source edit reloading the
+    page): as in findings ("Editor"), ordinary typing 10–11 ms layout,
+    18–19 ms frame, 19–21 ms busy. Screenshots at 1440×900 showed the
+    capitals and the top bar after a click. Reviewed with user-code-review
+    at HEAD `c9a85c391e66cc0b537aecb1ecfc2748d14a6669` plus uncommitted
+    changes: made the commands only the keymap uses private, wrote the top
+    bar test's rows out in full, and corrected two document claims (Final
+    Draft's element keys; that Ctrl+0 resets no zoom, from Ctrl+= zooming
+    nothing). `mise run check` passed (346 Vitest tests, both type checks,
+    Biome and Rust checks).
 
-- [ ] 1.5 — Autocomplete
-  - Status: todo
+- [x] 1.5 — Autocomplete
+  - Status: done
   - Depends on: 1.4
   - Spec: brief "Scope" (Autocomplete); prototype piece 1 (autocomplete)
   - Do: Suggest character names, cue extensions, scene heading prefixes,
@@ -414,9 +577,58 @@ saving arrive in Stage 2.
     accepts, the arrows choose, Esc closes.
   - Done when: tests cover each suggestion source and the keys, and the
     popup works in the app on both papers.
+  - Note (from 1.4): `screenplayKeys` (`src/ui/commands.ts`) claims Enter
+    and Tab in every state, so the popup's keys must be handled before it
+    (an earlier keymap or plugin). Final Draft's Tab inside a scene heading
+    also completes its parts ("INT." then " - " then the time); the brief
+    names Enter, the arrows and Esc only.
+  - Decision (2026-11-26): asked about Tab, the user chose "Tab accepts,
+    exactly like Enter. With the popup closed, Tab stays as in 1.4."
+  - Evidence: 2026-11-26. `src/core/suggestions.ts` holds the six sources
+    and a tally of uses that follows each edit by the elements it changed;
+    `src/ui/autocomplete.ts` is a plugin before `screenplayKeys`, drawing
+    the popup and ghost beside the editable element. 57 new tests, expected
+    results worked by hand from the brief, Final Draft's SmartType
+    (findings, new section) and prototype piece 5:
+    `src/core/suggestions.test.ts` types into each source after a small
+    script (names ranked by speeches, extensions from "(", the five
+    prefixes, locations after the prefix, times after " - ", transitions;
+    Final Draft's defaults in its order; a part already in full, or empty,
+    opens nothing; the script's most used form; the tally followed through
+    edits equals a recount). `src/ui/commands.test.ts`, its harness now
+    pressing keys through autocomplete then the screenplay keymap as the
+    editor does: piece 5's heading "INT. HALCYON - WHEELHOUSE - " offers
+    Time of day with NIGHT (6 uses), CONTINUOUS (3) and Final Draft's other
+    seven, ghost "NIGHT"; Enter and Tab accept, Down and Up choose and wrap,
+    Esc closes and Enter then starts the dialogue; a name typed in full or a
+    new one leaves Enter to start the dialogue; an accepted name is written
+    as the script writes it, a prefix as Final Draft does with its space; a
+    heading part by part (prefix, then locations, then times); deleting
+    reopens; names typed since opening are offered; moving the caret
+    closes; arrows and Esc pass through when closed; and all 1.4 rows pass
+    unchanged with the plugin in front. Native, on the tiled 931×1010
+    window: typing opened the popup, the arrows, Enter, Tab and Esc worked,
+    a real click on a suggestion accepted it and kept focus; with the popup
+    open in a cue the dead acute then `e` and Compose `o` `c` entered "é©"
+    (closing it), as in an action; with it open, all 103 paragraphs of
+    `?fixture=sample` sat where they sat with it closed. Screenshots at
+    1440×900 of the popup and ghost on Night and white paper beside piece 5:
+    same colours, type, spacing and footer; it starts at the caret where the
+    prototype's sits about 50 px left of it (its `ch` offset is in the
+    popup's font), and it lists Final Draft's times in its order. `mise run
+    editor-timing`, two runs plus alternating runs with the plugin removed:
+    no change (findings, "Editor"); its new row, typing in a cue with the
+    popup open, matches typing in an action. `mise run editor-placement` on
+    `every`, `feature` and `spike`: every line in place. Reviewed with
+    user-code-review at HEAD `c9a85c391e66cc0b537aecb1ecfc2748d14a6669` plus
+    uncommitted changes: fixed the popup running past the window's right
+    edge, and `tools/inspector.ts` leaving a socket open when it found no
+    target, which kept later connections from the page (findings, measuring
+    traps). `mise run check` passed (403 Vitest tests, both type checks,
+    Biome and Rust checks).
 
-- [ ] 1.6 — Undo and redo, copy and paste
-  - Status: todo
+- [x] 1.6 — Undo and redo, copy and paste
+  - Status: done
   - Depends on: 1.4
   - Spec: brief "Copy and paste"
   - Do: Undo and redo with sensible grouping (a burst of typing is one
@@ -425,6 +637,62 @@ saving arrive in Stage 2.
     Fountain, with anything ambiguous becoming Action.
   - Done when: tests cover the undo grouping and the three paste and copy
     paths, including plain prose pasted from elsewhere.
+  - Note (from 1.5): accepting a suggestion is one transaction replacing
+    the typed part (`accept` in `src/ui/autocomplete.ts`); prosemirror-history
+    now joins it to the typing before it or not by its 500 ms rule.
+  - Evidence: 2026-11-26. `src/ui/undo.ts` groups undo (commands mark a
+    step's start, `newStep`, or a step of its own, `ownStep`);
+    `src/ui/clipboard.ts` replaces ProseMirror's clipboard handling, whose
+    HTML brought a pasted cue and dialogue back as action (observed);
+    `src/core/clipping.ts` holds the clipboard's three forms. Rules in
+    brief, "Elements and keys" (Undo and redo) and "Copy and paste", all
+    agent-selected. Tests, expected results worked by hand from the brief
+    and Fountain's rules: `src/core/clipping.test.ts` (a Fountain scene, a
+    line of prose as text, lines and paragraphs of prose, a title page read
+    as script, notes and boneyard left out, centring, a break, dual,
+    emphasis and Tir's notes; the Fountain written for a scene, forced
+    elements, formats, a shot, parts and text; Tir's form read back exactly,
+    eight refusals); `src/ui/clipboard.test.ts` (what copying takes; text
+    and elements pasted at the caret, over selections and over everything;
+    cut, and paste restoring it; the three paths end to end, plain prose
+    included; a paste with the popup open; paste and cut each one undo
+    step); `src/ui/commands.test.ts` (a burst, pauses of 400 and 600 ms,
+    typing elsewhere, Ctrl+Shift+Z and Ctrl+Y, element changes by key and
+    top bar, Enter and Tab joined by the typing after, six format keys, an
+    accepted suggestion, undo opening no popup); `projection.test.ts` (a
+    30-element paste and its undo followed as any edit). With the step marks
+    and the history check switched off, 8 grouping tests failed. The test
+    harness moved to `src/ui/editor-harness.ts`, with the history and undo
+    keys and a clock. Native, through the Hyprland dispatcher, `wl-clipboard`
+    and `wtype` on the tiled 931×1010 window: Ctrl+C of a cue and dialogue
+    offered only text types, "TEO\nYou said we weren't running tonight.";
+    Ctrl+V put them back as cue and dialogue; Ctrl+Z, Ctrl+Shift+Z and
+    Ctrl+Y undid and redid it with the caret back at the paste; Ctrl+X of a
+    speech with its parenthetical gave its Fountain and Ctrl+Z restored the
+    selection; a Fountain scene from `wl-copy` arrived as heading, action,
+    cue, parenthetical, dialogue and transition, a line of prose went into
+    an action's text, two paragraphs of prose arrived as two actions; a
+    centred dialogue and the elements after it kept their types and
+    centring through Ctrl+C and Ctrl+V; WebKitGTK delivers these events
+    with no Tauri clipboard plugin (findings, "Editor"). The native check
+    found that after a redo Ctrl+Z put the caret on the element after a
+    paste; the paste now leaves unchanged elements out of its step, and the
+    caret came back. The dead acute then `e` and Compose `o` `c` entered
+    "é©" in an action and in a cue, and Ctrl+Z took the burst back; with
+    the popup open in a new cue, Ctrl+V of "ara" closed it and Enter started
+    the dialogue. Pasting the 120-page fixture's Fountain into it took
+    308–349 ms to layout and 320–361 ms to the frame, its Ctrl+Z 85–88 and
+    91–95 ms (findings, "Editor"). `mise run editor-timing`, two full runs
+    and an A/B with the new `appendTransaction` removed: typing as in
+    findings. Reviewed with user-code-review at HEAD
+    `c9a85c391e66cc0b537aecb1ecfc2748d14a6669` plus uncommitted changes:
+    fixed the end part a cut or paste leaves of an element keeping the
+    forced break and dual that went with its start; no other findings.
+    `mise run check` passed (488 Vitest tests, both type checks, Biome and
+    Rust checks). Not run: `mise run editor-placement` (no decoration,
+    styling or projection change) and screenshots (nothing visible
+    changed). Not checked: drag and drop, and middle-click paste (Known
+    gaps).
 
 - [ ] 1.7 — Scene sidebar, page position, Go to page
   - Status: todo
@@ -457,6 +725,8 @@ saving arrive in Stage 2.
     the stand-in until Stage 2's automatic saving.
   - Done when: a script written in the app saves and reopens identical,
     and an interrupted save never leaves a damaged file (tested).
+  - Note (from 1.2): the projection follows transactions; opening a
+    script replaces the document, so the projection must be rebuilt then.
 
 - [ ] 1.10 — Review: Stage 1
   - Status: todo
@@ -464,17 +734,29 @@ saving arrive in Stage 2.
   - Scope: everything changed since 1.2's recorded state.
   - Check:
     - Design rule 1 and the single source of truth still hold.
-    - The keys match the brief and Final Draft's table; nothing conflicts
-      with WebKitGTK or Hyprland.
+    - The keys match the brief and Final Draft's table. A short native
+      WebKitGTK smoke check covers shortcut delivery under Hyprland,
+      caret motion across line and page breaks, and composed input;
+      don't repeat the editor-state command matrix in the app.
     - Undo grouping is right, including after autocomplete and paste.
-    - Performance: typing, scrolling and the sidebar on a 120-page
-      script.
+    - Performance on a 120-page script, against findings ("Editor"):
+      `mise run editor-timing` keeps typing within 1.1's accepted target
+      (layout under 16 ms typically, on screen within about two frames)
+      and no worse than the table there. Scrolling and the sidebar have no
+      agreed target: measure them through the same inspector connection
+      (architecture, "Measuring the editor") and bring the numbers to the
+      user.
     - Accessibility: toolbar and controls have names, focus is visible,
       and everything is reachable by keyboard.
     - The app matches prototype piece 5 in both papers.
     - WebKitGTK quirks found are recorded in findings.md.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Note (from 1.5): the autocomplete popup is a named listbox outside the
+    editable element, and the editor does not point to it (no
+    `aria-expanded` or `aria-activedescendant` on the editable root), so a
+    screen reader is not told of suggestions. Attributes on the root change
+    with every popup update; measure typing before adding them.
 
 - [ ] 1.11 — User check: Stage 1
   - Status: todo
@@ -860,4 +1142,16 @@ that will close it.
 - `writeFountain` takes about 75–100 ms on a 1,500-element script, because
   it checks each paragraph by reading it back (0.3). 2.2 writes the
   Fountain copy on every save; measure it there and speed it up or move it
-  off the interface thread if a save is felt.
+  off the interface thread if a save is felt. Copying the whole 120-page
+  script takes 200–230 ms for the same reason (1.6).
+- Dragging a selection within the script, and dropping text from elsewhere,
+  still go through ProseMirror's own handling (1.6): by ProseMirror's
+  source, a drag carries its own slice, element types included, and places
+  it by its rules, not the paste rules, and a drop from elsewhere becomes
+  plain paragraphs, so it arrives as action. Neither is checked natively, nor
+  middle-click (primary selection) paste. The brief names none of them;
+  1.10 to judge.
+- Backspace, Delete and typing over a selection across elements join its
+  ends into the first element's type, ProseMirror's rule, while cut (1.6)
+  removes the elements it covers whole and leaves the last one its type.
+  1.10 to judge whether the keys should follow cut.

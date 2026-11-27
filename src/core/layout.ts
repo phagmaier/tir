@@ -13,7 +13,7 @@ import {
   type ElementFormat,
   type SpeechType,
 } from "./format.ts";
-import type { Element } from "./model.ts";
+import { ELEMENT_TYPES, type Element } from "./model.ts";
 
 export interface Line {
   /** The stretch of the element's text this line shows, as UTF-16 offsets. */
@@ -50,6 +50,43 @@ export function layoutElement(element: Element, column?: Column): Layout {
     offset += paragraph.length + 1;
   }
   return { spaceBefore: fmt.spaceBefore, lines };
+}
+
+/**
+ * Remembers element layouts from one pagination to the next, so paginating
+ * again after an edit lays out only the text the edit changed. It keeps the
+ * layouts the previous run used and drops the rest at each new run, so it
+ * holds at most two runs' worth.
+ */
+export class LayoutCache {
+  // One map from text to layout for each way of setting text: element type,
+  // column and centring.
+  private current: Map<string, Layout>[] = [];
+  private previous: Map<string, Layout>[] = [];
+
+  /** Starts a run: after it, only the layouts this run used are kept. */
+  startRun(): void {
+    this.previous = this.current;
+    this.current = [];
+  }
+
+  /** `layoutElement`, remembered by everything a layout depends on. */
+  layout(element: Element, column?: Column): Layout {
+    const columnCode = column === "left" ? 1 : column === "right" ? 2 : 0;
+    const format =
+      (ELEMENT_TYPES.indexOf(element.type) * 3 + columnCode) * 2 + (element.centred ? 1 : 0);
+    let texts = this.current[format];
+    if (!texts) {
+      texts = new Map();
+      this.current[format] = texts;
+    }
+    let layout = texts.get(element.text);
+    if (!layout) {
+      layout = this.previous[format]?.get(element.text) ?? layoutElement(element, column);
+      texts.set(element.text, layout);
+    }
+    return layout;
+  }
 }
 
 function formatFor(element: Element, column: Column | undefined): ElementFormat {
@@ -166,13 +203,16 @@ function place(
  * would change the text's length ("ß" would become "SS"), so offsets and
  * widths still match the text.
  */
-function capitals(text: string): string {
+export function capitals(text: string): string {
   const upper = text.toUpperCase();
+  // No character's capital is shorter, so equal lengths mean none is kept.
   if (upper.length === text.length) return upper;
   let out = "";
-  for (const char of text) {
-    const up = char.toUpperCase();
-    out += up.length === char.length ? up : char;
-  }
+  for (const char of text) out += keepsCase(char) ? char : char.toUpperCase();
   return out;
+}
+
+/** Whether capitals leave this character (code point) as typed: its capital is longer. */
+export function keepsCase(char: string): boolean {
+  return char.toUpperCase().length !== char.length;
 }

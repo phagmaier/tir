@@ -7,22 +7,41 @@ rust = { version = "1.99.1", components = "clippy,rustfmt" }
 description = "Install JavaScript dependencies from the lockfile"
 run = "pnpm install --frozen-lockfile"
 
+# dev and check need the system libraries from flake.nix: run outside the
+# Nix shell, each re-runs itself inside it (TIR_DEV_SHELL is set there).
 [tasks.dev]
-description = "Run Tir with the Vite dev server (inside the Nix shell)"
-run = "pnpm exec tauri dev"
+description = "Run Tir with the Vite dev server (enters the Nix shell if needed)"
+run = """
+[ -n "${TIR_DEV_SHELL:-}" ] || exec nix develop --command mise run dev
+pnpm exec tauri dev
+"""
 
 [tasks.check]
-description = "Lint, format, type checks, tests and Rust checks (inside the Nix shell)"
-run = [
-  "pnpm exec biome check .",
-  "pnpm exec tsc -p tsconfig.json",
-  "pnpm exec tsc -p src/core/tsconfig.json",
-  "pnpm exec vitest run",
-  "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
-  "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
-  "cargo test --manifest-path src-tauri/Cargo.toml --locked",
-]
+description = "Lint, format, type checks, tests and Rust checks (enters the Nix shell if needed)"
+# One script, so the shell is entered once; errexit stops at the first failure.
+run = """
+[ -n "${TIR_DEV_SHELL:-}" ] || exec nix develop --command mise run check
+pnpm exec biome check .
+pnpm exec tsc -p tsconfig.json
+pnpm exec tsc -p src/core/tsconfig.json
+pnpm exec vitest run
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --locked
+"""
 
 [tasks.parity]
 description = "Compare Tir's page breaks with Final Draft PDFs (calibration/ by default)"
 run = "node tools/parity/main.ts"
+
+[tasks.pagination-timing]
+description = "Measure median pagination time for a feature-length draft"
+run = "node tools/pagination-timing.ts"
+
+[tasks.editor-timing]
+description = "Time typing in the running dev app (start it with WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev)"
+run = "node tools/editor-timing/main.ts"
+
+[tasks.editor-placement]
+description = "Check that the running dev app shows every line where the layout engine puts it"
+run = "node tools/editor-placement.ts"

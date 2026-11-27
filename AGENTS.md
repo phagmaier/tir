@@ -36,9 +36,10 @@ directly. Its "How to work this plan" section is the procedure; in short:
    another. Set its status to `in progress` and update "Current status".
 2. Do that task only. If it turns out to be too large, split it in the
    plan (keeping IDs, adding `0.4a` and so on) and finish the first part.
-3. Check it against its "Done when" with evidence you observed: a passing
-   test run, a command's output, or the behaviour in the app. Once task 0.1
-   exists, `mise run check` must pass too.
+3. Verify the task's "Done when" with observed evidence. Use the smallest
+   check that covers the change; see architecture.md's
+   [Running and checking](docs/architecture.md#running-and-checking) for
+   when to run the full gate.
 4. Review the change, code and tests, with the user-code-review skill
    before calling it done. The plan's "Review: …" tasks add a deeper,
    scheduled review with their own checklists.
@@ -68,6 +69,7 @@ Write what a later agent needs and cannot get more cheaply from the code.
 | Product behaviour or a choice the user made | `brief.md`, in the present tense |
 | An outside-world fact found by experiment, or a rejected design costly to retry | `findings.md`, under its heading |
 | A gap left open | the plan, on the task or stage that will close it, otherwise "Known gaps" |
+| Something a machine needs that a clone does not bring | `architecture.md`, "Setting up a machine" |
 
 Describe the present: rewrite or delete text a change makes false. Keep one
 place per fact and point to it elsewhere.
@@ -96,13 +98,12 @@ to the user as a new prototype piece.
   propose changes instead.
 - Do not add a dependency without saying why in your report.
 
-## Authorization
-
-- Commits: the user commits their own work. Do not commit unless the user
-  asks in the session. Never push, never force-push, and never rewrite
-  existing commits.
-
 ## Tooling
+
+- Two machines: the user works on a NixOS desktop (often remotely) and a
+  NixOS laptop, and moves work between them through GitHub, often pulling
+  onto the laptop for visual checks. A clone plus "Setting up a machine" in
+  architecture.md must be enough to build, run and check Tir.
 
 - NixOS: system libraries come from the Nix development shell; runtimes and
   tools from `mise.toml`. Run commands with `mise exec -- <command>`

@@ -52,6 +52,73 @@ Scene Heading bold, which look like user edits. `LaPingvino/lexington/fdx/exampl
 3.38 in) because a non-Final Draft tool wrote it, so it is excluded. Page
 numbers and apostrophes: the calibration PDFs (see "Calibration").
 
+## Final Draft's keys
+
+- **Return** at the end of a paragraph starts a new one by the table's
+  column ("General to General, Scene Heading to Action, …").
+- **Tab** "supplements the functions of the Return key" by the table's Tab
+  column, where Character gives Transition "only when character is blank".
+  At the end of a paragraph with text it starts a new paragraph (the status
+  bar names what Enter and Tab will insert there, and reads "Ready"
+  elsewhere); after a cue with a name it starts a Parenthetical, unless the
+  option "Tab Key Transitions to Character Extension" is on, which it is not
+  by default. On a blank paragraph a new element replaces it (Enter then
+  Tab goes from Dialogue or Action to Character).
+- **Ctrl+0 to Ctrl+8** are "an alternative method of adding new
+  paragraphs"; on a blank paragraph the new type replaces it. Final Draft 11
+  for Windows changes the current paragraph's type with Ctrl+Shift+number;
+  Final Draft 13 gives those keys to its outline elements.
+- **Formats**: Ctrl+B, Ctrl+I and Ctrl+U for bold, italic and underline;
+  Dual Dialogue is Ctrl+Alt+D on Windows (Cmd+D on a Mac), applied with the
+  cursor in the first of two consecutive speeches, and undone from either.
+  Alignment (applied to every selected paragraph) and Insert > Page Break
+  have no default key. Page Break moves the paragraph holding the cursor, or
+  the selection's start, to the top of the next page; choosing it again
+  there removes it.
+- When a parenthetical is added, Final Draft "automatically enters both the
+  left and right parentheses and positions the cursor between them".
+- Evidence: Final Draft's knowledge base, "What keyboard shortcuts can I use
+  in Final Draft?" (2024), and the Final Draft 13 user guide for Windows
+  (Dual Dialogue, Alignment, Page Break, the sample script tutorial, the
+  status bar, SmartType options, Element Shortcuts, Tab key), both from
+  finaldraft.com; the Final Draft 11 Windows guide (Reformatting). Read
+  2026-11-26.
+
+## Final Draft's SmartType
+
+- SmartType, Final Draft's autocomplete, keeps lists of the script's
+  character names, character extensions, scene intros, locations, times and
+  transitions, adding each new item as it is typed. Typing a letter into a
+  character paragraph shows the items starting with it, narrowing as more is
+  typed, with "the rest of the first matching item" in light grey after the
+  cursor; with no match the window does not appear. Enter (or a
+  double-click) inserts the highlighted item "and dismiss[es] the SmartType
+  window"; the arrows, or the item's first letter, choose. Lists keep the
+  order of entry; an option sorts characters by number of dialogues.
+- Typing "(" after a cue's name shows the Character Extension list.
+- In a scene heading, Tab accepts the highlighted scene intro and adds a
+  period and a space ("i" then Tab gives "INT. "); after a location, Tab
+  adds " - " and the Time list appears; Tab on a time accepts it and starts
+  an Action: "Press Tab to accept the current selection from a SmartType
+  list and move to the next logical element." The separators are "." after
+  the intro and " - " before the time by default.
+- The lists in an FDX file Final Draft saved (`<SmartType>`, document
+  version 3): Extensions (V.O.), (O.S.), (O.C.), (SUBTITLE); Scene Intros
+  INT., EXT., INT./EXT.; Times DAY, NIGHT, MORNING, AFTERNOON, EVENING,
+  LATER, MOMENTS LATER, CONTINUOUS, THE NEXT DAY; Transitions CUT TO:, FADE
+  IN:, FADE OUT, FADE TO:, DISSOLVE TO:, BACK TO:, MATCH CUT TO:, JUMP CUT
+  TO:, FADE TO BLACK. These read as the defaults (the file's own script
+  added one character and one location), but it is one file from an older
+  version. Final Draft 13's tutorial offers "INT. or I/E." for "i", so its
+  intros include I/E.; Tir uses the brief's five prefixes.
+- Evidence: Final Draft's knowledge base, "What is SmartType and how do I
+  use it?" (2024), "I can't type my Scene Headings without the cursor
+  jumping to the next line" (2023) and "After I add a character "cont'd"
+  with SmartType, it disappears immediately" (2023); the Final Draft 13 user
+  guide for Windows (SmartType, Adding Paragraphs with the Tab Key, Typing a
+  Sample Script, renumbering scenes), all from finaldraft.com; the FDX file
+  `testdata/sample-01.fdx` in github.com/rsdoiel/fdx. Read 2026-11-26.
+
 ## Line widths
 
 - Final Draft fits more on a line than its indents and 7.2 pt characters
@@ -127,6 +194,19 @@ numbers and apostrophes: the calibration PDFs (see "Calibration").
   (text off Courier's grid), Dune (locked pages through colour revisions)
   and Transformers One (a picture-lock conform with its own sequence
   element).
+- Sources, all downloaded 2026-11-26:
+  - A Real Pain: `https://assets.debut.disney.com/documents/A%20REAL%20PAIN_Shooting%20Script%20FINAL%20copy.pdf`
+  - After the Hunt: `https://amazonmgmstudiosguilds.com/app/uploads/2025/08/After_The_Hunt_Screenplay_FIN.pdf`
+  - Babygirl, Heretic, Queer, Sing Sing: `https://a24awards.com/assets/<name>-screenplay.pdf`
+    with `Babygirl`, `Heretic`, `Queer` and `Sing-Sing`
+  - Superman: `https://www.superman.com/script/supermanscript.pdf`
+  - Set aside: `https://amazonmgmstudiosguilds.com/app/uploads/` followed by
+    `2025/09/BELEN_Script_Spanish.pdf`, `2025/08/Hedda_Final-Script.pdf`,
+    `2024/08/UNSTOPPABLE_Screenplay.pdf` and
+    `2024/08/The_Fire_Inside_Screenplay.pdf`;
+    `https://a24awards.com/assets/The-Brutalist-screenplay.pdf`;
+    `https://d2bu9v0mnky9ur.cloudfront.net/academy2021/scripts/duneMxFtT98NYwBsMltl20211109/dune_final_shooting_script_6_19_20.pdf`;
+    `https://www.indiewire.com/wp-content/uploads/2024/12/TRANSFORMERS-ONE-FSS.pdf`.
 - Result (`mise run parity`, 2026-11-26): starting Tir where Final Draft
   starts each page, 582 of 605 pages end where Final Draft's do. Left out
   are 99 pages that end inside action, whose paragraph boundary the PDF does
@@ -244,6 +324,281 @@ What the parity tool (`tools/parity/`) can and cannot recover from a PDF:
   page. The rest are action read across a page break the wrong way, a shot
   or empty line at a page top, all of them noted. Then the calibration
   scripts above.
+
+## Editor
+
+All observations on the desktop's Tauri window (WebKitGTK 2.54.2,
+Hyprland, 60 Hz, window 931×1010), 2026-11-26, on the 120-page fixture
+(`?fixture=spike` in `src/ui/dev-fixtures.ts`: 2,280 elements, a forced
+break before each scene) unless a line says otherwise. How to repeat them:
+architecture, "Measuring the editor".
+
+**Technique (task 1.1).** One ProseMirror text block holds each element;
+the browser never wraps (`white-space: pre`). The editor sets each
+paragraph's space above and first-line indent as a style; each later line
+starts after an inline decoration on the previous line's last character
+(grapheme) whose `::after` is a line break, or a block of the page gap's
+height where an element splits across pages; a line indented differently
+from the first gets a margin on its first character. Per-line wrapper
+spans (the first spike) fail with styles: ProseMirror wraps each text node
+separately, so a bold word inside a line made it three rows (observed).
+Each edit re-paginates the whole script with a `LayoutCache`, then maps the
+decoration set and replaces only changed elements' decorations and styles.
+
+**Where a keystroke's time went** (profiles: the WebKit inspector's
+sampling profiler for JavaScript, `perf` for WebKit; the first spike
+measured 38 ms before paint):
+
+- `DecorationSet.create` was 73% of the JavaScript: its cost grows with
+  elements times decorations, about 33 ms per keystroke here. Mapping the
+  set and patching changed elements removed it; `paginate` with the cache
+  is about 1.5 ms.
+- WebKitGTK's Adwaita focus ring for a focused contenteditable traces every
+  line of it on each repaint: 86% of tile painting, about 5 ms per
+  keystroke. `outline: none` on the editor removed it.
+- With any touch listener in the page (ProseMirror adds `touchstart` and
+  `touchmove`), WebKitGTK recomputes a layer's event region after each
+  repaint by walking the whole layer: about 5 ms per keystroke. Dropping
+  those listeners cut the rendering update from 6 to 1 ms. Tir must add no
+  touch or wheel listeners (wheel listeners have the same effect in WebKit's
+  source, `RenderLayerBacking::maintainsEventRegion`).
+- An overflow scroll container (`position: fixed; overflow: auto`) costs a
+  scrolling-tree update with scrollbar painting each frame, about 2.9 ms per
+  keystroke; scrolling the document instead lowered the main thread's busy
+  time from 16 to 11 ms in one comparison.
+- A flex container around the editor makes WebKit lay out every line again
+  to size it (`FlexFormattingContext::flexBaseSizeForFlexItem`); a block
+  container does not.
+- Each layout pass walks all 2,280 paragraphs, about 3 ms. Moving the
+  paragraphs below an edit up costs far more than moving them down: in a
+  plain page of 2,280 paragraphs, moving the rest up 238 px took 57 to 62 ms
+  and down 5 ms; a move that a later paragraph's space cancels took 9 ms.
+  The editor therefore restyles unchanged paragraphs before ProseMirror
+  redraws, so one layout sees only the net change.
+- Native typing ran WebKit's typing command, which lays out and computes
+  its editing state before ProseMirror sees the change. Applying plain
+  `insertText` and deletions from `beforeinput` (the browser's target
+  ranges decide what a deletion removes; composition stays native) cut a
+  line-wrapping keystroke from 19 to 11 ms before paint.
+- On every edit and selection change WebKitGTK computes the input method's
+  surrounding text as the plain text of the whole editable element
+  (`WebPage::getPlatformEditorState`): about 3.5 ms at 120 pages. One
+  editable surface cannot avoid it.
+- `content-visibility: auto` on the paragraphs made typing slower (29 to
+  34 ms before paint): WebKit's editing lays out skipped paragraphs.
+
+**Result: the redraw misses 16 ms.** Measured from the `keydown` listener:
+*layout* is to ProseMirror's DOM update plus a forced style and layout of
+the editor, before paint; *frame* is to a zero-delay timer set in the next
+animation frame, after the main thread's rendering update (paint recording
+and editing state; compositing and display excluded), so it includes the
+wait for that frame; *busy* is the main thread's blocked time in the 70 ms
+after `keydown`, measured with message-channel tasks. Fifteen `x` and
+Backspace pairs each:
+
+| Edit | Layout median (p95) | Frame median | Busy median |
+| --- | --- | --- | --- |
+| Ordinary typing in an action | 9–11 ms (11–23) | 18–21 ms | 18–20 ms |
+| Typing that adds or removes a line | 10–13 ms (12–20) | 17–21 ms | 21–25 ms |
+| Typing that adds a page | 10–11 ms (13–19) | 19–20 ms | 19 ms |
+| Backspace that removes that page | 47–63 ms (64–72) | 51–67 ms | 71 ms |
+| Line change, `?fixture=feature` (no forced breaks, 1,970 elements) | 13–16 ms (20–25) | 19–25 ms | 20–25 ms |
+
+Layout meets 16 ms for typing; the rendering update adds 4 to 6 ms, so the
+whole redraw does not fit a 60 Hz frame reliably, and a page removed in
+the middle of the script costs 50 to 70 ms. What remains is WebKitGTK's
+work over the whole editable element (each layout pass, the surrounding
+text, moving later paragraphs), not the projection.
+
+**The Desk adds at most a millisecond, and only when a page comes or goes**
+(task 1.3: the fixed top bar and sidebar, and the sheets with their marks
+in a layer under the editor). Four full runs of `mise run editor-timing`
+gave ordinary typing 10–11 ms layout (p95 13–19), 16–19 ms frame, 14–20 ms
+busy; a line added or removed 11–12 ms (12–18), 17–21 ms, 18–22 ms; the
+`feature` line change 14–17 ms (17–21), 22–25 ms, 26–28 ms; all as with the
+new layers switched off in the same session. Typing that adds a page, in
+alternating runs of 40 pairs, measured 12–13 ms layout (12–14 in the full
+runs), 19–21 ms frame and 18–22 ms busy with the Desk, and 11 ms, 18–20 ms
+and 18–21 ms with the sheets, their updates and both bars switched off and
+the paper painted on the editor as in 1.2; the Backspace that removes the
+page, 57–59, 61–63 and 66–69 ms against 56–57, 60–61 and 66–68 ms.
+Switching off only the bars or only the sheets made no difference, nor
+did skipping the sheets' updates (so not the JavaScript), dropping their
+shadows, `contain: strict` on each sheet, a sheet layer whose height does
+not follow the script's, or sheets in normal flow rather than positioned.
+A millisecond is the timer's resolution here, so the cause was not traced
+further. In the same session 1.2's page measured 11 ms layout for typing
+that adds a page, the top of the table's 10–11, and 27–28 ms busy for the
+`feature` line change, above the table's 20–25: the machine varies by
+that much between days.
+
+Task 1.4's keys and CSS capitals left these times as they were. Two full
+runs gave ordinary typing 10–11 ms layout (p95 14–19), 18–19 ms frame,
+19–21 ms busy; a line added or removed 11 ms (13–14), 18 ms, 18–22 ms;
+a page added 13 ms (17–22), 20–21 ms, 22 ms, and the Backspace removing it
+56–58, 61–63 and 67–69 ms; the `feature` line change 15 ms (17–19),
+22–23 ms, 24–27 ms. The timed edits are in action; in the page, inserting a
+letter in a cue (shown in capitals) took 5–7 ms to layout, as in an action.
+
+Task 1.5's autocomplete left them as they were too. Two full runs gave
+ordinary typing 10–11 ms layout (p95 14–21), 17–18 ms frame, 18–23 ms busy;
+a line added or removed 11 ms (13–17), 17–19 ms, 17–21 ms; a page added
+13 ms (15–19), 21 ms, 18–19 ms, and the Backspace removing it 57–58, 62–63
+and 66–71 ms; the `feature` line change 15–17 ms (17–24), 22–26 ms,
+27–28 ms. The tool's new row, typing in a cue with the popup open (a letter
+and Backspace each redraw it and its ghost), measured 11 ms (12–18),
+17–19 ms, 20–22 ms, as typing in an action does. In the same session,
+alternating runs with the plugin removed from the editor's state measured
+the same: typing in an action 10–11 ms layout, 16–18 ms frame and 19–23 ms
+busy with it, 10–11, 17–18 and 15–24 ms without; the `feature` line change
+15–16, 23–24 and 29–32 ms with it, 15–16, 22–24 and 28–31 ms without. So
+the `feature` busy time, at or above earlier days' 24–28 ms, is the day's,
+not the plugin's.
+
+Task 1.6's undo grouping, an `appendTransaction` that every transaction
+passes, left them as they were. Two full runs gave ordinary typing 10–11 ms
+layout (p95 12–23), 16–20 ms frame, 19–21 ms busy; a line added or removed
+11 ms (14–22), 18–20 ms, 20–22 ms; a page added 13 ms (17–18), 20 ms,
+22–23 ms, and the Backspace removing it 58 ms (62–70), 63 ms, 59–64 ms; the
+`feature` line change 15–17 ms (17–20), 23–25 ms, 26–27 ms; typing in a cue
+with the popup open 11 ms (15–17), 17–20 ms, 19–23 ms. The page added's busy
+time, above task 1.5's 18–19 ms, measured the same in 40-pair runs with the
+plugin removed (23 ms) and restored (24 ms), as every other row did: it is
+the day's.
+
+**Pasting 120 pages and undoing it take a third and a tenth of a second**
+(task 1.6, timed from the key's `keydown` as above, three runs): the
+120-page fixture's Fountain (195,866 characters, 2,281 elements, its title
+page read as an action) pasted at the end of the middle element of the
+same fixture spent 307–347 ms in the paste handler, 242–270 ms of it in
+dispatching the transaction and the rest reading the Fountain; it reached
+layout in 308–349 ms and the next frame in 320–361 ms, with 359–413 ms
+busy. Ctrl+Z then took 85–88 ms to layout, 91–95 ms to the frame, 131–169 ms
+busy. Copying the whole script took 200–230 ms in the copy handler, nearly
+all `writeFountain` (plan, "Known gaps"), and cutting it 230 ms.
+
+**The autocomplete popup moves no line and leaves composition alone**
+(task 1.5, the Hyprland dispatcher, `wtype` and `wlrctl`): on
+`?fixture=sample`, with the popup and its ghost open on a cue, all 103
+paragraphs' boxes were those after Esc closed it; the ghost's text box
+matched the caret line's characters to the pixel vertically and started at
+the caret. Typing opened the popup, the arrows moved the highlight round
+the list, Enter and Tab accepted, Esc closed it and Enter then started the
+dialogue; a real click on a suggestion accepted it and kept focus and the
+caret. In a cue whose popup offered JOSÉ, the dead acute then `e` entered
+"é" and closed the popup, Compose `o` `c` entered "©", and two Backspaces
+opened it again; in an action the same sequences entered "é©".
+
+**The clipboard reaches the page, and ProseMirror's own handling loses
+element types** (task 1.6, the Hyprland dispatcher and `wl-clipboard`):
+WebKitGTK and Tauri deliver `copy`, `cut` and `paste` events for Ctrl+C,
+Ctrl+X and Ctrl+V with no Tauri clipboard plugin (the capability is
+`core:default`). With ProseMirror's own handling, a copied cue and dialogue
+pasted at an action's start came back as an action, then the dialogue's
+text joined to the action's: the schema's `toDOM` writes a bare `<p>`.
+A type of Tir's own set in `copy`, `application/x-tir-clipping`, came back
+whole (U+2028 included) in a paste in the same page; other applications are
+offered only the text types and WebKit's
+`org.webkitgtk.WebKit.custom-pasteboard-data` (`wl-paste --list-types`),
+and a paste of text from `wl-copy` brings only `text/plain`. HTML is handed
+on with WebKit's inline styles added, both ProseMirror's going out and
+other applications' coming in. Once ProseMirror's history is empty, Ctrl+Z
+changed nothing, even after composed input that WebKit inserted itself.
+
+**Native editing still works** (Hyprland dispatcher and `wtype`, after the
+changes above): Up and Down kept the caret's column across an engine line
+break and across the gap between pages 1 and 2, and Shift+Down selected
+across both; typing, Backspace, Ctrl+Backspace (a word), Delete, typing
+over a selection, Backspace at an element's start (joining it to the
+previous one) and Ctrl+Z each changed the ProseMirror document as expected;
+the dead acute then `e`, and Compose then `o` `c`, entered `é` and `©`.
+This proves the input sequences, not how they feel on the laptop. On the
+Desk (task 1.3), the dead key and Compose sequences still entered `é` and
+`©`, and Backspace through the dispatcher removed them.
+
+**The script's keys reach the page** (task 1.4, the Hyprland dispatcher):
+WebKitGTK and Tauri deliver Enter, Tab, Shift+Tab, Ctrl+0 to Ctrl+7,
+Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+E, Ctrl+Enter and Ctrl+Alt+D to the page's
+`keydown`, and each did what the brief says. Ctrl+=, which Tir leaves
+alone, reached the page too and zoomed nothing (`devicePixelRatio` stayed 1
+and `innerWidth` 931), so neither WebKitGTK nor Tauri has zoom keys here and
+Ctrl+0 resets nothing. Tauri zooms only with `zoomHotkeysEnabled`, off by
+default, and then by an injected script for Ctrl+- and Ctrl+= (`config.rs`
+in tauri-utils 2.10.4). This Hyprland binds no Ctrl or Ctrl+Alt key but
+Ctrl+Print. In a cue, the dead acute then `e`, Compose then
+`o` `c`, and a typed `ß` entered `é©ß`, which the script kept in lower case
+and the editor showed as `É©ß`. A real click on a top bar button (through
+`wlrctl`, see architecture, "Measuring the editor") changed the element,
+left the caret and focus where they were, and the next key typed there.
+
+**Capitals show through CSS, with "ß" left alone** (task 1.4): each
+paragraph whose element calls for capitals has `text-transform: uppercase`,
+and the projection puts `text-transform: none` on each character whose
+capital is longer (102 code points, "ß" among them; none is shorter), as
+the engine keeps them. WebKitGTK's `innerText` applies `text-transform`, so
+`mise run editor-placement` compares each paragraph's shown text with the
+engine's. With the exception switched off, "große straße" showed as
+"GROSSE STRASSE" and a click on its last character landed two characters
+off; with the capitals switched off, four elements showed lower case: the
+check reported both.
+
+**Every line sits where the engine puts it** (task 1.2, `mise run
+editor-placement`): on the 120-page fixture all 4,200 lines, on
+`?fixture=feature` all 5,040 lines of 121 pages (split speeches, automatic
+(CONT'D)s), and on `?fixture=every` (dual dialogue, centred text, a
+transition, a parenthetical, styled text, typed line breaks) every line
+starts within a pixel of the engine's position, and a click there puts the
+caret before its first character. Text ending in a typed line break also
+gets its empty last line: ProseMirror adds a trailing `<br>` to a text
+block whose text ends in `\n`. Task 1.3 found the same on the Desk, with
+clicks on each line's last character too, and the sheets' page numbers
+and marks (83 on `feature`) where the engine puts them. With the right
+column pulled up over the left's rows, as before 1.3, those clicks still
+landed, but a click beside a dual column's text landed in the other
+column's paragraph or in the space above the next element.
+
+**Decorations the later stages need fit the technique** (task 1.2, a probe
+plugin on the 120-page fixture): 6,240 find highlights and 1,080 wavy
+underlines as inline decorations, 228 margin dots as absolutely positioned
+widgets and a ghost completion as an inline widget left every line in
+place, and typing measured 12–13 ms layout and 16–18 ms to the next frame
+(10 and 17–18 ms without them). ProseMirror merges overlapping inline
+decorations that name no `nodeName` into one span (`computeOuterDeco` in
+prosemirror-view), so a highlight over a line's last character keeps its
+`line-end` class. Creating that set at once took 51 ms, so a set covering
+the whole script should be made once and then mapped, as the projection
+is.
+
+For test keys under this Hyprland, use
+`hyprctl dispatch 'hl.dsp.send_shortcut({window="title:^Tir$",mods="",key="Down"})'`,
+with modifiers such as `mods="CTRL SHIFT"` (Ctrl+Shift+Z and Ctrl+Alt+D
+reached the page so).
+`wtype -k Down` produced `key=ArrowDown` but `code=Escape` in WebKitGTK and
+scrolled without moving the caret; `wtype` works for dead and Compose key
+sequences.
+
+**Measuring traps** (2026-11-26):
+
+- `document.body.offsetHeight` did not lay out a `position: fixed`
+  subtree, so expensive layouts there read as 0–2 ms; the editor's own
+  `getBoundingClientRect()` gave the true 45–80 ms. Force layout on the
+  element being measured.
+- Key events sent by the Hyprland dispatcher carry an unusable
+  `event.timeStamp` (about 2⁶⁴); take `performance.now()` in a capturing
+  `keydown` listener instead. `performance.now()` resolves to 1 ms here.
+- The remote inspector's Timeline records arrived with every start and end
+  time at 0; use its `ScriptProfiler` for JavaScript and `perf` for WebKit.
+- Reloading the page (Vite reloads it after a source edit) replaces the
+  inspector's target; connect again.
+- WebKit reports a character's box on whole pixels: a cue centred at
+  262.8 px reads 262. Compare positions to within a pixel.
+- WebKitGTK's `Runtime.evaluate` returns a promise only as a reference,
+  without awaiting it; await it with `Runtime.awaitPromise`
+  (`tools/inspector.ts` does).
+- While a connection to the page's inspector socket stayed open, a new one
+  was not sent `Target.targetCreated`, so it could not reach the page; close
+  every connection before opening the next (`tools/inspector.ts` closes one
+  that names no target).
 
 ## NixOS development shell
 
