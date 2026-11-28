@@ -3,7 +3,9 @@
  * themes; "Scene sidebar"): the paper switch and the zoom control in the
  * sidebar's footer (prototype piece 5), the sidebar's toggle at the top
  * bar's left end (piece 8, A), and the keys for zoom and focus mode. A
- * change shows at once and is saved.
+ * change shows at once and is saved. Also the keyboard's way round the
+ * window: F6 and Shift+F6 go between the script, the top bar and the
+ * sidebar, and Esc on a control in either bar goes back to the script.
  *
  * The keys are the window's, not the editor's, so they are caught on the
  * way down to the element with focus, before the editor sees them: the
@@ -18,7 +20,14 @@ import { popupOf } from "./autocomplete.ts";
 import type { Editor } from "./editor.ts";
 import { spellingMenu } from "./spelling.ts";
 
-export type DeskAction = "zoomIn" | "zoomOut" | "focus" | "leaveFocus";
+export type DeskAction =
+  | "zoomIn"
+  | "zoomOut"
+  | "focus"
+  | "leaveFocus"
+  | "nextRegion"
+  | "previousRegion"
+  | "toScript";
 
 type Keys = Pick<KeyboardEvent, "key" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey">;
 
@@ -27,24 +36,29 @@ export interface DeskKeyState {
   readonly focus: boolean;
   /** Something nearer the writer closes on Esc: a popup, the spelling menu, or a field. */
   readonly escTaken: boolean;
+  /** Focus is on a control in the top bar or the sidebar. */
+  readonly inBar: boolean;
 }
 
 /**
  * What a key press does to the window, recorded in brief, "Elements and
  * keys": Ctrl+= (or Ctrl++) and Ctrl+− zoom, Ctrl+Shift+F turns focus mode
- * on and off, and Esc leaves it once nothing nearer takes it. Ctrl+0 is
- * General, so it resets nothing.
+ * on and off, F6 and Shift+F6 go round the script and the bars, and Esc
+ * goes back to the script from a bar, else leaves focus mode, once nothing
+ * nearer takes it. Ctrl+0 is General, so it resets nothing.
  */
 export function deskKey(
   { key, ctrlKey, shiftKey, altKey, metaKey }: Keys,
-  { focus, escTaken }: DeskKeyState,
+  { focus, escTaken, inBar }: DeskKeyState,
 ): DeskAction | null {
   if (altKey || metaKey) return null;
   if (ctrlKey && (key === "=" || key === "+")) return "zoomIn";
   if (ctrlKey && !shiftKey && key === "-") return "zoomOut";
   if (ctrlKey && shiftKey && key.toLowerCase() === "f") return "focus";
-  if (!ctrlKey && !shiftKey && key === "Escape" && focus && !escTaken) return "leaveFocus";
-  return null;
+  if (!ctrlKey && key === "F6") return shiftKey ? "previousRegion" : "nextRegion";
+  if (ctrlKey || shiftKey || key !== "Escape" || escTaken) return null;
+  if (inBar) return "toScript";
+  return focus ? "leaveFocus" : null;
 }
 
 /** The parts of the window the settings change. */
@@ -57,7 +71,22 @@ export interface DeskParts {
   readonly barLeft: HTMLElement;
   /** The script's place in the document, which the bars' space moves. */
   readonly pages: HTMLElement;
+  /** What holds the script and the title page, F6's third region. */
+  readonly canvas: HTMLElement;
   readonly toast: HTMLElement;
+}
+
+/** What a key can reach: enabled controls and fields, shown and not inert. */
+const FOCUSABLE = "button, input, textarea, select, [href], [tabindex]:not([tabindex='-1'])";
+
+function reachable(dom: Element | null): dom is HTMLElement {
+  return (
+    dom instanceof HTMLElement &&
+    !(dom as HTMLButtonElement).disabled &&
+    dom.getClientRects().length > 0 &&
+    getComputedStyle(dom).visibility === "visible" &&
+    !dom.closest("[inert]")
+  );
 }
 
 // Icons from prototype pieces 5 and 8, on a 16-unit grid.
@@ -106,17 +135,23 @@ export class Desk {
   private readonly paper: HTMLButtonElement;
   private readonly zoomShown = document.createTextNode("");
   private readonly toggle: HTMLButtonElement;
+  private readonly focusScript: () => void;
   private toastTimer = 0;
+  /** Whether the toast has told the writer of F6 and Esc in a bar. */
+  private toldKeys = false;
 
+  /** `focusScript` gives focus back to the script, or to the title page when it shows. */
   constructor(
     editor: Editor,
     settings: Settings,
     save: (settings: Settings) => void,
     parts: DeskParts,
+    focusScript: () => void,
   ) {
     this.editor = editor;
     this.save = save;
     this.parts = parts;
+    this.focusScript = focusScript;
     this.shown = settings;
 
     this.paper = button(editor, "paper", "", "Switch the page between dark and white paper");
@@ -151,18 +186,25 @@ export class Desk {
       "keydown",
       (event) => {
         if (event.isComposing) return;
+        const { target } = event;
+        const field = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
         const escTaken =
           event.key === "Escape" &&
-          (!!popupOf(editor.view.state) ||
-            !!spellingMenu(editor.view.state) ||
-            event.target instanceof HTMLInputElement ||
-            event.target instanceof HTMLTextAreaElement);
-        const action = deskKey(event, { focus: this.shown.focus, escTaken });
+          (!!popupOf(editor.view.state) || !!spellingMenu(editor.view.state) || field);
+        const inBar =
+          target instanceof Node &&
+          (parts.topbar.contains(target) || parts.sidebar.contains(target));
+        const action = deskKey(event, { focus: this.shown.focus, escTaken, inBar });
         if (!action) return;
+        if (action === "nextRegion" || action === "previousRegion") {
+          if (this.goRound(action === "nextRegion" ? 1 : -1)) event.preventDefault();
+          return;
+        }
         event.preventDefault();
         const { zoom, focus } = this.shown;
         if (action === "zoomIn") this.set({ zoom: zoomIn(zoom) });
         else if (action === "zoomOut") this.set({ zoom: zoomOut(zoom) });
+        else if (action === "toScript") this.focusScript();
         else this.set({ focus: action === "focus" && !focus });
       },
       true,
@@ -175,6 +217,42 @@ export class Desk {
 
   get settings(): Settings {
     return this.shown;
+  }
+
+  /**
+   * Moves focus `by` one round the script, the top bar and the sidebar,
+   * passing a bar that shows nothing to reach, such as a collapsed sidebar.
+   * In the sidebar it lands on the current scene, otherwise on the bar's
+   * first control. False, doing nothing, when focus is elsewhere: in a
+   * dialog, a panel or the Projects screen.
+   */
+  private goRound(by: 1 | -1): boolean {
+    const { topbar, sidebar, canvas } = this.parts;
+    const active = document.activeElement;
+    const regions = [canvas, topbar, sidebar];
+    let at = regions.findIndex((region) => region.contains(active));
+    if (at < 0 && active !== document.body) return false;
+    at = Math.max(at, 0);
+    for (let step = 1; step <= regions.length; step++) {
+      const next = (at + by * step + regions.length * 2) % regions.length;
+      if (next === 0) {
+        this.focusScript();
+        return true;
+      }
+      const region = regions[next] as HTMLElement;
+      const current = region.querySelector(".scene[aria-current]");
+      const target = reachable(current)
+        ? current
+        : [...region.querySelectorAll(FOCUSABLE)].find(reachable);
+      if (!target) continue;
+      target.focus();
+      if (!this.toldKeys) {
+        this.toldKeys = true;
+        this.toast("F6 goes on round the bars and the script · Esc goes back to the script");
+      }
+      return true;
+    }
+    return true;
   }
 
   /** Changes settings, shows them and saves them. The project shown is kept only. */

@@ -7,11 +7,12 @@
  * starts and ends (`undo.ts`). Capitals are not here: the model keeps text
  * as typed and layout applies them.
  */
-import { toggleMark } from "prosemirror-commands";
+import { chainCommands, toggleMark } from "prosemirror-commands";
 import type { Node } from "prosemirror-model";
 import { type Command, type EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import { NEXT_ON_RETURN, NEXT_ON_TAB, NEXT_ON_TAB_AFTER_TEXT } from "../core/format.ts";
 import type { ElementType } from "../core/model.ts";
+import { deleteAcross } from "./clipboard.ts";
 import { schema } from "./editor-model.ts";
 import { asOwnStep, newStep, ownStep } from "./undo.ts";
 
@@ -346,7 +347,12 @@ export const screenplayKeys: Readonly<Record<string, Command>> = {
   Enter: enter,
   Tab: tab,
   "Shift-Tab": () => true,
-  Backspace: removeBlankParenthetical,
+  // Over a selection across elements, Backspace and Delete remove what Cut does.
+  Backspace: chainCommands(deleteAcross, removeBlankParenthetical),
+  "Shift-Backspace": deleteAcross,
+  "Mod-Backspace": deleteAcross,
+  Delete: deleteAcross,
+  "Mod-Delete": deleteAcross,
   "(": openParenthesis,
   ")": closeParenthesis,
   "Mod-b": asOwnStep(toggleMark(schema.marks.bold)),

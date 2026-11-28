@@ -6,7 +6,7 @@ import { EditorView, type NodeView, type ViewMutationRecord } from "prosemirror-
 import { DUAL_FORMATS, ELEMENT_FORMATS, FONT_SIZE_PT, PAGE } from "../core/format.ts";
 import type { Element, ElementType } from "../core/model.ts";
 import { autocomplete, placePopup, popupOf } from "./autocomplete.ts";
-import { clipboard } from "./clipboard.ts";
+import { clipboard, deleteAcross } from "./clipboard.ts";
 import { screenplayKeys } from "./commands.ts";
 import { schema, toDocument } from "./editor-model.ts";
 import { find } from "./find.ts";
@@ -114,14 +114,18 @@ function editableRoot(): HTMLElement {
  * Applies plain typing and deleting to the document directly, so WebKit
  * neither edits the DOM itself, laying the script out to do so, nor works out
  * its editing state for that edit (findings, "Editor"). The browser still
- * decides what a deletion removes. Composed input (dead keys, the Compose
- * key), edits across elements and other kinds of input stay native.
+ * decides what a deletion removes. Over a selection across elements, typing
+ * and deleting remove what Cut removes (`clipboard.ts`); ProseMirror's own
+ * key handling usually takes typing there first. Composed input (dead
+ * keys, the Compose key), other edits across elements and other kinds of
+ * input stay native.
  */
 function directInput(view: EditorView, event: InputEvent): boolean {
   const typing = event.inputType === "insertText";
   const deleting = event.inputType.startsWith("delete") && event.inputType !== "deleteByCut";
   if (event.isComposing || (!typing && !deleting)) return false;
-  let { from, to } = view.state.selection;
+  const { selection } = view.state;
+  let { from, to } = selection;
   const [range] = event.getTargetRanges();
   if (range) {
     from = view.posAtDOM(range.startContainer, range.startOffset);
@@ -132,8 +136,19 @@ function directInput(view: EditorView, event: InputEvent): boolean {
   const { doc } = view.state;
   const $from = doc.resolve(from);
   const text = typing ? (event.data ?? "") : "";
-  if (from > to || (typing ? !text : from === to) || !$from.parent.isTextblock) return false;
-  if (!$from.sameParent(doc.resolve(to))) return false;
+  if (from > to || (typing ? !text : from === to)) return false;
+  if (!$from.sameParent(doc.resolve(to)) || !$from.parent.isTextblock) {
+    // Typing or deleting replaces the selection, which crosses elements.
+    if (selection.empty) return false;
+    const done = typing
+      ? view.someProp("handleTextInput", (f) =>
+          f(view, selection.from, selection.to, text, () => view.state.tr.insertText(text)),
+        )
+      : deleteAcross(view.state, view.dispatch);
+    if (!done) return false;
+    event.preventDefault();
+    return true;
+  }
   event.preventDefault();
   if (!typing) {
     view.dispatch(view.state.tr.delete(from, to).scrollIntoView());
@@ -311,6 +326,9 @@ export function mountEditor(
         "aria-label": "Script",
         role: "textbox",
         "aria-multiline": "true",
+        // Suggestions show beside the script (`autocomplete.ts`); F6 leaves it for the bars (`desk.ts`).
+        "aria-autocomplete": "list",
+        "aria-keyshortcuts": "F6 Shift+F6",
         style: `min-height: ${projection.height}px`,
       }),
       scrollThreshold: scrollThreshold(covered),

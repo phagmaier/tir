@@ -17,6 +17,7 @@ import {
 import type { EditorView } from "prosemirror-view";
 import type { Element, ElementType } from "../core/model.ts";
 import { autocomplete } from "./autocomplete.ts";
+import { typeAcross } from "./clipboard.ts";
 import { screenplayKeys } from "./commands.ts";
 import { fromDocument, toDocument } from "./editor-model.ts";
 import { find } from "./find.ts";
@@ -115,6 +116,7 @@ const KEY_CODES: Record<string, number> = {
   Enter: 13,
   Tab: 9,
   Backspace: 8,
+  Delete: 46,
   Escape: 27,
   ArrowUp: 38,
   ArrowDown: 40,
@@ -155,10 +157,13 @@ export function press(state: EditorState, combo: string): { state: EditorState; 
   return { state: next, handled };
 }
 
-/** Types `text` over the selection in one transaction, as the editor applies plain typing. */
+/**
+ * Types `text` over the selection in one transaction, as the editor applies
+ * plain typing: over a selection across elements, as `typeAcross` does.
+ */
 export function type(state: EditorState, text: string): EditorState {
   const { from, to } = state.selection;
-  return apply(state, state.tr.insertText(text, from, to));
+  return apply(state, typeAcross(state, text) ?? state.tr.insertText(text, from, to));
 }
 
 /** Types `text` a character at a time, as a writer does. */

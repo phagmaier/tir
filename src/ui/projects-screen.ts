@@ -275,7 +275,7 @@ export class ProjectsScreen {
       items[(at + step + items.length) % items.length]?.focus();
       return;
     }
-    const action = deskKey(event, { focus: true, escTaken: false });
+    const action = deskKey(event, { focus: true, escTaken: false, inBar: false });
     if (!action) return;
     event.stopPropagation();
     if (action !== "leaveFocus") {

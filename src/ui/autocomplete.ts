@@ -14,7 +14,9 @@
  *
  * The popup and the ghost sit beside the editable element, at the caret's
  * place on the page: they move no line and add nothing to WebKit's editing
- * work (architecture, "The editor").
+ * work (architecture, "The editor"). The editable element names the
+ * popup's highlighted option as its active descendant, which a screen
+ * reader announces while focus stays in the script.
  */
 import { isHistoryTransaction } from "prosemirror-history";
 import type { Node } from "prosemirror-model";
@@ -328,14 +330,17 @@ class PopupView {
   private readonly ghost = document.createElement("span");
   private readonly list = document.createElement("div");
   private shown: Open | null = null;
+  /** Counts the lists drawn, so each draws its options under new ids. */
+  private drawn = 0;
 
   constructor(view: EditorView) {
     this.script = view.dom.parentElement as HTMLElement;
     this.ghost.className = "completion-ghost";
     this.ghost.setAttribute("aria-hidden", "true");
     this.list.className = "completion";
+    this.list.id = "completion";
     this.list.setAttribute("role", "listbox");
-    this.hide();
+    this.hide(view);
     // Pressing an option would take focus, and the caret, from the editor.
     this.list.addEventListener("mousedown", (event) => event.preventDefault());
     this.list.addEventListener("click", (event) => {
@@ -352,17 +357,19 @@ class PopupView {
     this.shown = open;
     const popup = popupOf(view.state);
     if (!open || !popup) {
-      this.hide();
+      this.hide(view);
       return;
     }
     // Where the caret is, read before anything here changes, so the page is
     // laid out once for it.
     const at = this.measure(view, open);
     this.list.setAttribute("aria-label", popup.title);
+    const drawn = ++this.drawn;
     this.list.replaceChildren(
       line("completion-title", popup.title),
       ...popup.options.map(({ text, uses }, index) => {
         const option = line("completion-option", text);
+        option.id = `completion-${drawn}-${index}`;
         option.dataset.index = String(index);
         option.setAttribute("role", "option");
         option.setAttribute("aria-selected", String(index === popup.chosen));
@@ -375,6 +382,9 @@ class PopupView {
       }),
       line("completion-keys", "Enter accepts · ↑↓ choose · Esc"),
     );
+    // Named once the option is in the page, so a screen reader finds it.
+    view.dom.setAttribute("aria-controls", this.list.id);
+    view.dom.setAttribute("aria-activedescendant", `completion-${drawn}-${popup.chosen}`);
     this.list.hidden = false;
     const marks = view.state.storedMarks ?? view.state.doc.resolve(open.to).marks();
     const has = (name: string) => marks.some((mark) => mark.type.name === name);
@@ -420,9 +430,13 @@ class PopupView {
     this.list.style.left = `${x - frame.left}px`;
   }
 
-  private hide(): void {
+  private hide(view: EditorView): void {
     this.ghost.hidden = true;
     this.list.hidden = true;
+    if (view.dom.getAttribute("aria-controls") === this.list.id) {
+      view.dom.removeAttribute("aria-controls");
+      view.dom.removeAttribute("aria-activedescendant");
+    }
   }
 
   destroy(): void {

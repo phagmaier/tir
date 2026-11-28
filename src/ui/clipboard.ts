@@ -12,7 +12,8 @@
  * selection that starts just after its "(" covers it from its start, one
  * that ends just before its ")" covers it to its end. Cutting removes what
  * copying takes; a paste puts it back where the selection was. Each is an
- * undo step of its own.
+ * undo step of its own. Backspace, Delete and typing over a selection across
+ * elements remove what Cut removes, as typing does.
  */
 import type { Fragment, Node } from "prosemirror-model";
 import {
@@ -291,43 +292,102 @@ export function paste(clipping: Clipping): Command {
   };
 }
 
+/** A selection across elements that covers text: what Cut, Backspace, Delete and typing remove. */
+function across(state: EditorState): Reach | null {
+  const r = state.selection.empty ? null : reach(state);
+  return r && !r.within && coversText(r) ? r : null;
+}
+
 /**
- * Removes what copying the selection takes, as one undo step. Elements it
- * covers whole go; one it covers in part keeps the rest and its type; when
- * both ends are covered in part, what is left of them joins, as Backspace
- * joins them. The caret goes where a paste puts the clipping back.
+ * Removes, in `tr`, what Cut removes of the selection across elements `r`:
+ * elements it covers whole go; one it covers in part keeps the rest and its
+ * type; when both ends are covered in part, what is left of them joins, as
+ * Backspace joins them. The caret goes where a paste puts the clipping back.
  */
+function removeAcross(tr: Transaction, r: Reach): void {
+  const { before, after } = remainders(r);
+  let nodes = [before, after].filter((node): node is Node => node !== null);
+  // A clipping that ends inside the last element but covers none of the
+  // first goes back at the start of what is left of the last.
+  let caret =
+    before && after && r.firstCover === "none" && r.lastCover === "part"
+      ? r.start + before.nodeSize + 1
+      : before
+        ? r.start + before.nodeSize - 1
+        : r.start + 1;
+  if (before && after && r.firstCover === "part" && r.lastCover === "part") {
+    nodes = [before.copy(before.content.append(after.content))];
+  } else if (nodes.length === 0 && r.start === 0 && r.end === tr.doc.content.size) {
+    // A script always has an element: an empty one of the first's type.
+    nodes = [r.first.type.create({ type: r.first.attrs.type })];
+  }
+  replaceElements(tr, r.start, r.end, nodes);
+  if (nodes.length === 0) caret = r.start;
+  tr.setSelection(Selection.near(tr.doc.resolve(caret), 1));
+}
+
+/** Removes what copying the selection takes (`removeAcross`), as one undo step. */
 export const cut: Command = (state, dispatch) => {
   const r = state.selection.empty ? null : reach(state);
   if (!r || !coversText(r)) return false;
   if (!dispatch) return true;
   const tr = state.tr;
-  if (r.within) {
-    tr.delete(r.start + 1 + r.from, r.start + 1 + r.to);
-  } else {
-    const { before, after } = remainders(r);
-    let nodes = [before, after].filter((node): node is Node => node !== null);
-    // A clipping that ends inside the last element but covers none of the
-    // first goes back at the start of what is left of the last.
-    let caret =
-      before && after && r.firstCover === "none" && r.lastCover === "part"
-        ? r.start + before.nodeSize + 1
-        : before
-          ? r.start + before.nodeSize - 1
-          : r.start + 1;
-    if (before && after && r.firstCover === "part" && r.lastCover === "part") {
-      nodes = [before.copy(before.content.append(after.content))];
-    } else if (nodes.length === 0 && r.start === 0 && r.end === state.doc.content.size) {
-      // A script always has an element: an empty one of the first's type.
-      nodes = [r.first.type.create({ type: r.first.attrs.type })];
-    }
-    replaceElements(tr, r.start, r.end, nodes);
-    if (nodes.length === 0) caret = r.start;
-    tr.setSelection(Selection.near(tr.doc.resolve(caret), 1));
-  }
+  if (r.within) tr.delete(r.start + 1 + r.from, r.start + 1 + r.to);
+  else removeAcross(tr, r);
   dispatch(ownStep(tr.scrollIntoView().setMeta("uiEvent", "cut")));
   return true;
 };
+
+/**
+ * Backspace or Delete over a selection across elements: what Cut removes,
+ * kept with the typing around it as Backspace is. Within one element, or
+ * over only the break between two, the usual deletion applies.
+ */
+export const deleteAcross: Command = (state, dispatch) => {
+  const r = across(state);
+  if (!r) return false;
+  if (dispatch) {
+    const tr = state.tr;
+    removeAcross(tr, r);
+    dispatch(tr.scrollIntoView());
+  }
+  return true;
+};
+
+/**
+ * Clears a selection across elements for typing; null for any other
+ * selection, where typing replaces it as usual. What Cut removes goes, and
+ * the caret goes into what is left of an element covered in part, the
+ * first when both are. Over whole elements only, an empty element takes
+ * the first one's place and type, the caret between a parenthetical's
+ * parentheses.
+ */
+function clearAcross(state: EditorState): Transaction | null {
+  const r = across(state);
+  if (!r) return null;
+  const tr = state.tr;
+  if (r.firstCover === "part" || r.lastCover === "part") {
+    removeAcross(tr, r);
+  } else {
+    const { before, after } = remainders(r);
+    const covered = r.firstCover === "whole" ? r.first : (r.middle[0] ?? r.last);
+    const paren = covered.attrs.type === "parenthetical";
+    const typed = covered.type.create(
+      { type: covered.attrs.type },
+      paren ? covered.type.schema.text("()") : undefined,
+    );
+    const nodes = [before, typed, after].filter((node): node is Node => node !== null);
+    replaceElements(tr, r.start, r.end, nodes);
+    const caret = r.start + (before?.nodeSize ?? 0) + 1 + (paren ? 1 : 0);
+    tr.setSelection(TextSelection.create(tr.doc, caret));
+  }
+  return tr;
+}
+
+/** Typing `text` over a selection across elements (`clearAcross`); null for any other selection. */
+export function typeAcross(state: EditorState, text: string): Transaction | null {
+  return clearAcross(state)?.insertText(text) ?? null;
+}
 
 /** Puts the selection on the clipboard, and with `cutting` removes it. */
 function put(view: EditorView, event: ClipboardEvent, cutting: boolean): boolean {
@@ -343,9 +403,30 @@ function put(view: EditorView, event: ClipboardEvent, cutting: boolean): boolean
   return true;
 }
 
-/** The editor's copy, cut and paste, in place of ProseMirror's own. */
+/**
+ * The editor's copy, cut and paste, in place of ProseMirror's own, and
+ * typing over a selection across elements (`typeAcross`), which ProseMirror
+ * hands to `handleTextInput` from its own key handling. A composed
+ * character (a dead key, the Compose key) starts with a key WebKit reports
+ * as 229, before the composition replaces the selection natively, so that
+ * key clears the selection first, as typing would.
+ */
 export const clipboard = new Plugin({
   props: {
+    handleTextInput(view, from, to, text) {
+      const { selection } = view.state;
+      if (from !== selection.from || to !== selection.to) return false;
+      const tr = typeAcross(view.state, text);
+      if (!tr) return false;
+      view.dispatch(tr.scrollIntoView());
+      return true;
+    },
+    handleKeyDown(view, event) {
+      if (event.keyCode !== 229 || view.composing) return false;
+      const tr = clearAcross(view.state);
+      if (tr) view.dispatch(tr.scrollIntoView());
+      return false;
+    },
     handleDOMEvents: {
       copy: (view, event) => put(view, event, false),
       cut: (view, event) => put(view, event, true),

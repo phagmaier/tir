@@ -183,14 +183,29 @@ const heardBackup = (status: BackupStatus) => {
 const backupOf = (folder: string, file?: string): Promise<Coverage> =>
   invoke<Coverage>("backup_of", { folder, draft: file ?? null }).catch(() => "unknown" as const);
 const settingsFile = settingsSaver();
-desk = new Desk(editor, settings, settingsFile.save, {
-  topbar: byId("topbar"),
-  sidebar: byId("sidebar"),
-  footer: byId("side-foot"),
-  barLeft: byId("bar-left"),
-  pages: byId("pages"),
-  toast: byId("toast"),
-});
+/** Gives focus back to the title page when it shows, else to the script, where it scrolled. */
+function focusScript(): void {
+  if (titlePage.focus()) return;
+  // WebKit scrolls to the old selection when focus returns to it.
+  const scroll = scrollY;
+  editor.view.focus();
+  scrollTo(0, scroll);
+}
+desk = new Desk(
+  editor,
+  settings,
+  settingsFile.save,
+  {
+    topbar: byId("topbar"),
+    sidebar: byId("sidebar"),
+    footer: byId("side-foot"),
+    barLeft: byId("bar-left"),
+    pages: byId("pages"),
+    canvas: byId("canvas"),
+    toast: byId("toast"),
+  },
+  focusScript,
+);
 
 const draftTrigger = byId("draft") as HTMLButtonElement;
 const writingWindow = [byId("topbar"), byId("sidebar"), byId("canvas")];
@@ -230,11 +245,7 @@ function runDraftAction(action: DraftAction): void {
         saver.move(result.moved);
         showDraft(result.moved);
       }
-      if (titlePage.focus()) return;
-      // WebKit scrolls to the old selection when focus returns to it.
-      const scroll = scrollY;
-      editor.view.focus();
-      scrollTo(0, scroll);
+      focusScript();
     });
 }
 

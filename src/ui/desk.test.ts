@@ -15,8 +15,8 @@ function keys(combo: string) {
   };
 }
 
-const writing = { focus: false, escTaken: false };
-const focused = { focus: true, escTaken: false };
+const writing = { focus: false, escTaken: false, inBar: false };
+const focused = { focus: true, escTaken: false, inBar: false };
 
 describe("the window's keys (brief, Elements and keys)", () => {
   it("zoom with Ctrl+= or Ctrl++ and Ctrl+−", () => {
@@ -35,13 +35,26 @@ describe("the window's keys (brief, Elements and keys)", () => {
   });
 
   it("leave Esc to the autocomplete popup or a field that is open, in focus mode too", () => {
-    expect(deskKey(keys("Escape"), { focus: true, escTaken: true })).toBeNull();
+    expect(deskKey(keys("Escape"), { ...focused, escTaken: true })).toBeNull();
+    expect(deskKey(keys("Escape"), { ...focused, escTaken: true, inBar: true })).toBeNull();
     // The other keys still work there.
-    expect(deskKey(keys("Ctrl-="), { focus: true, escTaken: true })).toBe("zoomIn");
+    expect(deskKey(keys("Ctrl-="), { ...focused, escTaken: true })).toBe("zoomIn");
+  });
+
+  it("go round the script, the top bar and the sidebar with F6 and Shift+F6", () => {
+    expect(deskKey(keys("F6"), writing)).toBe("nextRegion");
+    expect(deskKey(keys("Shift-F6"), { ...focused, inBar: true })).toBe("previousRegion");
+    expect(deskKey(keys("Ctrl-F6"), writing)).toBeNull();
+  });
+
+  it("go back to the script with Esc from a bar, before leaving focus mode", () => {
+    expect(deskKey(keys("Escape"), { ...writing, inBar: true })).toBe("toScript");
+    expect(deskKey(keys("Escape"), { ...focused, inBar: true })).toBe("toScript");
+    expect(deskKey(keys("Shift-Escape"), { ...writing, inBar: true })).toBeNull();
   });
 
   it("leave other keys to the script: Ctrl+0 is General, Ctrl+F is find", () => {
-    for (const combo of ["Ctrl-0", "Ctrl-f", "Ctrl-Alt-=", "Ctrl-Alt--", "F8", "="]) {
+    for (const combo of ["Ctrl-0", "Ctrl-f", "Ctrl-Alt-=", "Ctrl-Alt--", "F7", "F8", "Tab", "="]) {
       expect(deskKey(keys(combo), focused), combo).toBeNull();
     }
   });

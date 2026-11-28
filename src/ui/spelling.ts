@@ -483,7 +483,7 @@ export function spellCheck(
         destroy() {
           destroyed = true;
           clearTimeout(waiting);
-          menu.destroy();
+          menu.destroy(view);
           adders.delete(view);
           if (live?.view === view) live = null;
         },
@@ -502,14 +502,18 @@ const menus = new WeakMap<EditorView, MenuView>();
 /**
  * The menu, below the word's line, or above it when the window has no room
  * below, in the script's frame, which the zoom does not scale, as
- * autocomplete's popup is.
+ * autocomplete's popup is. The editable element names its highlighted row
+ * as its active descendant, for a screen reader, as the popup does.
  */
 class MenuView {
   private readonly list = document.createElement("div");
   private shown: SpellingMenu | null = null;
+  /** Counts the menus drawn, so each draws its rows under new ids. */
+  private drawn = 0;
 
   constructor(view: EditorView, choose: (index: number) => void) {
     this.list.className = "completion spelling-menu";
+    this.list.id = "spelling-menu";
     this.list.setAttribute("role", "listbox");
     this.list.setAttribute("aria-label", "Spelling");
     this.list.hidden = true;
@@ -531,10 +535,12 @@ class MenuView {
     this.shown = menu;
     if (!menu) {
       this.list.hidden = true;
+      this.unname(view);
       return;
     }
     const type = view.state.doc.resolve(menu.from).parent.attrs.type as ElementType;
     const shown = ELEMENT_FORMATS[type].capitals ? capitals : (text: string) => text;
+    const drawn = ++this.drawn;
     const row = (className: string, text: string, index?: number) => {
       const dom = document.createElement("div");
       dom.className = className;
@@ -542,6 +548,7 @@ class MenuView {
       span.textContent = text;
       dom.append(span);
       if (index !== undefined) {
+        dom.id = `spelling-${drawn}-${index}`;
         dom.dataset.index = String(index);
         dom.setAttribute("role", "option");
         dom.setAttribute("aria-selected", String(index === menu.chosen));
@@ -559,6 +566,9 @@ class MenuView {
       ),
       row("completion-keys", "Enter chooses · ↑↓ · Esc"),
     );
+    // Named once the row is in the page, so a screen reader finds it.
+    view.dom.setAttribute("aria-controls", this.list.id);
+    view.dom.setAttribute("aria-activedescendant", `spelling-${drawn}-${menu.chosen}`);
     this.list.hidden = false;
     if (moved) this.place(view);
   }
@@ -583,7 +593,15 @@ class MenuView {
     this.list.style.left = `${x - box.left}px`;
   }
 
-  destroy(): void {
+  destroy(view: EditorView): void {
+    this.unname(view);
     this.list.remove();
+  }
+
+  /** Takes the menu's row from the editable element, unless the popup's has replaced it. */
+  private unname(view: EditorView): void {
+    if (view.dom.getAttribute("aria-controls") !== this.list.id) return;
+    view.dom.removeAttribute("aria-controls");
+    view.dom.removeAttribute("aria-activedescendant");
   }
 }

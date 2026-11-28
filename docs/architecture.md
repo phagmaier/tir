@@ -665,24 +665,39 @@ The [brief](brief.md) governs behaviour.
   off; all three otherwise add whole-draft work per keystroke. Use a
   top-left CSS transform, not CSS `zoom`, to keep the engine's line
   positions and click targets. See [why and how to measure](findings.md#editor).
-- **State and input (`commands.ts`, `editor-harness.ts`).** The key and
-  toolbar commands share model tests. Keep test and production plugin
-  precedence aligned: open suggestion menus own their keys before
+- **State and input (`commands.ts`, `editor-harness.ts`, `desk.ts`).** The
+  key and toolbar commands share model tests. Keep test and production
+  plugin precedence aligned: open suggestion menus own their keys before
   screenplay commands, and Escape closes the innermost control before
   leaving focus mode. New drafts get fresh editor state and undo history.
   Focus before replacing selection or scrolling; WebKit otherwise
-  restores the old selection and scroll.
+  restores the old selection and scroll. Window keys are `desk.ts`'s,
+  caught on the document before the editor: F6 and Shift+F6 go round the
+  script region (`#canvas`, which holds the title page too), the top bar
+  and the sidebar, and Esc on a bar's control calls `focusScript`.
 - **Undo and clipboard (`undo.ts`, `clipboard.ts`).** Distinguish typing
   groups from deliberate one-step changes. Copy exposes a typed Tir
   clipping (`application/x-tir-clipping`) for exact paste inside Tir and
   Fountain text for other apps. Default ProseMirror copy loses types.
+  Cut, and Backspace, Delete and typing over a selection across elements,
+  share one removal (`removeAcross`), so they leave the same elements and
+  types; ProseMirror's own deletion would retype what survives. The keys
+  are `screenplayKeys`; typing arrives through the clipboard plugin's
+  `handleTextInput`, which ProseMirror calls from its key handling (and
+  `directInput` from `beforeinput`), and a composed character's first key
+  (WebKit's key code 229) clears the selection before the composition
+  replaces it natively.
 - **Derived views (`autocomplete.ts`, `find.ts`, `formatting-check.ts`,
   `spelling.ts`).** Keep incremental work on edited elements; rebuild
   decoration sets rather than mapping through huge transactions.
   Spelling uses a worker for dictionary work and draws answers against
   current nodes, with learned names and locations from the suggestion
   tally. Menus and find, formatting and spelling marks do not become
-  part of the script or its exports.
+  part of the script or its exports. The suggestion popup and the
+  spelling menu set the editable root's `aria-controls` and
+  `aria-activedescendant` after drawing their options, each draw under
+  new ids, so WebKit tells a screen reader of every highlighted option
+  ([findings](findings.md#editor)).
 - **Navigation (`script-map.ts`, `page-position.ts`, `jump.ts`).** Scene
   navigation and the page indicator read the same map from the engine.
   The indicator follows the caret when text or selection changes,
@@ -695,10 +710,24 @@ The [brief](brief.md) governs behaviour.
 Use the approved [prototype](prototype/index.html) for composition and
 the existing CSS in `src/ui/` for implementation. In the native window,
 check the changed flow with the keyboard: controls have accessible names,
-focus is visible outside the script, dialogs contain and return focus as
-appropriate, and Escape reaches the innermost open popup or dialog
-first. Don't use colour alone to convey a state. Preserve the script's
-own shortcuts, caret, and engine-owned layout.
+F6 reaches them, focus is visible outside the script, dialogs contain and
+return focus as appropriate, and Escape reaches the innermost open popup
+or dialog first. Don't use colour alone to convey a state. Preserve the
+script's own shortcuts, caret, and engine-owned layout.
+
+For what a screen reader hears, give the [isolated trial](#isolated-native-trial)
+an accessibility bus of its own, since the desktop's has no live
+daemon ([findings](findings.md#editor)). With `AT` the path of
+`nix build --no-link --print-out-paths nixpkgs#at-spi2-core`, start
+`dbus-daemon --config-file=$AT/share/defaults/at-spi2/accessibility.conf --address=unix:path=$trial/a11y-bus --nofork`
+(from `nixpkgs#dbus`) and `$AT/libexec/at-spi2-registryd`, and launch
+the trial, and then Orca (`nixpkgs#orca`), with
+`AT_SPI_BUS_ADDRESS=unix:path=$trial/a11y-bus`. Run Orca with `HOME` and
+the `XDG_*_HOME` directories inside the trial,
+`SPEECHD_ADDRESS=unix_socket:$trial/none` so it makes no sound, and
+`--debug-file`; its `SPEECH OUTPUT:` lines are what it would say. Move
+focus with a key (F6, then Esc) before checking: Orca follows focus
+changes, not the focus it finds at start. Stop all three afterwards.
 
 ## Working here
 

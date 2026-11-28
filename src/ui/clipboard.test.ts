@@ -287,6 +287,86 @@ describe("cutting removes what copying takes", () => {
   });
 });
 
+describe("Backspace, Delete and typing over a selection across elements remove what cutting does", () => {
+  // Each script, what Backspace and Delete leave (as cutting leaves it), and what typing "x" leaves.
+  test.each<[string, Element[], Element[], Element[]]>([
+    [
+      "from an element's start, the rest of the last keeping its type but not dual",
+      [action("{Rain."), cue("MA}RA", { dual: true })],
+      [cue("|RA")],
+      [cue("x|RA")],
+    ],
+    [
+      "parts of two elements, joining what is left as Backspace does",
+      [action("Rain f{alls."), cue("MA}RA")],
+      [action("Rain f|RA")],
+      [action("Rain fx|RA")],
+    ],
+    [
+      "from an element's end, the first untouched and the last keeping its type",
+      [action("Rain.{"), cue("MA}RA", { centred: true, pageBreakBefore: true })],
+      [action("Rain."), cue("|RA", { centred: true })],
+      [action("Rain."), cue("x|RA", { centred: true })],
+    ],
+    [
+      "part of one element and the whole of those after it",
+      [action("Rain f{alls."), cue("MARA"), dialogue("Hi.}"), action("After.")],
+      [action("Rain f|"), action("After.")],
+      [action("Rain fx|"), action("After.")],
+    ],
+    [
+      "whole elements, typing taking the first one's place and type",
+      [action("Before."), cue("{MARA", { dual: true }), dialogue("Hi.}"), action("Rain.")],
+      [action("Before."), action("|Rain.")],
+      [action("Before."), cue("x|"), action("Rain.")],
+    ],
+    [
+      "a whole parenthetical from just after its (, typing between new parentheses",
+      [paren("({quietly)"), dialogue("Hi.}"), action("Go.")],
+      [action("|Go.")],
+      [paren("(x|)"), action("Go.")],
+    ],
+  ])("%s", (_name, script, removed, typed) => {
+    const state = stateOf(script);
+    // Cutting leaves what these say, as its own tests above work out.
+    expect(show(run(state, cut))).toEqual(removed);
+    for (const key of ["Backspace", "Delete", "Ctrl-Backspace", "Ctrl-Delete"]) {
+      expect(show(press(state, key).state), key).toEqual(removed);
+    }
+    expect(show(type(state, "x"))).toEqual(typed);
+  });
+
+  test("everything, with select all, leaving the first element's type", () => {
+    const state = selectAll(stateOf([heading("INT. HOUSE - DAY|"), action("Dark.")]));
+    expect(show(press(state, "Backspace").state)).toEqual([heading("|")]);
+    expect(show(type(state, "x"))).toEqual([heading("x|")]);
+  });
+
+  test("but within an element, over only the break between two, or at a caret, as ever", () => {
+    // The editor's usual deletion takes these keys then.
+    for (const script of [[cue("MA{RA}")], [action("Rain.{"), cue("}MARA")], [action("Ra|in.")]]) {
+      expect(press(stateOf(script), "Backspace").handled).toBe(false);
+      expect(press(stateOf(script), "Delete").handled).toBe(false);
+    }
+    expect(show(type(stateOf([cue("MA{RA}")]), "Y"))).toEqual([cue("MAY|")]);
+    // Over the break alone, typing joins the two as Backspace does.
+    expect(show(type(stateOf([action("Rain.{"), cue("}MARA")]), "x"))).toEqual([
+      action("Rain.x|MARA"),
+    ]);
+  });
+
+  test("and Ctrl+Z takes either back in one step, with the selection", () => {
+    const undo = (state: EditorState) => press(state, "Ctrl-z").state;
+    const script = [action("{Rain."), cue("MA}RA", { dual: true }), dialogue("Hi.")];
+    const deleted = press(stateOf(script), "Backspace").state;
+    expect(show(deleted)).toEqual([cue("|RA"), dialogue("Hi.")]);
+    expect(show(undo(deleted))).toEqual(script);
+    const typed = typeEach(stateOf(script), "JO");
+    expect(show(typed)).toEqual([cue("JO|RA"), dialogue("Hi.")]);
+    expect(show(undo(typed))).toEqual(script);
+  });
+});
+
 describe("the three paths", () => {
   test("within Tir, pasted elements keep types, dual dialogue, centring, forced breaks and styles", () => {
     const source = stateOf([

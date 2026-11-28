@@ -726,6 +726,32 @@ include the per-task results. Reproduce with
   projection gives each tab a `.tab` span at tab size 0. Evidence: widths
   measured in the dev app and `editor-placement` on the `every` fixture at
   75–125%, 2026-11-28.
+- **A screen reader hears the popup through the root's active
+  descendant.** WebKitGTK 2.54 exposes the editable root as an `entry`.
+  While it has focus, setting its `aria-activedescendant` to an option of
+  a listbox outside it (named in `aria-controls`) sends
+  `object:active-descendant-changed` with that option, and Orca 51.1 says
+  the listbox's name and size as it opens ("Character", "List with 2
+  items") and each option as it is highlighted ("(O.S.)"). The options
+  are drawn before the attribute names one, under new ids each drawing,
+  so the attribute changes whenever the highlighted option does; naming
+  an id before its element exists, or the same id again, was not tried.
+  Before task 7.3e the arrows sent only `children-changed` on the
+  listbox, nothing on the focused root.
+  Setting both attributes forty times on the 120-page spike, each with a
+  forced layout, measured under `performance.now()`'s 1 ms resolution.
+  Evidence: an AT-SPI event listener and Orca's debug log on the isolated
+  trial ([how](architecture.md#desktop-ui-checks)), 2026-11-28.
+- **The desktop's accessibility bus is dead.** The session lists
+  `org.a11y.Bus` (an `at-spi-bus-launcher`), but the socket it names,
+  `/run/user/1000/at-spi/bus_0`, is gone, so Tir logs "Couldn't connect
+  to accessibility bus". A trial given its own bus through
+  `AT_SPI_BUS_ADDRESS` is reachable. Orca writes `SPEECH OUTPUT:` lines to
+  its debug file with no speech server; it starts with focus on the
+  window's frame and ignores active-descendant events ("lack of reason")
+  until a focus event reaches the root. It switches to browse mode when
+  focus lands on a button in the page, and back in the script. Evidence:
+  `busctl --user`, the trial and Orca's log, 2026-11-28.
 - **Test decorations together.** The Stage 1 probe placed find
   highlights, spelling underlines, margin dots and a ghost completion
   without moving the script's lines. Overlapping inline decorations

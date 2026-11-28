@@ -9,14 +9,15 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
 
 ## Current status
 
-- In progress: [7.3e — selection and keyboard access](#task-7-3e).
-  [7.3b](#task-7-3b) and [7.3d](#task-7-3d) are done; [7.3c](#task-7-3c)'s
-  local work is done.
+- In progress: the [V1 review](#task-7-3)'s final pass after 7.3d and
+  7.3e. [7.3b](#task-7-3b), [7.3d](#task-7-3d) and [7.3e](#task-7-3e) are
+  done; [7.3c](#task-7-3c)'s local work is done.
 - Not tested in Final Draft: the user has no copy and deferred
   [7.3a](#task-7-3a) and 7.3c's [Final Draft check](#final-draft-evidence)
   (2026-11-28). Both are under [Known gaps](#known-gaps).
-- Release gate: the [V1 review](#task-7-3) stays open until 7.3e is
-  verified. Then run the [user writing check](#task-7-4).
+- Release gate: the [V1 review](#task-7-3) closes when the user agrees to
+  the [Known gaps](#known-gaps) deferrals. Then run the
+  [user writing check](#task-7-4).
 
 ## How to work this plan
 
@@ -73,7 +74,7 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3"></a>
 
 - [ ] 7.3 — Review: V1
-  - Status: verification pending (7.3e and disposition of remaining gaps)
+  - Status: in progress (final pass after 7.3d and 7.3e)
   - Depends on: [7.2](history.md#task-7-2), 7.3b, 7.3d and 7.3e. The
     user deferred the Final Draft checks of 7.3a and 7.3c (Known gaps).
     None of the follow-ups waits for this review to close.
@@ -319,8 +320,7 @@ V1 is done when [7.4](#task-7-4) passes.
 
 <a id="task-7-3e"></a>
 
-- [ ] 7.3e — Predictable selection edits and keyboard access
-  - Status: in progress
+- [x] 7.3e — Predictable selection edits and keyboard access
   - Depends on: [7.2](history.md#task-7-2).
   - Spec: [Elements and keys](brief.md#elements-and-keys),
     [Copy and paste](brief.md#copy-and-paste).
@@ -336,6 +336,36 @@ V1 is done when [7.4](#task-7-4) passes.
     returns focus to the script and verifies suggestion announcements.
     Defer drag/drop, primary-selection paste and a broader accessibility
     audit.
+  - Evidence (2026-11-28, `d89d7ac` plus uncommitted changes): `mise run
+    check` passed (Biome, both TypeScript checks, 791 Vitest tests,
+    rustfmt, clippy, 100 Rust tests). New `clipboard` tests run six
+    boundary cases (from an element's start, both ends in part, from an
+    element's end, part then whole, whole elements, a whole parenthetical)
+    and select all through Cut, Backspace, Delete, Ctrl+Backspace,
+    Ctrl+Delete and typing, check that a selection within an element, over
+    only a break, or a caret is left to the usual deletion, and that one
+    Ctrl+Z restores the script and selection after Backspace or typing.
+    In a worktree of `d89d7ac` all eight failed; there ProseMirror's own
+    deletion and typing retyped a cue's "RA" as action. `desk` tests cover
+    F6, Shift+F6 and Esc. In isolated development WebKitGTK, keys sent
+    only through Hyprland: F6 reached the sidebar toggle, Tab the project
+    title and draft menu, Enter opened it, Down reached Export PDF…, Enter
+    opened its dialog, and Esc twice gave focus back to the trigger and
+    then the script. Shift+F6 reached the current scene; Shift+Tab the
+    Title page row, whose Enter opened the title page and Esc returned;
+    Enter on another scene jumped there with focus in the script; Tab
+    reached the paper switch, whose Enter turned the paper white and back,
+    and the zoom buttons. F6 in focus mode showed the bar, Esc went to the
+    script and a second Esc left focus mode; a collapsed sidebar was
+    passed over. Each control matched `:focus-visible` with a 2 px ring,
+    seen in screenshots. A selection from an action's end into the cue
+    "TEO" left cue "O" for Backspace and Delete, cue "LO" for typed "L"
+    and cue "éO" for a dead-key "é"; Ctrl+Z restored each. With the trial
+    on an accessibility bus of its own and Orca 51.1 (debug log, no
+    sound), Orca said "Character", "List with 2 items", "MAYA used 3×" as
+    the popup opened, then "(V.O.) used 1×", "(O.S.)", "(O.C.)" with Down,
+    and "Spelling", "List with 2 items", "Sago", "SA" for F7 and Down.
+    Limits: Orca only, read from its log rather than heard.
 
 <a id="task-7-4"></a>
 
@@ -366,8 +396,8 @@ Neither check can substitute for the other. Both are deferred by the user
 
 ## Known gaps
 
-This list holds limitations not owned by an open task. Remaining V1
-blockers and their acceptance criteria are on [7.3e](#task-7-3e).
+This list holds limitations not owned by an open task. No V1 task but
+the review ([7.3](#task-7-3)) and the user's check ([7.4](#task-7-4)) is open.
 
 - Not tested in Final Draft (the user's choice, 2026-11-28; see
   [7.3a](#task-7-3a)). Page parity follows Final Draft's documented
@@ -395,7 +425,9 @@ blockers and their acceptance criteria are on [7.3e](#task-7-3e).
   Middle click pastes clipboard text instead of the primary selection
   (1.10, findings "Editor"). Defer; use the Cut and Paste commands.
 - Announcing inline spelling squiggles to a screen reader and a broader
-  accessibility audit are deferred beyond [7.3e](#task-7-3e).
+  accessibility audit are deferred beyond [7.3e](#task-7-3e). Its
+  screen-reader check used Orca 51.1 alone, read from Orca's debug log;
+  other screen readers and audible speech are untested.
 - A style boundary inside one grapheme at the end of a line (a combining
   accent styled apart from its letter) would give the line two line-end
   decorations and an extra row (1.10 review, from the source), and so

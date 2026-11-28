@@ -178,6 +178,17 @@ The user has said the V1 list above is everything they need.
   the spelling check in Word)*. Ctrl+F opens
   [find and replace](#find-and-replace) *(agent-selected, from prototype
   piece 5)*.
+- **Moving round the window**: F6 goes from the script to the top bar,
+  then to the sidebar, then back, and Shift+F6 the other way; Tab and
+  Shift+Tab then move between a bar's controls, which show a focus ring,
+  and Esc on one goes back to the script, before it leaves focus mode.
+  The script tells a screen reader which autocomplete suggestion or
+  spelling is highlighted. *(Agent-selected, task 7.3e: F6 moves between a
+  window's panes in GTK, browsers and Windows, and no key of Tir's or of
+  [Final Draft's](findings.md#final-drafts-keys) takes it; it lands on a
+  bar's first control, or the sidebar's current scene, and passes over a
+  hidden sidebar. The first F6 shows a toast naming F6 and Esc. Tab keeps
+  its screenplay use in the script.)*
 - **File keys**: Ctrl+O opens and Ctrl+S saves, as Final Draft's Open and
   Save ([findings](findings.md#final-drafts-keys)). Ctrl+O shows the
   Projects screen, where projects open ([Projects](#projects)). Saving is
@@ -404,6 +415,12 @@ curly apostrophe match each other.
   selection covers whole go entirely, an element it covers in part keeps the
   rest and its type, and when both ends are covered in part, what is left of
   them joins, as Backspace joins it.
+- *(Agent-selected, task 7.3e)* Backspace, Delete and typing over a
+  selection across elements remove what Cut removes, so text left in an
+  element keeps its type. Typing goes into what is left of an element the
+  selection covers in part, the first one when both are; over whole
+  elements only, the typed text takes the first one's place and type. Each
+  joins the typing around it for undo.
 - *(agent-selected)* A paste is part of a script, so it reads no title page
   and never changes the title page: a block of `Key: value` lines arrives as
   script. What an import would leave out (notes, boneyard, sections,
