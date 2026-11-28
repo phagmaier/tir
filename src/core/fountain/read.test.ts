@@ -317,12 +317,12 @@ describe("title page", () => {
   it("does not mistake a key named after an object property for a field", () => {
     const read = readFountain("Title: Salt Line\nconstructor: x\n\nRain.");
     expect(read.script.titlePage.title).toBe("Salt Line");
-    expect(read.leftOut).toEqual([{ kind: "titlePageField", text: "constructor", at: 0 }]);
+    expect(read.leftOut).toEqual([{ kind: "titlePageField", text: "constructor", at: null }]);
   });
 
   it("lists unknown fields as left out", () => {
     const read = readFountain("Title: Salt Line\nCopyright: 2026\n\nRain.");
-    expect(read.leftOut).toEqual([{ kind: "titlePageField", text: "Copyright", at: 0 }]);
+    expect(read.leftOut).toEqual([{ kind: "titlePageField", text: "Copyright", at: null }]);
   });
 
   it("is absent when the first block is not keys, or names no field Fountain knows", () => {
@@ -366,6 +366,23 @@ describe("left out: notes, boneyard, sections and synopses", () => {
     const read = readFountain("Rain.\n\nThe lamp [[check the bulb]] turns.");
     expect(read.script.elements[1]).toEqual({ type: "action", text: "The lamp turns." });
     expect(read.leftOut).toEqual([{ kind: "note", text: "check the bulb", at: 1 }]);
+  });
+
+  it("keeps private-use text beside actual notes, emphasis and Tir type notes", () => {
+    const read = readFountain("\uE000 **\uE001turn** [[keep \uE000 and \uE001]] [[tir:shot]]");
+    expect(read.script.elements).toEqual([
+      { type: "shot", text: "\uE000 \uE001turn", bold: [[2, 7]] },
+    ]);
+    expect(read.leftOut).toEqual([{ kind: "note", text: "keep \uE000 and \uE001", at: 0 }]);
+  });
+
+  it("leaves notes without an associated body element unlocated", () => {
+    expect(readFountain("[[no body]]").leftOut).toEqual([
+      { kind: "note", text: "no body", at: null },
+    ]);
+    expect(readFountain("Title: Rain [[title note]]\n\nWind.").leftOut).toEqual([
+      { kind: "note", text: "title note", at: null },
+    ]);
   });
 
   it("removes a note on its own line without splitting a speech", () => {

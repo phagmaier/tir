@@ -4,10 +4,9 @@
 //! makes every name and every file's text (`src/core/file-names.ts`,
 //! `project-file.ts`, `draft-file.ts`, `fountain/write.ts`); this side
 //! takes names from it, never paths, and refuses any name that is not one
-//! entry of its folder, and any link, so nothing it reads or changes lies
-//! outside the library. Each change goes in an order that keeps every
-//! project whole if Tir stops part way: a `project.json` names only drafts
-//! that are there.
+//! entry of its folder, and refuses links as library entries. Each change
+//! keeps every project whole if Tir stops part way: a `project.json` names
+//! only drafts that are there.
 
 use crate::files;
 use serde::Serialize;
@@ -15,6 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
 use std::hash::{DefaultHasher, Hasher};
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
@@ -401,17 +401,34 @@ pub fn rename_project(
     Ok(())
 }
 
-/// Deletes the project `folder` and everything in it. Only a folder with a
-/// project file, readable or not, is a project: Tir deletes no other.
+/// Deletes the project `folder` and everything in it. A project file is
+/// required, but damage does not make the project undeletable.
 pub fn delete_project(root: &Path, folder: &str) -> io::Result<()> {
     let dir = project_dir(root, folder)?;
-    match fs::symlink_metadata(dir.join(PROJECT)) {
+    let manifest = dir.join(PROJECT);
+    match fs::symlink_metadata(&manifest) {
         Ok(metadata) if metadata.is_file() => {}
         _ => {
             return Err(refused(format!(
                 "“{folder}” is not a Tir project: it has no project file."
             )));
         }
+    }
+    // Only an explicit format identifies a foreign project. An unreadable
+    // file, or one with a missing or damaged marker, may still be Tir's.
+    #[derive(serde::Deserialize)]
+    struct DeclaredFormat {
+        format: Option<String>,
+    }
+    if let Ok(file) = fs::File::open(&manifest)
+        && let Ok(data) = serde_json::from_reader::<_, DeclaredFormat>(io::BufReader::new(file))
+        && let Some(format) = data.format
+        && !format.is_empty()
+        && format != "tir-project"
+    {
+        return Err(refused(format!(
+            "“{folder}” is not a Tir project: its project file uses a different format."
+        )));
     }
     // Out of the library at once, under a hidden name, then removed, so a
     // removal that fails part way leaves no half project.
@@ -443,12 +460,12 @@ pub fn create_draft(
     let dir = project_dir(root, folder)?;
     let file = drafts_dir(&dir)?.join(draft_entry(draft)?);
     unchanged(&dir, was)?;
-    claim_draft(&file)?;
+    let copy_file = claim_draft(&file)?;
     let written = files::replace(&file, text.as_bytes())
-        .and_then(|()| files::replace(&copy_of(&file), copy.as_bytes()));
+        .and_then(|()| files::replace(&copy_file, copy.as_bytes()));
     if let Err(error) = written {
-        // Both are this call's own: `claim_draft` found their names free.
-        let _ = fs::remove_file(copy_of(&file));
+        // Both names were free before this call.
+        let _ = fs::remove_file(&copy_file);
         let _ = fs::remove_file(&file);
         return Err(error);
     }
@@ -464,13 +481,32 @@ pub fn read_draft(root: &Path, folder: &str, draft: &str) -> io::Result<String> 
     files::read_text(existing_draft(&file)?)
 }
 
+/// A save refused because the draft has changed on disk since Tir saw it
+/// (`write_draft`), which no later save of the same script can fix.
+#[derive(Debug)]
+struct Changed(String);
+
+impl std::fmt::Display for Changed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Changed {}
+
+/// Whether `error` is a save refused because the draft has changed on disk
+/// since Tir saw it, as opposed to one that failed and may succeed later.
+pub fn changed(error: &io::Error) -> bool {
+    error.get_ref().is_some_and(|inner| inner.is::<Changed>())
+}
+
 /// Saves the project `folder`'s draft `draft`: `text` replaces the draft
 /// file, then `copy` its Fountain copy, so the copy is never newer than
 /// the draft. A save never makes a draft: the draft must be there, a file
 /// of its own. A link or a folder where the copy goes is refused, as no
 /// copy Tir writes is one. With `was`, the fingerprint of what Tir last
-/// saw in the draft, a draft that has changed since is refused, so that
-/// work brought in by a `git pull` is never saved over unseen.
+/// saw in the draft, a draft that has changed since is refused (`changed`),
+/// so that work brought in by a `git pull` is never saved over unseen.
 pub fn write_draft(
     root: &Path,
     folder: &str,
@@ -485,11 +521,12 @@ pub fn write_draft(
     if let Some(was) = was
         && fingerprint(&fs::read(&file)?) != was
     {
-        return Err(io::Error::other(format!(
+        // The interface says what the writer can do about it (`saving.ts`).
+        return Err(io::Error::other(Changed(format!(
             "“{}” has changed on disk since Tir opened it, perhaps by a git pull, so Tir \
-             saved nothing over it. Close Tir and open it again to see the draft as it is now.",
+             saved nothing over it.",
             draft.strip_suffix(DRAFT).unwrap_or(draft)
-        )));
+        ))));
     }
     let copy_file = copy_of(&file);
     match fs::symlink_metadata(&copy_file) {
@@ -507,7 +544,8 @@ pub fn write_draft(
 
 /// Moves the project `folder`'s draft `draft` to the file `to`, with
 /// `project`, which names `to`, as its `project.json`, which must still be
-/// `was`. The draft's Fountain copy follows it.
+/// `was`. The Fountain copy follows it if present; a link or folder in its
+/// place is refused.
 pub fn rename_draft(
     root: &Path,
     folder: &str,
@@ -524,26 +562,43 @@ pub fn rename_draft(
     if draft == to {
         return publish_project(&dir, project);
     }
-    // Copied, and the old file removed only once the project names the new
-    // one, so the file it names is there throughout.
+    let from_copy = copy_of(&from);
     let mut source = fs::File::open(regular_file(&from)?)?;
-    let modified = source.metadata()?.modified()?;
-    claim_draft(&moved)?;
-    let published = files::replace_with(&moved, |file| {
-        io::copy(&mut source, file)?;
-        file.set_modified(modified)
-    })
-    .and_then(|()| files::publish(&dir.join(PROJECT), project.as_bytes()));
+    let mut source_copy = match regular_file(&from_copy) {
+        Ok(path) => Some(fs::File::open(path)?),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    let moved_copy = claim_draft(&moved)?;
+    let mut claimed_copy = false;
+    let published = (|| {
+        if source_copy.is_some() {
+            claim_file(&moved_copy)?;
+            claimed_copy = true;
+        }
+        publish_copy(&mut source, &moved)?;
+        if let Some(copy) = &mut source_copy {
+            publish_copy(copy, &moved_copy)?;
+        }
+        // The manifest must not name the draft until both new files are durable.
+        files::sync_dir(&drafts)?;
+        files::publish(&dir.join(PROJECT), project.as_bytes())
+    })();
     if let Err(error) = published {
         let _ = fs::remove_file(&moved);
+        if claimed_copy {
+            let _ = fs::remove_file(&moved_copy);
+        }
+        let _ = files::sync_dir(&drafts);
         return Err(error);
     }
     // Done: the page must save to the new file. Keep the old files until
     // the project file's rename is durable, so a crash cannot strand it.
     if files::sync_dir(&dir).is_ok() {
         let _ = fs::remove_file(&from);
-        // `claim_draft` found the new copy's name free.
-        let _ = fs::rename(copy_of(&from), copy_of(&moved));
+        if claimed_copy {
+            let _ = fs::remove_file(&from_copy);
+        }
         let _ = files::sync_dir(&drafts);
     }
     Ok(())
@@ -756,19 +811,34 @@ fn claim_dir(dir: &Path) -> io::Result<()> {
     fs::create_dir(dir).map_err(|error| taken(dir, error))
 }
 
-/// Makes the empty file `file` for a draft, refusing when anything has its
-/// name or its Fountain copy's, which a save writes.
-fn claim_draft(file: &Path) -> io::Result<()> {
+/// Makes the empty file `file` for a draft and returns its Fountain copy's
+/// path, refusing when either name is taken.
+fn claim_draft(file: &Path) -> io::Result<PathBuf> {
     let copy = copy_of(file);
     if fs::symlink_metadata(&copy).is_ok() {
         return Err(taken(&copy, io::ErrorKind::AlreadyExists.into()));
     }
+    claim_file(file)?;
+    Ok(copy)
+}
+
+fn claim_file(file: &Path) -> io::Result<()> {
     OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(0o600)
         .open(file)
         .map(drop)
         .map_err(|error| taken(file, error))
+}
+
+/// Copies bytes and the last-save time, leaving the directory sync to the caller.
+fn publish_copy(source: &mut fs::File, path: &Path) -> io::Result<()> {
+    let modified = source.metadata()?.modified()?;
+    files::publish_with(path, |file| {
+        io::copy(source, file)?;
+        file.set_modified(modified)
+    })
 }
 
 /// A new, empty, hidden folder in `root`, `.deleting.<pid>-<n>.tmp` with
@@ -966,6 +1036,14 @@ pub mod commands {
         })
     }
 
+    /// Why a save failed, as the page hears it: `changed` when the draft has
+    /// changed on disk since Tir saw it (`super::changed`).
+    #[derive(serde::Serialize)]
+    pub struct SaveFailed {
+        message: String,
+        changed: bool,
+    }
+
     #[tauri::command(async)]
     pub fn write_draft(
         library: State<'_, Library>,
@@ -974,10 +1052,14 @@ pub mod commands {
         draft: String,
         text: String,
         copy: String,
-    ) -> Result<(), String> {
+    ) -> Result<(), SaveFailed> {
+        let mut changed = false;
         change(&library, &backup, |root| {
-            library.save(root, &folder, &draft, &text, &copy)
+            library
+                .save(root, &folder, &draft, &text, &copy)
+                .inspect_err(|error| changed = super::changed(error))
         })
+        .map_err(|message| SaveFailed { message, changed })
     }
 
     #[tauri::command(async)]
@@ -1440,6 +1522,12 @@ mod tests {
             REWRITE_COPY,
         )
         .unwrap();
+        // A project with no format marker may be damaged, not foreign.
+        fs::write(
+            trial.root.join("Tide Line/project.json"),
+            r#"{"name":"Tide Line"}"#,
+        )
+        .unwrap();
         delete_project(&trial.root, "Tide Line").unwrap();
         // Nothing left behind, hidden or not.
         assert_eq!(trial.names(""), ["Salt Line"]);
@@ -1499,6 +1587,24 @@ mod tests {
         assert_eq!(trial.read("References/drafts/notes.tir"), "notes");
         trial.assert_salt_line_untouched();
         assert_eq!(entry_names(&trial.outside).unwrap(), [PROJECT]);
+    }
+
+    #[test]
+    fn never_deletes_a_project_file_with_an_explicit_foreign_format() {
+        let trial = Trial::new();
+        let foreign = trial.root.join("Other app");
+        fs::create_dir(&foreign).unwrap();
+        let manifest = r#"{"format":"other-app-project","name":"Harbour","version":1}"#;
+        fs::write(foreign.join(PROJECT), manifest).unwrap();
+        fs::write(foreign.join("notes.txt"), "Keep these notes.").unwrap();
+
+        let error = delete_project(&trial.root, "Other app").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(trial.names(""), ["Other app", "Salt Line"]);
+        assert_eq!(trial.read("Other app/project.json"), manifest);
+        assert_eq!(trial.read("Other app/notes.txt"), "Keep these notes.");
+        trial.assert_salt_line_untouched();
+        trial.assert_outside_untouched();
     }
 
     #[test]
@@ -1566,6 +1672,41 @@ mod tests {
 
         delete_draft(&trial.root, "Salt Line", "Polish.tir", TIDE, SALT).unwrap();
         trial.assert_salt_line_untouched();
+        trial.assert_outside_untouched();
+    }
+
+    #[test]
+    fn renames_a_draft_if_its_copy_is_missing_but_not_if_it_is_invalid() {
+        let trial = Trial::new();
+        let target = trial.outside.join(PROJECT);
+        let copy = trial.root.join("Salt Line/drafts/First Draft.fountain");
+        fs::remove_file(&copy).unwrap();
+        symlink(&target, &copy).unwrap();
+
+        let rename = || {
+            rename_draft(
+                &trial.root,
+                "Salt Line",
+                "First Draft.tir",
+                "Polish.tir",
+                SALT,
+                TIDE,
+            )
+        };
+        assert_eq!(rename().unwrap_err().kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(fs::read_link(&copy).unwrap(), target);
+        assert_eq!(
+            trial.names("Salt Line/drafts"),
+            ["First Draft.fountain", "First Draft.tir"]
+        );
+        assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), FIRST);
+        assert_eq!(trial.read("Salt Line/project.json"), SALT);
+
+        fs::remove_file(copy).unwrap();
+        rename().unwrap();
+        assert_eq!(trial.names("Salt Line/drafts"), ["Polish.tir"]);
+        assert_eq!(trial.read("Salt Line/drafts/Polish.tir"), FIRST);
+        assert_eq!(trial.read("Salt Line/project.json"), TIDE);
         trial.assert_outside_untouched();
     }
 
@@ -1660,8 +1801,9 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "“First Draft” has changed on disk since Tir opened it, perhaps by a git pull, so \
-             Tir saved nothing over it. Close Tir and open it again to see the draft as it is now."
+             Tir saved nothing over it."
         );
+        assert!(changed(&error));
         // Neither the draft nor its copy was written.
         assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), pulled);
         assert_eq!(
@@ -1807,7 +1949,7 @@ mod tests {
         let error = library
             .save(&trial.root, "Salt Line", &long, FIRST, "")
             .unwrap_err();
-        assert!(!error.to_string().contains("changed on disk"), "{error}");
+        assert!(!changed(&error), "{error}");
         assert_eq!(trial.read(&format!("Salt Line/drafts/{long}")), FIRST);
         // A pull changes the draft: nothing is saved over it, until the
         // draft is read again to be shown.
@@ -1815,12 +1957,7 @@ mod tests {
         let pulled = "{\"format\": \"tir-draft\", \"elements\": [\"laptop\"]}\n";
         fs::write(trial.root.join("Salt Line/drafts/First Draft.tir"), pulled).unwrap();
         let save = |text| library.save(&trial.root, "Salt Line", "First Draft.tir", text, "");
-        assert!(
-            save(REWRITE)
-                .unwrap_err()
-                .to_string()
-                .contains("changed on disk")
-        );
+        assert!(changed(&save(REWRITE).unwrap_err()));
         assert!(save(REWRITE).is_err());
         assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), pulled);
         library.saw("Salt Line", "First Draft.tir", pulled);
@@ -1891,6 +2028,20 @@ mod tests {
             .is_err()
         );
         trial.assert_salt_line_untouched();
+    }
+
+    #[test]
+    fn a_failed_copy_publication_rolls_back_a_draft_rename() {
+        let trial = Trial::new();
+        // Both final names and the draft's temporary name fit; the longer
+        // Fountain copy's temporary name does not.
+        let suffix = format!(".{}-0.tmp", std::process::id());
+        let to = format!("{}{DRAFT}", "x".repeat(255 - DRAFT.len() - suffix.len()));
+        assert!(
+            rename_draft(&trial.root, "Salt Line", "First Draft.tir", &to, SALT, TIDE,).is_err()
+        );
+        trial.assert_salt_line_untouched();
+        trial.assert_outside_untouched();
     }
 
     #[test]

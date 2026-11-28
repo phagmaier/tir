@@ -88,6 +88,35 @@ describe("the list", () => {
     ]);
   });
 
+  it("shows the folder, which no two share, of each project whose name another has", () => {
+    const named = (folder: string, name: string) =>
+      project(folder, {}, newProject(name, FIRST_DRAFT));
+    const library: Library = {
+      names: [],
+      projects: [
+        named("Salt Line", "Salt Line"),
+        named("Salt Line 2", "Salt Line"),
+        // The same name, its accent typed apart.
+        named("Cafe", "Café"),
+        named("Cafe 2", "Cafe\u0301"),
+        named("Bright Water", "Bright Water"),
+        named("Low Tide 2", "Low Tide"),
+      ],
+      // Named by its folder, which it shows already.
+      unreadable: [{ folder: "Low Tide", error: "The project file is missing." }],
+    };
+    const shown = rows(library, null).map((row) => [row.folder, row.showFolder]);
+    expect(shown).toEqual([
+      ["Bright Water", false],
+      ["Cafe", true],
+      ["Cafe 2", true],
+      ["Low Tide 2", true],
+      ["Salt Line", true],
+      ["Salt Line 2", true],
+      ["Low Tide", false],
+    ]);
+  });
+
   it("says when a project was edited as the prototype does", () => {
     const now = at(27, 15, 30);
     expect(whenEdited(now - 30_000, now)).toBe("Just now");
@@ -449,9 +478,9 @@ describe("the screen's actions", () => {
       const source = await projects.pickScript();
       if (!source) throw new Error("Expected the picked Fountain file");
       expect(source.leftOut).toEqual([
-        expect.objectContaining({ kind: "titlePageField", text: "Revision" }),
-        expect.objectContaining({ kind: "sceneNumber", text: "14" }),
-        expect.objectContaining({ kind: "note", text: "Check tide table" }),
+        { kind: "titlePageField", text: "Revision", at: null },
+        { kind: "sceneNumber", text: "14", at: 0 },
+        { kind: "note", text: "Check tide table", at: 1 },
       ]);
       expect(did).toEqual([]);
       const place = await projects.importFile(source, null);

@@ -47,7 +47,7 @@ export interface Use {
 }
 
 /** A prefix as typed, with or without its periods, followed by a space. */
-const PREFIX = /^(int\.?\/ext|int|ext|est|i\/e)\.?(?=\s)/i;
+const PREFIX = /^(int\.?\/\s?ext|ext\.?\/\s?int|int|ext|est|i\/e)\.?(?=\s)/i;
 const CANONICAL: Readonly<Record<string, string>> = {
   "int/ext": "INT./EXT.",
   int: "INT.",
@@ -77,7 +77,9 @@ export function usesOf(type: ElementType, text: string): Use[] {
     const prefix = PREFIX.exec(text);
     const dash = text.lastIndexOf(TIME_SEPARATOR);
     if (prefix) {
-      add("prefix", canonicalPrefix(prefix[1] as string));
+      const canonical = CANONICAL[(prefix[1] as string).toLowerCase().replace(/[.\s]/g, "")];
+      // EXT./INT. is valid and teaches the location, but is not a built-in suggestion.
+      if (canonical) add("prefix", canonical);
       const start = prefix[0].length;
       add("location", dash >= start ? text.slice(start, dash) : text.slice(start));
     }
@@ -86,10 +88,6 @@ export function usesOf(type: ElementType, text: string): Use[] {
     add("transition", text);
   }
   return uses;
-}
-
-function canonicalPrefix(typed: string): string {
-  return CANONICAL[typed.toLowerCase().replaceAll(".", "")] as string;
 }
 
 /**

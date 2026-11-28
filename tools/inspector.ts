@@ -1,8 +1,7 @@
 /**
  * Drives the running dev app through WebKitGTK's remote inspector and sends
- * it keys through Hyprland's dispatcher (architecture, "Measuring the
- * editor"). Start the app with
- * `WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev`.
+ * it keys through Hyprland's dispatcher. Follow the isolated launch and
+ * single-window precautions in docs/architecture.md#measuring-the-editor.
  */
 import { execFile } from "node:child_process";
 import { readdirSync } from "node:fs";

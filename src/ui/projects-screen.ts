@@ -28,6 +28,7 @@ import {
   type Projects,
   pagesText,
   type Row,
+  repeated,
   rows,
   type ScriptImport,
   whenEdited,
@@ -68,6 +69,9 @@ const LEFT_OUT: Record<LeftOutKind, string> = {
 };
 
 const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+/** A project's folder, named beside a name another project shares. */
+const inFolder = (folder: string) => `folder “${folder}”`;
 
 // Icons from prototype piece 6, on a 16-unit grid.
 const ICONS = {
@@ -384,8 +388,7 @@ export class ProjectsScreen {
   }
 
   private row(row: Row, now: number, counted: [Project, HTMLElement][]): HTMLElement {
-    const { project } = row;
-    const name = project?.info.name ?? row.folder;
+    const { project, name } = row;
     const dom = el("div", "prow");
     dom.dataset.folder = row.folder;
     const title = el("div", "t", name);
@@ -399,6 +402,7 @@ export class ProjectsScreen {
       counted.push([project, pages]);
       line.append(meta(draft, "branch"), pages, meta(draftsText(info.drafts.length)));
       if (row.edited !== null) line.append(meta(whenEdited(row.edited, now), "clock"));
+      if (row.showFolder) line.append(meta(`Folder “${row.folder}”`));
     } else {
       const why = meta(`Tir can't open it. ${row.problem ?? ""}`, "alert");
       why.className = "warn";
@@ -417,10 +421,13 @@ export class ProjectsScreen {
     }
     const more = button("more", "");
     more.innerHTML = svg("dots", 16);
-    more.setAttribute("aria-label", `More for ${name}`);
+    more.setAttribute(
+      "aria-label",
+      `More for ${name}${row.showFolder ? `, ${inFolder(row.folder)}` : ""}`,
+    );
     more.setAttribute("aria-haspopup", "menu");
     more.setAttribute("aria-expanded", "false");
-    more.addEventListener("click", () => this.openMenu(row, name, more));
+    more.addEventListener("click", () => this.openMenu(row, more));
     dom.append(open, more);
     return dom;
   }
@@ -436,7 +443,7 @@ export class ProjectsScreen {
     }
   }
 
-  private openMenu(row: Row, name: string, anchor: HTMLElement): void {
+  private openMenu(row: Row, anchor: HTMLElement): void {
     const again = this.menuButton === anchor;
     this.closeMenu(false);
     if (again || this.busy) return;
@@ -451,7 +458,7 @@ export class ProjectsScreen {
     };
     const { project } = row;
     const items = project ? [item("Rename…", () => this.renameProject(project))] : [];
-    items.push(item("Delete…", () => void this.deleteProject(row, name), true));
+    items.push(item("Delete…", () => void this.deleteProject(row), true));
     this.menu.replaceChildren(...items);
     this.menu.hidden = false;
     this.menuButton = anchor;
@@ -537,11 +544,13 @@ export class ProjectsScreen {
       const card = el("div");
       target.setAttribute("aria-label", "Project");
       target.disabled = true;
-      for (const project of source.targets) {
-        const option = el("option", "", project.info.name);
+      const shared = repeated(source.targets.map((project) => project.info.name));
+      source.targets.forEach((project, i) => {
+        const { name } = project.info;
+        const option = el("option", "", shared[i] ? `${name} (${inFolder(project.folder)})` : name);
         option.value = project.folder;
         target.append(option);
-      }
+      });
       const open = this.side.openFolder();
       if (open !== null && source.targets.some((project) => project.folder === open)) {
         target.value = open;
@@ -591,6 +600,7 @@ export class ProjectsScreen {
     report.append(heading, el("p", "", `${source.fileName} is now ${destination}.`));
 
     const { elements, titlePage } = source.script;
+    const pages = paginate(elements);
     let scenes = 0;
     const characters = new Set<string>();
     for (const { type, text } of elements) {
@@ -614,7 +624,7 @@ export class ProjectsScreen {
       el(
         "dd",
         "",
-        `${pagesText(paginate(elements).length)}, ${counted(scenes, "scene")}, ${counted(characters.size, "character")}`,
+        `${pagesText(pages.length)}, ${counted(scenes, "scene")}, ${counted(characters.size, "character")}`,
       ),
       el("dt", "", "Title page"),
       el(
@@ -629,12 +639,22 @@ export class ProjectsScreen {
     report.append(summary);
 
     if (source.leftOut.length > 0) {
+      const elementPages = new Map<number, number>();
+      for (const page of pages) {
+        for (const { element, kind } of page.lines) {
+          if (kind === "element" && !elementPages.has(element)) {
+            elementPages.set(element, page.number);
+          }
+        }
+      }
       const omissions = el("div", "import-omissions");
       const list = el("ul");
-      for (const { kind, text } of source.leftOut) {
+      for (const { kind, text, at } of source.leftOut) {
         const item = el("li");
         item.append(el("b", "", LEFT_OUT[kind]));
         if (text) item.append(": ", el("span", "import-omission-text", text));
+        const page = at === null ? undefined : elementPages.get(at);
+        if (page !== undefined) item.append(` (on page ${page})`);
         list.append(item);
       }
       omissions.append(
@@ -673,7 +693,8 @@ export class ProjectsScreen {
     });
   }
 
-  private async deleteProject(row: Row, name: string): Promise<void> {
+  private async deleteProject(row: Row): Promise<void> {
+    const { name } = row;
     const confirmation = ++this.confirmation;
     const generation = this.generation;
     const drafts = row.project?.info.drafts.length;
@@ -683,6 +704,7 @@ export class ProjectsScreen {
         : drafts === 1
           ? "Its draft"
           : `Its ${drafts} drafts`;
+    const which = row.showFolder ? `This is the “${name}” in the ${inFolder(row.folder)}. ` : "";
     const coverage = await this.side.backupOf(row.folder);
     if (
       confirmation !== this.confirmation ||
@@ -695,7 +717,7 @@ export class ProjectsScreen {
     }
     this.ask({
       title: `Delete “${name}”?`,
-      text: `${what} will be deleted from this machine. ${deletionNote(coverage)}`,
+      text: `${which}${what} will be deleted from this machine. ${deletionNote(coverage)}`,
       submit: "Delete project",
       danger: true,
       run: () => void this.act(() => this.side.projects.remove(row.folder, name)),

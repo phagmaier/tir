@@ -22,6 +22,13 @@ import type { Place, Saver } from "./saving.ts";
 /** One row of the list: a project, or a folder Tir cannot read as one. */
 export interface Row {
   readonly folder: string;
+  /** What the list calls it: the project's name, or its folder's for one Tir cannot read. */
+  readonly name: string;
+  /**
+   * Whether the row shows its folder, which no two share: another row has
+   * its name. Never for a folder Tir cannot read, named by its folder.
+   */
+  readonly showFolder: boolean;
   /** Null for a folder Tir cannot read as a project, as `problem` says. */
   readonly project: Project | null;
   readonly problem: string | null;
@@ -50,22 +57,25 @@ export function rows(library: Library, open: string | null): Row[] {
   const projects = library.projects.map(
     (project): Row => ({
       folder: project.folder,
+      name: project.info.name,
+      showFolder: false,
       project,
       problem: null,
       edited: lastEdit(project),
       open: project.folder === open,
     }),
   );
-  const name = (row: Row) => row.project?.info.name ?? row.folder;
   projects.sort(
     (a, b) =>
       (b.edited ?? Number.NEGATIVE_INFINITY) - (a.edited ?? Number.NEGATIVE_INFINITY) ||
-      name(a).localeCompare(name(b)),
+      a.name.localeCompare(b.name),
   );
   const unreadable = library.unreadable
     .map(
       ({ folder, error }): Row => ({
         folder,
+        name: folder,
+        showFolder: false,
         project: null,
         problem: error,
         edited: null,
@@ -73,7 +83,21 @@ export function rows(library: Library, open: string | null): Row[] {
       }),
     )
     .sort((a, b) => a.folder.localeCompare(b.folder));
-  return [...projects, ...unreadable];
+  const all = [...projects, ...unreadable];
+  const shared = repeated(all.map((row) => row.name));
+  return all.map((row, i) => (row.project && shared[i] ? { ...row, showFolder: true } : row));
+}
+
+/**
+ * Whether each of `names` is another's too, as the writer sees them. A
+ * project's name need not be unique; its folder is, so a repeated name is
+ * shown with its folder.
+ */
+export function repeated(names: readonly string[]): boolean[] {
+  const keys = names.map((name) => name.normalize("NFC"));
+  const counts = new Map<string, number>();
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return keys.map((key) => (counts.get(key) ?? 0) > 1);
 }
 
 const MINUTE = 60_000;

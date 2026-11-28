@@ -15,7 +15,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const FOUNTAIN: &str = "fountain";
 const FDX: &str = "fdx";
-const MAX_FDX_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_SCRIPT_BYTES: u64 = 8 * 1024 * 1024;
 const PDF: &str = "pdf";
 /// The request header holding an exported PDF's suggested file name,
 /// percent-encoded, since a header holds only ASCII.
@@ -147,30 +147,28 @@ fn export(window: &WebviewWindow, to: Export, name: String, bytes: &[u8]) -> Res
 
 fn read_script(path: &Path) -> Result<Opened, String> {
     let name = file_name(path);
-    let text = if has_extension(path, FDX) {
-        read_fdx(path, &name)?
-    } else if has_extension(path, FOUNTAIN) {
-        files::read_text(path).map_err(|error| {
-            if error.kind() == io::ErrorKind::InvalidData {
-                format!("“{name}” is not UTF-8 text. Save it as UTF-8, then import it again.")
-            } else {
-                format!("“{name}” could not be read ({error}).")
-            }
-        })?
-    } else {
+    let fdx = has_extension(path, FDX);
+    if !fdx && !has_extension(path, FOUNTAIN) {
         return Err(format!("“{name}” is not a .fountain or .fdx file."));
+    }
+    let mut bytes = Vec::new();
+    File::open(path)
+        .and_then(|file| file.take(MAX_SCRIPT_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(|error| format!("“{name}” could not be read ({error})."))?;
+    if bytes.len() as u64 > MAX_SCRIPT_BYTES {
+        return Err(format!("“{name}” is too large to import (limit: 8 MiB)."));
+    }
+    let text = if fdx {
+        decode_fdx(bytes, &name)?
+    } else {
+        String::from_utf8(bytes).map_err(|_| {
+            format!("“{name}” is not UTF-8 text. Save it as UTF-8, then import it again.")
+        })?
     };
     Ok(Opened { name, text })
 }
 
-fn read_fdx(path: &Path, name: &str) -> Result<String, String> {
-    let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|file| file.take(MAX_FDX_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|error| format!("“{name}” could not be read ({error})."))?;
-    if bytes.len() as u64 > MAX_FDX_BYTES {
-        return Err(format!("“{name}” is too large to import (limit: 8 MiB)."));
-    }
+fn decode_fdx(bytes: Vec<u8>, name: &str) -> Result<String, String> {
     let invalid_encoding = || format!("“{name}” is not valid UTF-8 or UTF-16 text.");
     // XML in UTF-16 has a byte-order mark. Decode it without replacement
     // characters, just as with UTF-8.
@@ -250,6 +248,18 @@ pub fn already_open(app: &AppHandle) {
         .show(move |_| exit.exit(0));
 }
 
+/// The instance lock could not be acquired or checked. Do not open Tir.
+pub(crate) fn cannot_lock(app: &AppHandle, error: &str) {
+    let exit = app.clone();
+    app.dialog()
+        .message(format!(
+            "Tir could not check whether it is already open. Your drafts were not opened or saved.\n\n{error}"
+        ))
+        .title("Tir could not start")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| exit.exit(1));
+}
+
 fn has_extension(path: &Path, extension: &str) -> bool {
     path.extension()
         .is_some_and(|found| found.eq_ignore_ascii_case(extension))
@@ -290,6 +300,26 @@ mod tests {
         assert_eq!(imported.text, text);
         assert_eq!(fs::read(&source).unwrap(), text.as_bytes());
         assert_eq!(fs::metadata(&source).unwrap().modified().unwrap(), before);
+    }
+
+    #[test]
+    fn fountain_import_requires_utf8_and_rejects_files_over_eight_mib() {
+        let dir = TempDir::new();
+        let source = dir.0.join("Harbour.fountain");
+        fs::write(&source, b"INT. HARBOUR - NIGHT\n\nTom\xe1s waits.\n").unwrap();
+        assert!(
+            read_script(&source)
+                .err()
+                .unwrap()
+                .contains("not UTF-8 text")
+        );
+
+        let limit = 8 * 1024 * 1024;
+        let file = File::create(&source).unwrap();
+        file.set_len(limit).unwrap();
+        assert_eq!(read_script(&source).unwrap().text.len() as u64, limit);
+        file.set_len(limit + 1).unwrap();
+        assert!(read_script(&source).err().unwrap().contains("too large"));
     }
 
     #[test]

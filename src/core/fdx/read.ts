@@ -12,6 +12,10 @@ import { STYLE_NAMES, TITLE_FIELDS, type TitleField, TYPE_NAMES } from "./format
 
 const MAX_LENGTH = 8 * 1024 * 1024; // Code units here; the native picker caps file bytes.
 const MAX_DEPTH = 64;
+// Short XML tags can fan out into many model elements and style spans. Omissions
+// also become individual DOM rows, so their smaller budget is separate.
+const MAX_RETAINED_NODES = 50_000;
+const MAX_OMISSIONS = 5_000;
 
 const TYPES = new Map(ELEMENT_TYPES.map((type) => [TYPE_NAMES[type], type] as const));
 
@@ -44,6 +48,7 @@ function parse(source: string): Node {
   const parser = new SaxesParser();
   const stack: (Node | undefined)[] = [];
   let root: Node | undefined;
+  let retainedNodes = 0;
   parser.on("error", (error) => {
     throw new Error(`The Final Draft file contains invalid XML (${error.message}).`);
   });
@@ -59,6 +64,9 @@ function parse(source: string): Node {
     const children =
       parent && Object.hasOwn(CHILDREN, parent.name) ? CHILDREN[parent.name] : undefined;
     const keep = depth === 0 || children?.includes(name);
+    if (keep && ++retainedNodes > MAX_RETAINED_NODES) {
+      throw new Error("The Final Draft file contains too many screenplay records to import.");
+    }
     const node: Node | undefined = keep ? { name, attrs, children: [] } : undefined;
     if (depth === 0) root = node;
     else if (node) parent?.children.push(node);
@@ -89,8 +97,8 @@ function noteText(note: Node): string {
   return note.children.map(paragraphText).join("\n").trim() || note.attrs.Name || "";
 }
 
-type Report = (kind: LeftOut["kind"], text: string, at: number) => void;
-type Revision = (id: string | undefined, at: number) => void;
+type Report = (kind: LeftOut["kind"], text: string, at: LeftOut["at"]) => void;
+type Revision = (id: string | undefined, at: LeftOut["at"]) => void;
 
 function revisionReporter(root: Node, report: Report): Revision {
   // A normal FDX carries the full list of its default sets. Report only those
@@ -101,14 +109,14 @@ function revisionReporter(root: Node, report: Report): Revision {
     if (ID && Name) sets.set(ID, Name);
   }
   const seen = new Set<string>();
-  return (id: string | undefined, at: number) => {
+  return (id, at) => {
     if (!id || id === "0" || seen.has(id)) return;
     seen.add(id);
     report("revision", sets.get(id) ?? `Revision ${id}`, at);
   };
 }
 
-function reportInline(child: Node, at: number, report: Report, revision: Revision): void {
+function reportInline(child: Node, at: LeftOut["at"], report: Report, revision: Revision): void {
   if (child.name === "ScriptNote") report("scriptNote", noteText(child), at);
   else if (child.name === "Text") revision(child.attrs.RevisionID, at);
 }
@@ -156,70 +164,109 @@ function readElement(
   };
 }
 
-/** FDX has no named title fields, only positioned paragraphs. Read the
- * conventional centred title, byline, authors and source in order, with
- * the left and right blocks for contact and draft/date. */
+const SOURCE_LINE = /^(?:based\s+on|adapted\s+from|inspired\s+by)\b/i;
+const BYLINE = /(?:^|\s)by[.:]?$/i;
+
+/** Read Final Draft's positioned paragraphs. A Tir label wins only for its
+ * own field; other fields still come from the visible title-page layout. */
 function readTitlePage(page: Node | undefined, report: Report, revision: Revision): TitlePage {
   const fields = new Map<TitleField, string[]>();
-  const groups: string[][] = [];
+  const centered: { text: string; field: TitleField | undefined }[] = [];
   const contact: string[] = [];
   const date: string[] = [];
-  let group: string[] = [];
+  let firstGroupEnd = 0;
+  let passedFirstGroup = false;
   for (const paragraph of first(page, "Content")?.children ?? []) {
     if (paragraph.name !== "Paragraph") continue;
-    revision(paragraph.attrs.RevisionID, 0);
+    revision(paragraph.attrs.RevisionID, null);
+    const tagged: Partial<Record<TitleField, string>> = {};
+    let unlabelled = "";
+    let columnTab = -1;
     for (const child of paragraph.children) {
-      reportInline(child, 0, report, revision);
+      reportInline(child, null, report, revision);
       if (child.name !== "Text") continue;
       const field = TITLE_FIELDS.find((field) => field === child.attrs.TirTitleField);
-      if (!field) continue;
+      if (field) tagged[field] = (tagged[field] ?? "") + (child.text ?? "");
+      else {
+        if (child.text === "\t" && columnTab < 0) columnTab = unlabelled.length;
+        unlabelled += child.text ?? "";
+      }
+    }
+    for (const field of TITLE_FIELDS) {
+      const text = tagged[field];
+      if (text === undefined) continue;
       const lines = fields.get(field);
-      if (lines) lines.push(child.text ?? "");
-      else fields.set(field, [child.text ?? ""]);
+      if (lines) lines.push(text);
+      else fields.set(field, [text]);
     }
-    const text = paragraphText(paragraph).trim();
+
     const { Alignment } = paragraph.attrs;
-    if (text && (Alignment === "Center" || Alignment === undefined)) {
-      if (group.length === 0) groups.push(group);
-      group.push(text);
+    const text = unlabelled.trim();
+    const field = TITLE_FIELDS.find(
+      (field) => field !== "contact" && field !== "draftDate" && tagged[field] !== undefined,
+    );
+    if ((text || field) && (Alignment === "Center" || Alignment === undefined)) {
+      centered.push({ text, field });
+      if (!passedFirstGroup) firstGroupEnd++;
     } else {
-      group = [];
-      if (text) (Alignment === "Right" ? date : contact).push(text);
+      if (centered.length > 0) passedFirstGroup = true;
+      const tab = columnTab;
+      if (tab >= 0 && (tagged.contact !== undefined || tagged.draftDate !== undefined)) {
+        // Tir writes the two bottom columns on shared rows, separated by a tab.
+        const left = unlabelled.slice(0, tab).trim();
+        const right = unlabelled.slice(tab + 1).trim();
+        if (left) contact.push(left);
+        if (right) date.push(right);
+      } else if (text) {
+        (Alignment === "Right" ? date : contact).push(text);
+      }
     }
   }
 
-  // FDX itself has no field names. Tir's export labels its visible runs so
-  // an arbitrary credit or source is not mistaken for part of another field.
-  if (fields.size > 0) {
-    const value = (field: TitleField) => fields.get(field)?.join("\n") ?? "";
-    return {
-      title: value("title"),
-      credit: value("credit"),
-      authors: value("authors"),
-      source: value("source"),
-      contact: value("contact"),
-      draftDate: fields.has("draftDate")
-        ? value("draftDate")
-        : (page?.attrs.TirHiddenDraftDate ?? ""),
-      showDraftDate: fields.has("draftDate"),
-    };
-  }
-
-  const lines = groups.flat();
-  const creditAt = lines.findIndex((line, i) => i > 0 && /(?:^|\s)by$/i.test(line));
-  const titleEnd = creditAt < 0 ? (groups[0]?.length ?? 0) : creditAt;
-  const authorStart = titleEnd + (creditAt < 0 ? 0 : 1);
-  const sourceAt = lines.findIndex(
-    (line, i) => i >= authorStart && /^(?:based\s+on|adapted\s+from|inspired\s+by)\b/i.test(line),
+  const creditAt = centered.findIndex(
+    ({ text, field }, i) =>
+      field === "credit" || (i > 0 && !field && BYLINE.test(text) && !SOURCE_LINE.test(text)),
   );
+  const followingField = centered.findIndex(
+    ({ field }) => field === "authors" || field === "source",
+  );
+  const titleEnd = Math.min(
+    creditAt < 0 ? firstGroupEnd : creditAt,
+    followingField < 0 ? centered.length : followingField,
+  );
+  const sourceAt = centered.findIndex(
+    ({ text, field }, i) =>
+      i >= titleEnd && (field === "source" || (!field && SOURCE_LINE.test(text))),
+  );
+  const title: string[] = [];
+  const credit: string[] = [];
+  const authors: string[] = [];
+  const source: string[] = [];
+  centered.forEach(({ text, field }, i) => {
+    if (field) return;
+    if (
+      i === creditAt ||
+      (i >= titleEnd &&
+        (sourceAt < 0 || i < sourceAt) &&
+        BYLINE.test(text) &&
+        !SOURCE_LINE.test(text))
+    ) {
+      credit.push(text);
+    } else if (i < titleEnd) title.push(text);
+    else if (sourceAt >= 0 && i >= sourceAt) source.push(text);
+    else authors.push(text);
+  });
+  const value = (field: TitleField, fallback: string[]) =>
+    (fields.get(field) ?? fallback).join("\n");
+  const showDraftDate = fields.has("draftDate") || date.length > 0;
   return {
-    title: lines.slice(0, titleEnd).join("\n"),
-    credit: lines[creditAt] ?? "",
-    authors: lines.slice(authorStart, sourceAt < 0 ? undefined : sourceAt).join("\n"),
-    source: sourceAt < 0 ? "" : lines.slice(sourceAt).join("\n"),
-    contact: contact.join("\n"),
-    draftDate: date.join("\n"),
-    showDraftDate: date.length > 0,
+    title: value("title", title),
+    credit: value("credit", credit),
+    authors: value("authors", authors),
+    source: value("source", source),
+    contact: value("contact", contact),
+    draftDate: showDraftDate ? value("draftDate", date) : (page?.attrs.TirHiddenDraftDate ?? ""),
+    showDraftDate,
   };
 }
 
@@ -229,7 +276,12 @@ export function readFdx(source: string): ScriptRead {
   const content = first(root, "Content");
   if (!content) throw new Error("The Final Draft file has no screenplay content.");
   const leftOut: LeftOut[] = [];
-  const report: Report = (kind, text, at) => leftOut.push({ kind, text, at });
+  const report: Report = (kind, text, at) => {
+    if (leftOut.length === MAX_OMISSIONS) {
+      throw new Error("The Final Draft file contains too many omissions for the import report.");
+    }
+    leftOut.push({ kind, text, at });
+  };
   const revision = revisionReporter(root, report);
   const elements: Element[] = [];
   for (const paragraph of content.children) {
@@ -237,7 +289,7 @@ export function readFdx(source: string): ScriptRead {
     const breakBefore = paragraph.attrs.StartsNewPage === "Yes";
     if (dual) {
       if (dual !== paragraph) {
-        const at = elements.length;
+        const at = dual.children.length > 0 ? elements.length : null;
         revision(paragraph.attrs.RevisionID, at);
         for (const child of paragraph.children) reportInline(child, at, report, revision);
       }
@@ -264,13 +316,13 @@ export function readFdx(source: string): ScriptRead {
   }
   const titlePage = readTitlePage(first(root, "TitlePage"), report, revision);
   for (const deleted of first(root, "DeletedText")?.children ?? []) {
-    revision(deleted.attrs.RevisionID, 0);
+    revision(deleted.attrs.RevisionID, null);
   }
   for (const set of first(root, "Revisions")?.children ?? []) {
-    if (set.attrs.FullRevision === "Yes") revision(set.attrs.ID, 0);
+    if (set.attrs.FullRevision === "Yes") revision(set.attrs.ID, null);
   }
   for (const note of first(root, "UnanchoredScriptNotes")?.children ?? []) {
-    report("scriptNote", noteText(note), 0);
+    report("scriptNote", noteText(note), null);
   }
   return { script: { titlePage, elements }, leftOut };
 }

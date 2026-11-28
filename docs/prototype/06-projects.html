@@ -138,8 +138,10 @@ const S = {
   projects: [
     { title: 'Salt Line', draft: 'Rewrite, Nov 2026', pages: 5, drafts: 2, edited: '2 minutes ago', credit: 'Written by', author: 'Your Name', current: true },
     { title: 'The Lantern Keeper', draft: 'Second Draft', pages: 112, drafts: 3, edited: 'Yesterday', credit: 'Written by', author: 'Your Name' },
-    { title: 'Low Tide Motel', draft: 'First Draft', pages: 97, drafts: 1, edited: 'Oct 14, 2026', credit: 'Written by', author: 'Your Name' },
+    { title: 'Low Tide Motel', folder: 'Low Tide Motel', draft: 'First Draft', pages: 97, drafts: 1, edited: 'Oct 14, 2026', credit: 'Written by', author: 'Your Name' },
     { title: 'Ninety Miles of Snow', draft: 'Polish', pages: 104, drafts: 4, edited: 'Jun 2, 2026', credit: 'Screenplay by', author: 'Your Name', source: 'Based on the novel by\nMarit Solberg' },
+    // Two projects may share a name; their folders never do (task 7.3b).
+    { title: 'Low Tide Motel', folder: 'Low Tide Motel 2', draft: 'First Draft', pages: 95, drafts: 1, edited: 'Mar 8, 2026', credit: 'Written by', author: 'Your Name' },
   ],
 };
 
@@ -152,11 +154,14 @@ function thumb(p) {
   if (p.source) lines.push('', esc(p.source));
   return `<div class="thumb"><div class="sheet"><div class="tp-block">${lines.join('\n')}</div><div class="tp-contact">Your Name\nyou@example.com</div></div></div>`;
 }
+// A name another project shares is shown with the project's folder.
+const shared = (p) => S.projects.filter((q) => q.title === p.title).length > 1;
 const meta = (p) => [
   `<span>${svg('branch', 13)}${esc(p.draft)}</span>`,
   `<span>${p.pages} ${p.pages === 1 ? 'page' : 'pages'}</span>`,
   `<span>${p.drafts} ${p.drafts === 1 ? 'draft' : 'drafts'}</span>`,
   `<span>${svg('clock', 13)}${esc(p.edited)}</span>`,
+  shared(p) ? `<span>Folder “${esc(p.folder)}”</span>` : '',
 ].join('');
 function listHTML() {
   return `<div class="plist">${S.projects.map((p, i) => `<div class="prow">
@@ -208,7 +213,7 @@ function newDialog() {
     <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn primary" data-act="create">Create</button></div>`, '#np-title');
 }
 function importDialog() {
-  const opts = S.projects.map((p, i) => `<option value="${i}">${esc(p.title)}</option>`).join('');
+  const opts = S.projects.map((p, i) => `<option value="${i}">${esc(p.title)}${shared(p) ? ` (folder “${esc(p.folder)}”)` : ''}</option>`).join('');
   dialog(`<h2 id="dlg-title">Import a script</h2>
     <div class="file">${svg('page', 18)}<div>harbor-lights.fdx<small>Final Draft file · ~/Downloads · exported from Story Architect</small></div></div>
     <div class="choice" role="radiogroup" aria-label="Where it goes">
@@ -230,10 +235,11 @@ function reportDialog(dest) {
       <ul class="left-out"><li>3 script notes (on pages 12, 40 and 87)</li><li>Revision colours on 8 pages; the text itself came through</li></ul></span></div>
     <div class="actions"><button class="btn quiet" data-act="close">Done</button><button class="btn primary" data-act="openimported">Open it</button></div>`);
 }
+// Composition example for a fully backed-up project; see the brief for other states.
 function deleteDialog(i) {
   const p = S.projects[i];
   dialog(`<h2 id="dlg-title">Delete “${esc(p.title)}”?</h2>
-    <p>Its ${p.drafts} ${p.drafts === 1 ? 'draft' : 'drafts'} will be removed from this machine. GitHub keeps the backup history, so it can still be recovered from there.</p>
+    <p>${shared(p) ? `This is the “${esc(p.title)}” in the folder “${esc(p.folder)}”. ` : ''}Its ${p.drafts} ${p.drafts === 1 ? 'draft' : 'drafts'} will be removed from this machine. GitHub keeps the backup history, so it can still be recovered from there.</p>
     <div class="actions"><button class="btn quiet" data-act="close">Cancel</button><button class="btn danger" data-act="dodelete" data-i="${i}">Delete project</button></div>`);
 }
 function renameDialog(i) {

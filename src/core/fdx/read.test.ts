@@ -100,14 +100,65 @@ describe("Final Draft import", () => {
     });
   });
 
+  it("recovers external title fields without overriding labels or reading the byline as an author", () => {
+    const source = script(
+      "",
+      `<TitlePage TirHiddenDraftDate="Old date"><Content>
+        <Paragraph Alignment="Center"><Text>Old title</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text TirTitleField="title">The Glass Tide</Text></Paragraph>
+        <Paragraph/>
+        <Paragraph Alignment="Center"><Text>Written by</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text>Old author</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text TirTitleField="authors">Ren Moss</Text></Paragraph>
+        <Paragraph/>
+        <Paragraph Alignment="Center"><Text>Based on a novel by</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text>Jo Vale</Text></Paragraph>
+        <Paragraph Alignment="Left"><Text>Old contact</Text></Paragraph>
+        <Paragraph Alignment="Left">
+          <Text TirTitleField="contact">scripts@example.test</Text><Text>&#9;</Text><Text>New date</Text>
+        </Paragraph>
+      </Content></TitlePage>`,
+    );
+    expect(readFdx(source).script.titlePage).toEqual({
+      title: "The Glass Tide",
+      credit: "Written by",
+      authors: "Ren Moss",
+      source: "Based on a novel by\nJo Vale",
+      contact: "scripts@example.test",
+      draftDate: "New date",
+      showDraftDate: true,
+    });
+  });
+
+  it("uses a labelled credit as a boundary even when changes leave no blank rows", () => {
+    const source = script(
+      "",
+      `<TitlePage TirHiddenDraftDate="Private date"><Content>
+        <Paragraph Alignment="Center"><Text>Neap</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text TirTitleField="credit">A screenplay</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text>Jo Vale</Text></Paragraph>
+        <Paragraph Alignment="Full"><Text>scripts@example.test</Text></Paragraph>
+      </Content></TitlePage>`,
+    );
+    expect(readFdx(source).script.titlePage).toEqual({
+      title: "Neap",
+      credit: "A screenplay",
+      authors: "Jo Vale",
+      source: "",
+      contact: "scripts@example.test",
+      draftDate: "Private date",
+      showDraftDate: false,
+    });
+  });
+
   it("reports lost metadata without reporting unused revision sets or dropping revised text", () => {
     expect(readFdx(finalDraft).leftOut).toEqual([
       { kind: "sceneNumber", text: "7A", at: 0 },
       { kind: "revision", text: "Pink", at: 1 },
       { kind: "scriptNote", text: "Check the tide.\nAsk Jo.", at: 1 },
       { kind: "elementType", text: "Outline 1", at: 10 },
-      { kind: "revision", text: "Revision 3", at: 0 },
-      { kind: "scriptNote", text: "Read aloud.", at: 0 },
+      { kind: "revision", text: "Revision 3", at: null },
+      { kind: "scriptNote", text: "Read aloud.", at: null },
     ]);
   });
 
@@ -135,8 +186,8 @@ describe("Final Draft import", () => {
     expect(readFdx(source).leftOut).toEqual([
       { kind: "revision", text: "Blue", at: 1 },
       { kind: "scriptNote", text: "Read this together.", at: 1 },
-      { kind: "revision", text: "Pink", at: 0 },
-      { kind: "revision", text: "Yellow", at: 0 },
+      { kind: "revision", text: "Pink", at: null },
+      { kind: "revision", text: "Yellow", at: null },
     ]);
   });
 
@@ -190,5 +241,13 @@ describe("Final Draft import", () => {
     expect(() => readFdx(script(`${"<Ignored>".repeat(70)}${"</Ignored>".repeat(70)}`))).toThrow(
       /nested/,
     );
+  });
+
+  it("refuses compact files that expand into too many script elements or report rows", () => {
+    expect(() => readFdx(script('<Paragraph Type="Action"/>'.repeat(50_001)))).toThrow(
+      /too many screenplay records/,
+    );
+    const notes = `<UnanchoredScriptNotes>${"<ScriptNote/>".repeat(5_001)}</UnanchoredScriptNotes>`;
+    expect(() => readFdx(script("", notes))).toThrow(/too many omissions/);
   });
 });

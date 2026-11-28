@@ -1,7 +1,8 @@
 /**
  * Automatic saving (brief, "Saving and backup"; architecture, "Saving and
  * opening"). The script on screen is saved to its draft in the library a
- * moment after typing pauses, and at once before another script takes its
+ * moment after typing pauses, or a few seconds after a change when typing
+ * goes on without that pause, and at once before another script takes its
  * place or the window closes (`settle`). Each save writes the draft file
  * and its Fountain copy, made off the interface thread. A script not in
  * the library yet, such as the empty script of an empty library, becomes a
@@ -18,8 +19,25 @@ import type { Project } from "./library.ts";
 
 /** The pause in typing after which the script is saved. */
 export const SAVE_DELAY_MS = 1000;
+/**
+ * The longest a change waits for that pause: typing that never pauses is
+ * saved this long after the first change no save has taken, so a crash
+ * loses at most this, and the time a save takes, of writing.
+ */
+export const SAVE_WITHIN_MS = 3000;
 /** How long after a failed save the next try comes, unless typing brings it sooner. */
 export const RETRY_MS = 5000;
+
+/**
+ * Refused because the draft has changed on disk since Tir read or wrote
+ * it, as a `git pull` changes it: no later save of the script on screen
+ * can fix that. `SaveSide.write` rejects with it.
+ */
+export class DraftChanged extends Error {}
+
+/** What the writer can do with the script on screen once its draft has changed on disk. */
+const KEEP_WHAT_IS_ON_SCREEN =
+  "Saving again cannot fix this. To keep what is on screen, first choose Export Fountain… in the draft menu. Then close Tir without saving and open it again to see the draft as it is now; Import… on the Projects screen can add the exported script to the project as a new draft.";
 
 /**
  * Saved: the draft holds what is on screen. Saving: it does not yet, and a
@@ -37,7 +55,7 @@ export interface Place {
 export interface SaveSide {
   /** The texts a save writes for `script`. */
   texts(script: Script): Promise<DraftTexts>;
-  /** Writes `texts` to the draft at `place`. */
+  /** Writes `texts` to the draft at `place`; rejects with `DraftChanged` when the draft changed on disk. */
   write(place: Place, texts: DraftTexts): Promise<void>;
   /** Makes a project holding `texts`, for a script not in the library yet; its draft's place. */
   create(script: Script, texts: DraftTexts): Promise<Place>;
@@ -49,9 +67,9 @@ export interface SaveListener {
   state(state: SaveState, problem: string | null): void;
   /**
    * A save no caller waited for failed, the first since one succeeded: the
-   * writer should hear of it once.
+   * writer should hear `message`, why and what comes next, once.
    */
-  failed(problem: string): void;
+  failed(message: string): void;
   /** The script on screen was put in the library at `place`, a new project. */
   placed(place: Place): void;
 }
@@ -73,7 +91,11 @@ export class Saver {
   /** Whether the writer has heard of the failures since the last save that succeeded. */
   private told = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** When the first change no save has taken yet was made (`performance.now()`); null with none. */
+  private unsavedSince: number | null = null;
   private running: Promise<boolean> | null = null;
+  /** Whether a save the timer started waits for the one under way. */
+  private queued = false;
 
   /** Call `show` first: the editor is made with the saver's plugin, before there is a document. */
   constructor(side: SaveSide, listener: SaveListener) {
@@ -104,6 +126,7 @@ export class Saver {
   show(place: Place | null, titlePage: TitlePage, doc: Node): void {
     clearTimeout(this.timer);
     this.timer = undefined;
+    this.unsavedSince = null;
     this.shown++;
     this.place = place;
     this.titlePage = this.savedTitlePage = titlePage;
@@ -137,7 +160,9 @@ export class Saver {
 
   private schedule(): void {
     if (this.state === "saved") this.setState("saving");
-    this.wait(SAVE_DELAY_MS);
+    const now = performance.now();
+    this.unsavedSince ??= now;
+    this.wait(Math.min(SAVE_DELAY_MS, this.unsavedSince + SAVE_WITHIN_MS - now));
   }
 
   /**
@@ -161,15 +186,29 @@ export class Saver {
 
   private wait(ms: number): void {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      void this.saveWhenFree();
-    }, ms);
+    this.timer = setTimeout(
+      () => {
+        this.timer = undefined;
+        void this.saveWhenFree();
+      },
+      Math.max(0, ms),
+    );
   }
 
-  /** Saves once the save under way has finished, if anything is left to save. */
+  /**
+   * Saves once the save under way has finished, if anything is left to
+   * save. One waits at a time: typing past `SAVE_WITHIN_MS` during a long
+   * save would otherwise queue a save a key, where one, starting after it,
+   * takes everything typed.
+   */
   private async saveWhenFree(): Promise<void> {
-    while (this.running) await this.running;
+    if (this.queued) return;
+    this.queued = true;
+    try {
+      while (this.running) await this.running;
+    } finally {
+      this.queued = false;
+    }
     if (this.isSaved()) this.markSaved();
     else await this.save(true);
   }
@@ -188,6 +227,7 @@ export class Saver {
     const doc = this.doc;
     const place = this.place;
     const script = this.snapshot();
+    this.unsavedSince = null;
     try {
       const texts = await this.side.texts(script);
       if (place) {
@@ -207,13 +247,20 @@ export class Saver {
       return true;
     } catch (error) {
       if (shown !== this.shown) return false;
-      const problem = error instanceof Error ? error.message : String(error);
+      const why = error instanceof Error ? error.message : String(error);
       // The Rust side's messages for system errors end without a full stop.
-      this.problem = /[.!?]$/.test(problem) ? problem : `${problem}.`;
+      const problem = /[.!?]$/.test(why) ? why : `${why}.`;
+      const changed = error instanceof DraftChanged;
+      this.problem = changed ? `${problem} ${KEEP_WHAT_IS_ON_SCREEN}` : problem;
       this.setState("failed");
-      if (unwaited && !this.told) this.listener.failed(this.problem);
+      if (unwaited && !this.told) {
+        this.listener.failed(
+          changed ? this.problem : `${this.problem} Tir tries again in a moment.`,
+        );
+      }
       this.told = true;
-      // Typing brings the next try sooner.
+      // Typing brings the next try sooner. A changed draft is tried too,
+      // in case it is put back as Tir last saw it.
       if (!this.timer) this.wait(RETRY_MS);
       return false;
     }
@@ -233,6 +280,7 @@ export class Saver {
   }
 
   private markSaved(): void {
+    this.unsavedSince = null;
     this.problem = null;
     this.told = false;
     this.setState("saved");

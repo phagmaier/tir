@@ -12,13 +12,12 @@ change to the rule.
 The user delegated these technical choices during planning.
 
 1. **One layout engine decides every line break and page break.** The
-   editor, the PDF, page counts and the sidebar's page numbers all use its
-   output. The browser never wraps script text: the editor shows the
-   engine's breaks. This is what keeps the screen, the PDF and Final Draft
-   in agreement.
-2. **The script model is the source of truth.** Tir's draft file, Fountain,
-   FDX and PDF are each produced from it or read into it by pure functions
-   with round-trip tests.
+   editor, PDF, page counts and sidebar use its output; the browser
+   never wraps script text. This is a Tir invariant, not evidence of
+   [Final Draft page parity](brief.md#page-parity).
+2. **The script model is the source of truth.** The `.tir` draft is the
+   authoritative on-disk representation. Fountain, FDX and PDF are
+   interchange or presentation formats, not alternative drafts.
 3. **A pure core with a thin shell.** The model, layout engine, file
    formats and checks are plain TypeScript with no DOM, ProseMirror or
    Tauri imports, so they test quickly in Node. The interface is
@@ -43,7 +42,7 @@ The user delegated these technical choices during planning.
 | `src-tauri/` | Tauri and its capabilities; Rust owns settings, library access, backup with git, native dialogs, and window closing |
 | `tools/` | Final Draft PDF parity and native editor placement and timing checks |
 | `docs/`, `docs/prototype/` | Product decisions, architecture, findings, active plan, and approved visual references |
-| `flake.nix`, `mise.toml` | System libraries, pinned runtimes, and development tasks |
+| `flake.nix`, `mise.toml` | Nix release, system libraries, pinned runtimes and development tasks |
 
 Tests sit beside the code they test as `*.test.ts`.
 
@@ -122,15 +121,15 @@ library or ambient types, so `document`, `window` or `process` fail.
   [Backup](#backup), "Paused"). The Rust side refuses any name that is not one entry of its
   folder or that starts with a dot, and any link where it expects a
   project or `drafts` folder, a project file or a draft, or a link or
-  folder where a copy goes, so nothing it reads, writes, moves or deletes
-  lies outside the library. It never makes a folder or draft over an
-  entry already there: it claims the name first (a new folder, or a new
-  empty file, and the copy's name must be free). Deletion requires a
-  `project.json` file, even if unreadable, so damaged projects can be
-  removed. Use a dedicated library folder: see the
-  [foreign `project.json` caveat](plan.md#known-gaps). Each change to a
-  project carries `was`, the project file's text
-  the page made it from, and is refused when the file now differs, so a
+  folder where a copy goes. These checks assume nobody else is changing
+  the library's directory entries while Tir is using them. It never makes
+  a folder or draft over an existing entry: it claims the name first
+  (a new folder, or a new empty file, and the copy's name must be free).
+  Project deletion requires a `project.json` file and refuses an explicit
+  foreign format, but permits deletion when the file is damaged. Use a
+  dedicated folder: see the [foreign project caveat](plan.md#known-gaps).
+  A change to a project that depends on its manifest sends `was`, the text
+  the page used, and is refused when the file now differs, so a
   change made from an older reading never undoes a newer one; the
   commands run one at a time, and Tir does not exit while one runs
   (`finish_commands`).
@@ -140,11 +139,10 @@ library or ambient types, so `document`, `window` or `process` fail.
   a project that fails to be made is removed whole; a new draft and its
   copy are written before the project names it, both removed if either
   fails, and kept if naming it fails; a save writes the draft, then its
-  copy, so
-  the copy is never newer than the draft; a renamed draft is copied to
-  its new file with its last-save time before the project names that.
-  Renaming or deleting a draft publishes the project file first, then
-  cleans up the old files once the new project file is durable. Cleanup
+  copy, so the copy is never newer than the draft. A renamed draft and its
+  Fountain copy, if present, are copied to the new names and synced before
+  the project names the new draft. Renaming or deleting a draft cleans up
+  the old files only once the new project file is durable. Cleanup
   failures cannot undo a published change: the saver must use the new place.
   A project folder is renamed over an empty folder claimed first, and a
   deleted project is first moved to a hidden `.deleting.<pid>-<n>.tmp`
@@ -221,9 +219,9 @@ diff of a draft reads like the script:
 
 `src-tauri/src/files.rs` replaces a file so that it is always whole, old or
 new: the bytes go to a temporary file beside it, `NAME.<pid>-<n>.tmp`
-created new (the first `n` with no file of that name), which is synced
-and renamed over the file, and then the directory is synced so that the
-rename reaches the disk. Existing files at candidate temporary names
+created new and owner-only (the first `n` with no file of that name).
+Tir syncs it, renames it over the file, then syncs the directory so the
+rename reaches disk. Existing files at candidate temporary names
 are never opened, replaced or removed. A failed write removes its own
 temporary file; a crash can leave it behind without a later save
 reusing it. Settings and library files use this replacement path.
@@ -235,12 +233,11 @@ replacement characters, when it is not.
 
 ## File access
 
-The page's capability (`src-tauri/capabilities/default.json`) grants two
-of Tauri's core commands and nothing more: `core:event:allow-listen`, for
-`tir://close`, and `core:webview:allow-internal-toggle-devtools`, which
-only a debug build's Ctrl+Shift+I uses. The commands Tir defines need no
-permission. No file system plugin is registered, the asset protocol is
-off, and none of the dialog plugin's commands is granted. User data
+The explicitly selected local `main` window capability
+(`src-tauri/capabilities/default.json`) grants only `core:event:allow-listen`
+for `tir://close` and `tir://backup`. Tir's own commands are available to
+the bundled page. No file system plugin is registered, the asset protocol
+is off, and none of the dialog plugin's commands is granted. User data
 goes through Tir's Rust commands: the settings file (`read_settings`,
 `write_settings`); the library, by the names `library.rs` checks
 ([Library on disk](#library-on-disk)); and paths picked through native
@@ -253,57 +250,44 @@ it tells the page the library's place only to show it (`library_place`,
 page move the library: `write_settings` refuses settings that name a
 library other than the one the file named when Tir started.
 
+The release CSP denies by default, permits bundled scripts, styles, fonts
+and workers, and permits connections only to the app's origin and Tauri
+IPC. Only individual style attributes may be inline, for the editor's
+engine-computed positions; no inline script or eval is allowed. Vite's
+development policy is separate. The release does not build Tauri's
+devtools feature, and the installed wrapper removes WebKitGTK's remote
+inspector environment variables. The development inspector remains
+available through the explicit environment in [Measuring the editor](#measuring-the-editor).
+
 ## Saving and opening
 
-The script on screen is saved to its draft automatically (brief, "Saving
-and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
-(`savingPlugin`) tells of changes to the editor document and
-`title-page.ts` tells of changes to the title page:
+`src/ui/saving.ts` owns the [save flow](brief.md#saving-and-backup) for
+both the editor document and title page:
 
-- **When.** A second after the last change (`SAVE_DELAY_MS`), and at once
-  through `settle`, which waits for the save under way, then saves until
-  the draft holds what is on screen: before another script takes the
-  screen, on Ctrl+S and before the window closes. Saves go one at a time,
-  each writing the script as it is when it starts. The script is saved
-  when both its editor document (`Node.eq`) and its title page equal
-  those last written, so reverting a change before saving writes
-  nothing. After a failed save it counts as not saved until one
-  succeeds, since the draft may hold a newer text than its copy.
-- **Off the interface thread.** A save takes the model from the document
-  on the interface thread (`fromDocument`, which reuses unchanged
-  elements), then `draft-texts.worker.ts` writes the draft and its
-  Fountain copy (`DraftTexts`) in a Web Worker, since `writeFountain`
-  takes a fifth of a second on a long script; the Rust side writes both
-  files on its own thread (findings, "Editor"). Should the worker fail,
-  the texts are made on the interface thread instead.
-- **Where.** A script in the library is saved to its draft
-  (`write_draft`); one not there yet, such as the empty script of an empty
-  library or a test script, becomes a project at its first save, named
-  from its title page's title or "Untitled", with one draft, "First
-  Draft". The settings file then names it as the project last shown.
-- **Failures.** The top bar shows "Saved", "Saving…" from the first change
-  until the draft holds it, and "Not saved" when a save failed
-  (`status-indicator.ts`, which shows backup beside it). A save that fails is tried again after the next
-  pause in typing, or after five seconds; the writer hears of it once, in
-  a message box, until a save succeeds. A caller of `settle` tells the
-  writer itself, or asks it to tell as a save after a pause does
-  (`settle(true)`, the Projects screen's).
-- **Closing.** Once the page can save, it calls `hold_close`, and the Rust
-  side (`closing.rs`) then holds each request to close the window and
-  passes it to the page as `tir://close`. The page waits for any draft
-  action to finish so it settles the correct draft, stops typing (the
-  editor is made read-only), settles, waits for the Projects screen's
-  action under way and the settings file's writes, and calls
-  `close_window`. When a save fails it asks, in a
-  message box, whether to close without it; Cancel makes the editor
-  editable again and holds closing again. A page that does not answer
-  cannot keep the window open: a request to close five seconds or more
-  after the first one held closes it (the user's choice, 2026-11-27,
-  over a window only killing Tir closes). Tir exits only once the library's
-  command under way has finished (`finish_commands`). Tauri's own
-  close-requested event was not used: its listener outlives a page load,
-  and closing from the page needs `core:window:allow-destroy`, which the
-  capability does not grant (findings, "Desktop stack").
+- **Save the right snapshot.** One save runs at a time. `settle` waits
+  for it and saves until the draft and copy hold the current script.
+  Returning to the already saved state needs no write, except after a
+  failure: the draft may be newer than the copy.
+- **Bound the loss.** A change waits for a one-second pause, but no more
+  than `SAVE_WITHIN_MS` (3 s) after the first change no save has taken.
+  Only one timer-started save waits behind a save under way, so a slow
+  save does not queue one save per key. See the [abrupt-exit measurement](findings.md#typing-baseline).
+- **Say what a conflict needs.** `write_draft` reports `changed` when the
+  draft has changed since Tir saw it (`library::changed`), and
+  `saveDraft` rejects with `DraftChanged`. The saver's message then tells
+  how to keep the script on screen and promises no retry. Other failures
+  say Tir tries again.
+- **Keep serialization off the interface thread.** The page extracts
+  the model with unchanged elements reused; `draft-texts.worker.ts`
+  writes both texts, falling back to the interface thread if needed.
+  Rust publishes both files. See the [timings](findings.md#typing-baseline).
+- **Keep close ordering.** `closing.rs` holds the window for the page to
+  stop edits, settle the right draft and finish project/settings actions.
+  Cancel leaves the editor usable after a save error; a deliberate
+  second close after five seconds can still discard unsaved edits.
+  Rust finishes any library command already under way before backup and
+  exit. Tauri's built-in listener outlives a page load and its `destroy`
+  needs a capability Tir does not grant ([Desktop stack](findings.md#desktop-stack)).
 
 What Tir opens is `src/ui/opening.ts`'s. At launch (`openAtLaunch`) it is
 the active draft of the project the settings file's `project` names, else
@@ -326,6 +310,9 @@ is current. Each row's pages are counted by reading and paginating the
 project's active draft on the interface thread, one project at a time
 after the list shows, and kept until the draft's file time changes
 (`PageCounter`); its last edit is the newest of its drafts' file times.
+A project whose name another row shares shows its folder (`Row.showFolder`),
+which no two share, in its row and Delete confirmation; Import's list of
+projects does the same among its choices (`repeated`).
 
 What the screen does is `projects.ts`'s `Projects`, one action at a time.
 Opening or making a project first settles the saver (`false` keeps the
@@ -405,18 +392,13 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   and `SSH_ASKPASS` too; findings, "Git"), `SSH_ASKPASS_REQUIRE=never`
   and `GCM_INTERACTIVE=never` keep any program from opening a window for
   a login.
-- **Paused.** When GitHub refuses a push because it has commits this
-  branch lacks, or a check finds them, backup is `paused`: it keeps
-  recording here and pushes nothing until Resume (`resume_backup`), which
-  checks again. Tir never merges, rebases, resets or forces. The writer
-  brings the other machine's work in with Tir closed, by running the
-  panel's `git pull` command in the library: it names the current branch
-  on `origin` and specifies a merge, so it works without an upstream and
-  when each machine has made commits. Should they pull with Tir
-  open, a save refuses to write over a draft that has changed on disk
-  since Tir read it to show or last wrote it (`Library::holds`, by each
-  draft's fingerprint; `read_draft`'s `shown` marks the reads that count),
-  and says to close Tir and open it again.
+- **Paused.** Tir keeps committing locally and pushes nothing until
+  Resume rechecks the remote. Use the [close–pull–reopen handoff](brief.md#saving-and-backup):
+  the panel's pull command names the current branch on `origin` and
+  specifies a merge, so it works without an upstream. Tir itself never
+  merges, rebases, resets or forces. `Library::holds` checks the draft
+  fingerprint from the last opening read or write. It detects stale
+  saves, but is not a lock against a concurrent external write.
 - **The repository.** A library with no `.git` is made a repository on
   the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`,
   written first, unless one is there; a repository the writer made gets
@@ -470,16 +452,11 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   does backup's thread set `origin` (`git::connect`, which drops Tir's
   tracking refs for the repository it replaces), record and sync, so no
   push to the old repository is under way while it changes.
-- **The page.** `status-indicator.ts` shows the saved state and backup's
-  beside it, in words and icons from `backup.ts` (prototype piece 5), and
-  in the writing window opens `backup-panel.ts`'s panel: its state, the
-  repository, the library's place, and Back up now (`back_up_now`),
-  Resume backup (`resume_backup`) or Connect / Change repository…, which
-  opens the connect dialog. Back up now and Resume flush the editor's save
-  first and wait for the sync. Saved but uncommitted changes are shown as
-  waiting, separately from commits that have not reached GitHub. Deletion
-  warnings compare the path against the last-known remote tip and say when
-  Tir could not verify it (`backup_of`, `git::Coverage`).
+- **The page.** [Saving and backup](brief.md#saving-and-backup) defines
+  the states. Back up now and Resume settle the draft before asking Rust
+  to sync. Pending local changes and unpushed commits are separate.
+  Deletion warnings compare the path with the last-known remote tip;
+  they distinguish an unverified backup from no backup found.
 - **In a sandbox** (`TIR_CONFIG_DIR` set; tests use the same), git reads
   only `$TIR_CONFIG_DIR/gitconfig` (`GIT_CONFIG_GLOBAL`, with
   `GIT_CONFIG_NOSYSTEM`, `XDG_CONFIG_HOME` set to `$TIR_CONFIG_DIR`, and
@@ -540,10 +517,10 @@ and trial runs use for a temporary directory.
   start Tir makes the directory and locks it (`flock`, let go when the
   process ends, however it ends), then makes its window
   (`"create": false` in `tauri.conf.json`). A second Tir finding the lock
-  taken makes no window, says "Tir is already open" and exits, so two
-  windows never save over each other's drafts (brief, "Saving and
-  backup"). A trial run with its own `TIR_CONFIG_DIR` runs beside. When
-  the lock cannot be taken for another reason, Tir runs without it.
+  taken opens no writing window, says "Tir is already open" and exits.
+  A trial run with its own `TIR_CONFIG_DIR` and library can run beside.
+  If the lock cannot be taken for another reason, Tir reports the error
+  and exits without opening the library for writing or backup.
 
 ## Fountain
 
@@ -568,11 +545,11 @@ listed at the top of `write.ts`.
 ## Final Draft files
 
 The Projects screen uses the same native picker and copy flow for `.fdx`
-and `.fountain`. The shell reads FDX as UTF-8 or BOM-marked UTF-16, at most
-8 MiB, before sending the decoded text to the page. `src/core/fdx/read.ts`
-uses Saxes to validate XML without a DOM or a file or network resolver. It
-rejects DOCTYPE declarations and nesting beyond 64 levels and keeps only
-the branches needed for the script and import report.
+and `.fountain`. Both are limited to 8 MiB. Fountain must be UTF-8; the
+shell also accepts BOM-marked UTF-16 for FDX. `src/core/fdx/read.ts`
+uses Saxes to validate XML without a DOM or a file or network resolver.
+It rejects DOCTYPE declarations and limits nesting to 64 levels, retained
+records to 50,000 and import-report rows to 5,000.
 
 The reader puts typed paragraphs and emphasis into the model and uses
 the title page's alignment and conventional byline/source wording for
@@ -580,6 +557,11 @@ its fixed fields. It reports notes, explicit scene numbers and revision
 sets used on the draft, not the unused defaults. Unknown paragraph types
 are reported; their text becomes Action. Document-level layout settings
 do not override Tir's layout engine.
+
+Tir's title-page labels win for their own fields; unlabelled fields are
+still read from the visible layout. The import report resolves an omitted
+item's body-element anchor to its first script page, without giving
+unanchored metadata a script-page number.
 
 Export Final Draft… in the draft menu serializes the draft on screen with
 `src/core/fdx/write.ts` and opens the native Save dialog via `export_fdx`.
@@ -628,149 +610,50 @@ extension and the atomic write's temporary suffix.
 
 ## The editor
 
-One ProseMirror view edits the whole draft; findings ("Editor") records the
-technique and what it costs in WebKitGTK. Three constraints follow from
-it: the document scrolls (no overflow scroll container around the script),
-the page has no touch or wheel listeners, and the editor's focus ring stays
-off. Each of the three added work over the whole script to every keystroke.
+One ProseMirror view edits the whole draft. The approved
+[writing window](prototype/05-writing-window.html) supplies the
+composition, with focused visual references for [Go to page](prototype/07-go-to-page.html?open=1)
+and [sidebar collapse](prototype/08-sidebar-collapse.html?v=A).
+The [brief](brief.md) governs behaviour.
 
-The window is prototype piece 5's Desk. The top bar and sidebar are fixed
-over the scrolling document, and the editor's scroll threshold keeps the
-caret clear of them. Under the editor, `sheets.ts` draws each page's paper
-and what it prints that no element holds (its number, (MORE), repeated
-cues, the automatic (CONT'D)), from the engine's lines and outside the
-editable element, redrawing a sheet only when its marks change. In dual
-dialogue each column's paragraphs keep to their half of the page, divided
-halfway across the gutter, and the shorter column's last paragraph reaches
-down to the longer one's end, so a click lands in the column it is in.
-
-Each element's paragraph gets its space above and indent from the
-projection as a style. After ProseMirror draws a change, the editor checks
-every paragraph's style against its element's, since ProseMirror may draw
-an element in the paragraph that showed an equal element elsewhere
-(findings, "Editor"). Where an element splits across pages, the page's gap
-is a block inside the paragraph, after the last character on the page; the
-projection hides the white space the engine drops there, except its last
-typed line break, and Up and Down across that gap are Tir's own
-(`crossPageGap`), since WebKit's lose the column there.
-
-The keys and the top bar's buttons run ProseMirror commands from
-`commands.ts`, so a key's whole effect is a change to the document and
-tests check it in the model without a browser. The model keeps text as
-typed: a paragraph whose element calls for capitals shows them with CSS,
-and the projection exempts each character whose capital is longer ("ß"),
-as the engine does, so the screen never shows a line longer than the
-engine's.
-
-Autocomplete (`autocomplete.ts`) is a plugin placed before the screenplay's
-keys, so its Enter, Tab, arrows and Esc win while its popup is open and
-pass through when it is closed. It keeps a tally of every suggestion's uses
-(`src/core/suggestions.ts`) that follows each edit by the elements the edit
-changed, as the projection does, so a keystroke never reads the whole
-script. The popup and its ghost text are drawn in the script's container
-beside the editable element, at the caret's coordinates, so they move no
-line and WebKit's editing never sees them.
-
-Undo (`undo.ts`) is ProseMirror's history. Commands mark where a step
-starts (`newStep`: Enter, Tab starting an element) or a change that is a
-step of its own (`ownStep`); an unmarked transaction is typing, which the
-history groups by time and place. Copy, cut and paste (`clipboard.ts`)
-replace ProseMirror's own handling, whose HTML keeps no element type
-(findings, "Editor"). A copy puts the selection on the clipboard as
-Fountain text for other applications and as a clipping
-(`src/core/clipping.ts`) under Tir's type, `application/x-tir-clipping`,
-which WebKitGTK keeps in a clipboard entry of its own that other
-applications are not offered. Tests drive the editor's state and key
-plugins without a browser through `editor-harness.ts`, which keeps
-`editor.ts`'s plugin order.
-
-Find (`find.ts`) is a state plugin holding the query, its matches and
-their highlights; the matching is the core's (`src/core/find.ts`), on the
-text as the page shows it. The current match is the selection when it
-covers a match exactly, so Next, Previous and Replace move the selection,
-and the page position and scene list follow. A new query builds the
-highlight set once; an edit maps it and searches again only the elements
-`changedElements` (`projection.ts`) reports, the same ones the projection
-patches (findings, "Editor"). After a transaction of more than
-`MANY_STEPS` steps, such as Replace all's one step per match, find and the
-projection make their sets afresh instead of mapping them. A replacement
-names itself in `uiEvent`, as paste does, so autocomplete opens no popup.
-The find bar (`find-bar.ts`) is a view plugin drawn in the top bar, so it
-hides with it; it waits for a pause in typing before searching, holds Esc
-in a window listener while open, ahead of desk's, and changes nothing
-while the editor is not editable, as while Tir closes.
-
-Formatting check runs the core's six rules on the active draft after a
-pause in editing, or immediately if F8 or the count button asks for the
-next finding, leaving out an empty element the writer has just typed in
-while the caret stays there. The view draws marks as siblings of the
-editable root, on the first rows from `ScriptMap`; the right column of
-dual dialogue uses the gutter to keep simultaneous marks apart. Their
-explanations keep the interface's size at any zoom (`--desk-zoom`).
-Findings never enter the document model, clipboard or exports.
-
-Spell check (`spelling.ts`) is a state plugin holding the squiggles, as
-decorations, and the spelling menu, placed after autocomplete and before
-the screenplay's keys so the menu's keys win while it is open. The core's
-checker (`src/core/spelling.ts`) reads the Hunspell dictionary in
-`src/ui/dictionary/` (findings, "Spell check"); it lives in a worker
-(`spelling.worker.ts`, through `spell-checker.ts`, which reads it on the
-interface thread should no worker run), since reading it and some
-suggestions take a tenth of a second. A view plugin from `main.ts` sends
-the worker, after a pause in typing, each element it has not checked,
-keyed by its node, which any change replaces, then draws the squiggles
-from the answers, leaving out the words of the script's character names
-and locations (autocomplete's tally) and of the writer's dictionary,
-which the page folds and matches itself, so a new name redraws without
-asking the worker. Between checks an edit maps the squiggles and drops
-each whose word it changed or split, reading only where it changed the
-script (`changedRange`). F7 first sends any check waiting for a pause and
-waits for the answers, so it finds the word just typed. The menu sits in
-the script's frame, as the autocomplete popup does; a spelling replaces
-the word as an `ownStep` named in `uiEvent`. Squiggles and menu never
-enter the document model, clipboard or exports.
-
-The sidebar's scene list and the top bar's page position are view plugins
-that `mountEditor` hands the projection, so they read its `ScriptMap`
-(`src/core/script-map.ts`: each scene's heading and starting page, the
-page of any place, each page's first line) as the engine computed it for
-the edit. The page indicator follows the caret on editor updates; on
-vertical scroll it uses the script's viewport position and scaled page
-pitch, not a scan of the sheets. An editor update takes precedence over
-scroll in the same frame. Both plugins touch the interface only when what
-they show changes; the scene list applies an edit's changes just after
-the edit's frame is drawn (findings, "Editor").
-The list scrolls on its own inside the fixed sidebar. A jump, from a scene
-or Go to page, sets the caret and scrolls to the engine's page and row,
-scaled by the zoom.
-
-The zoom scales the script, sheets included, with a CSS transform from its
-top left corner (none at 100%), so WebKit lays the script out as at 100%
-and every line stays where the engine puts it at any scale; the editor
-sizes a frame around it to the scaled size, keeping the page centred and
-the document's height right (findings, "Editor", for why not CSS `zoom`).
-The autocomplete ghost is inside the script and scales with it; the popup
-sits in the frame and keeps the interface's size. `desk.ts` applies the
-other settings as classes on the body (focus mode, the sidebar collapsed)
-and the paper as `data-theme`, and tells the editor what the bars cover
-(`setCovered`) for its scroll threshold. Its keys are caught on the way
-down to the focused element, before the editor sees them, because
-ProseMirror prevents the default of every Esc in the editor; Esc yields to
-the autocomplete popup and to fields such as Go to page's, which close
-first, before it leaves focus mode.
-
-Opening a script gives the view a new `EditorState` (`scriptState` and
-`Editor.open` in `editor.ts`), so undo starts afresh and autocomplete
-counts the new script. It focuses the editor first: taking focus after a
-click elsewhere, WebKit puts back the editor's last selection and scrolls
-to it (findings, "Editor"), so the new state's selection and the scroll
-to the top come after. The projection follows transactions, and a new
-state brings none, so `open` rebuilds it, the sheets and the frame before
-the view updates, then restyles every paragraph, since ProseMirror keeps
-the paragraph of an element equal to the one it showed there. A new state
-also makes ProseMirror destroy and make again every plugin's view, so the
-toolbar, the scene list and the page position add their DOM listeners
-once, when the plugin is made, not in its view.
+- **Layout (`editor.ts`, `projection.ts`, `sheets.ts`).** The projection
+  turns engine breaks and positions into paragraph styles and inline
+  decorations, never browser wrapping. `sheets.ts` paints page numbers
+  and generated continuation marks outside the editable root. Keep dual
+  dialogue's hit areas in their own columns, even below the shorter
+  speech. Adjust native Up/Down at page gaps: WebKit can lose the column.
+  ProseMirror can reuse equal paragraph DOM across positions, so recheck
+  geometry after drawing. Keep text as typed; display capitals must not
+  expand a character into extra cells.
+- **WebKit performance.** Scroll the document, not an overflow container.
+  Keep touch/wheel listeners off the page and the editor's native outline
+  off; all three otherwise add whole-draft work per keystroke. Use a
+  top-left CSS transform, not CSS `zoom`, to keep the engine's line
+  positions and click targets. See [why and how to measure](findings.md#editor).
+- **State and input (`commands.ts`, `editor-harness.ts`).** The key and
+  toolbar commands share model tests. Keep test and production plugin
+  precedence aligned: open suggestion menus own their keys before
+  screenplay commands, and Escape closes the innermost control before
+  leaving focus mode. New drafts get fresh editor state and undo history.
+  Focus before replacing selection or scrolling; WebKit otherwise
+  restores the old selection and scroll.
+- **Undo and clipboard (`undo.ts`, `clipboard.ts`).** Distinguish typing
+  groups from deliberate one-step changes. Copy exposes a typed Tir
+  clipping (`application/x-tir-clipping`) for exact paste inside Tir and
+  Fountain text for other apps. Default ProseMirror copy loses types.
+- **Derived views (`autocomplete.ts`, `find.ts`, `formatting-check.ts`,
+  `spelling.ts`).** Keep incremental work on edited elements; rebuild
+  decoration sets rather than mapping through huge transactions.
+  Spelling uses a worker for dictionary work and draws answers against
+  current nodes, with learned names and locations from the suggestion
+  tally. Menus and find, formatting and spelling marks do not become
+  part of the script or its exports.
+- **Navigation (`script-map.ts`, `page-position.ts`, `jump.ts`).** Scene
+  navigation and the page indicator read the same map from the engine.
+  The indicator follows the caret when text or selection changes,
+  otherwise vertical scroll; decoration-only updates must not jump it
+  back to the caret. The scene list defers large DOM updates until
+  after the edit's frame.
 
 ### Desktop UI checks
 
@@ -791,6 +674,31 @@ tasks. `mise run dev` and `mise run check` need the shell and enter it
 themselves when started outside it (the shell sets `TIR_DEV_SHELL`); other
 commands that build the Rust side, such as a bare `cargo build`, must run
 inside `nix develop` (`nix develop --command zsh` keeps zsh).
+
+### Installing the release
+
+On x86-64 NixOS, run `nix profile add .#tir` from the Tir source
+checkout, not the library. Run `tir` from the profile's `bin` directory
+on `PATH`; no development shell, mise, Node or Rust is needed to launch.
+The package also exports `tir.desktop` and the brass app icon; open
+Hyprland's app launcher, search for **Tir**, and press Enter. If the
+launcher started before a newly created profile was visible to the
+session, open it from a fresh login so it sees the profile on `PATH`
+and the profile's `share` directory in `XDG_DATA_DIRS`.
+Update the source checkout and run `nix profile upgrade tir` to upgrade
+that installation. The release uses the same `dev.tir.desktop` settings
+and library as the development build. The font and dictionary notices
+are under `share/licenses/tir/` in the package.
+
+For an agent release trial, use the [isolated launch](#isolated-native-trial)
+and replace `mise run dev` in its subshell with:
+
+```sh
+nix profile add --profile "$trial/profile" .#tir &&
+  "$trial/profile/bin/tir"
+```
+
+Never install test releases into the writer's profile.
 
 ### Setting up a machine
 
@@ -814,7 +722,7 @@ Then, in a fresh clone:
 2. `mise install`: Node, pnpm, and Rust with clippy and rustfmt, at the
    versions in `mise.toml`.
 3. `mise run install`: the JavaScript packages in `pnpm-lock.yaml`.
-4. `mise run check`, then [launch an isolated trial](#running-and-checking).
+4. `mise run check`, then [launch an isolated trial](#isolated-native-trial).
    The first run downloads the nixpkgs revision in `flake.lock` and the
    crates in `Cargo.lock`, and builds the Rust side.
 
@@ -841,15 +749,6 @@ Not in git:
 - **Nix sees only files git knows.** A flake ignores untracked files, so
   `flake.nix` and `flake.lock` must be committed or at least added with
   `git add -N`.
-- **Launch an isolated trial** for every agent check:
-  `trial=$(mktemp -d) && TIR_CONFIG_DIR="$trial" mise run dev`.
-  This starts Vite on port 1420 and opens a window with new settings
-  and a library under `"$trial/Screenplays"`, backed up by a git that
-  reads only `"$trial/gitconfig"` and reaches only files ([Backup](#backup)).
-  Use files inside the trial
-  directory as export destinations, since exports are not confined to
-  the library. Use bare `mise run dev` only when the writer intends to
-  open their real settings and library.
 - **A trial with backup** stands bare repositories in for GitHub. Make
   them with `git init --bare` as `"$trial/remotes/OWNER/NAME.git"`, and
   write `"$trial/gitconfig"` with `[url "$trial/remotes/"]` and the lines
@@ -871,23 +770,20 @@ Not in git:
 - **`mise run fmt`** formats the TypeScript and Rust and applies Biome's
   safe fixes (import order and the like) across the repository; it needs
   no Nix shell.
-- **`mise run parity [files…] [--lines N] [--all] [--show PAGE]`**
-  compares Tir's page breaks with Final Draft PDFs (every PDF in the
-  ignored `calibration/` folder by default; set-aside ones live in
-  `calibration/excluded/`). It reports pages that start differently read
-  through from page 1, and, page by page, whether each page ends where
-  Final Draft's does when Tir starts it where Final Draft does; then what
-  it could not read for certain. `--lines` sets lines per page, `--all`
-  lists every page, and `--show` prints one page as Final Draft and Tir set
-  it, row by row. It needs no Nix shell. Run one of task 0.8's analyses
-  (line widths, split sizes, residual pages) with
-  `mise exec -- node calibration/scripts/<name>.ts`.
-- **Focused checks are the default.** Inspect docs-only diffs; for
-  type-only changes, use `mise exec -- pnpm exec tsc -p tsconfig.json`.
-  For behaviour changes, use `mise exec -- pnpm exec vitest run <test-files>`
-  with the relevant tests and affected callers' tests. Don't rerun a
-  passing check just because review happened; rerun checks affected by
-  review fixes.
+- **`mise run parity [files…] [--lines N] [--all] [--show PAGE]`** is a
+  diagnostic, not a Final Draft acceptance check. It rebuilds the PDFs
+  in ignored `calibration/` by default and reports straight-through page
+  starts and reseeded page ends separately, with extraction warnings.
+  `--show` prints one page row by row. See [Calibration](findings.md#calibration)
+  and the [acceptance task](plan.md#task-7-3a). Run the one-off analyses
+  with `mise exec -- node calibration/scripts/<name>.ts`. Neither needs Nix.
+- **Focused checks are the default.** Inspect docs-only changes and
+  affected links. For type-only changes use
+  `mise exec -- pnpm exec tsc -p tsconfig.json`; for TypeScript behaviour,
+  `mise exec -- pnpm exec vitest run <test-files>` for the changed code
+  and its callers. Example focused Rust check:
+  `nix develop --command cargo test --manifest-path src-tauri/Cargo.toml --locked library::tests`.
+  Rerun only checks affected by review fixes.
 - **`mise run pagination-timing`** measures the median time to paginate a
   roughly 120-page draft against a 16 ms target. Run it on the same machine
   when pagination performance is in scope; it is not part of `check` and
@@ -907,22 +803,52 @@ Not in git:
   Screenshot its rectangle with
   `nix shell nixpkgs#grim --command grim -g "X,Y WxH" "$trial/shot.png"`.
   If needed, float and resize that address for the screenshot and put
-  it back afterwards. Prototypes are served at
-  `http://localhost:1420/docs/prototype/`.
-  Close the trial window normally so it saves, then stop the dev
-  command you started; do not kill Tir processes by name.
+  it back afterwards. If Vite is already running, the prototypes are
+  at `http://localhost:1420/docs/prototype/`; otherwise use the
+  [standalone prototype index](prototype/index.html).
+  Close the trial window normally so it saves, with
+  `hyprctl dispatch 'hl.dsp.window.close({ window = "address:0x…" })'`
+  (this Hyprland takes Lua dispatcher calls), then stop the dev command
+  you started; do not kill Tir processes by name. Send a key to one window,
+  such as a native dialog, with
+  `hyprctl dispatch 'hl.dsp.send_shortcut({ window = "address:0x…", mods = "", key = "Return" })'`.
+  In a GTK file dialog, `wtype` text reached the name field but its
+  `-k` and `-M` keys did not; send those keys this way.
 - **Rust** builds inside the shell only. The shell sets `RUSTFLAGS` to link
   without Rust's bundled LLD ([findings](findings.md#nixos-development-shell)),
   so a build outside it differs and rebuilds everything.
 
-### Measuring the editor
+### Isolated native trial
 
-Launch an isolated trial with the inspector:
+Start here for every agent-run native check. Use a fresh trial directory;
+do not copy the writer's settings into it. A `library` set in a copied
+settings file overrides the trial's default library.
 
 ```sh
 trial=$(mktemp -d) &&
-  TIR_CONFIG_DIR="$trial" WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev
+  (
+    export MISE_DATA_DIR="${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}" \
+      TIR_CONFIG_DIR="$trial" XDG_DATA_HOME="$trial/data" XDG_CACHE_HOME="$trial/cache"
+    mise run dev
+  )
 ```
+
+`MISE_DATA_DIR`, set first, keeps mise's installed tools: without it,
+mise follows `XDG_DATA_HOME` into the trial and reinstalls every tool it
+manages there before it starts Tir.
+
+Settings, WebKit data/cache and the default library (`"$trial/Screenplays"`)
+are isolated. Trial Git reads only sandbox configuration and reaches
+only local files. Use trial paths for import fixtures and export
+destinations. Vite uses fixed port 1420: only one dev launch at a time.
+If the port is occupied, do not stop someone else's server. Never
+launch bare `mise run dev` for an agent trial.
+
+### Measuring the editor
+
+Use the [isolated launch](#isolated-native-trial) with
+`WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339 mise run dev` as the command
+inside the subshell.
 
 Run the automated editor tools only when the trial is the only window
 titled "Tir" on that Hyprland desktop. Their focus and keyboard commands
@@ -938,8 +864,8 @@ open, leave it alone and use address-targeted manual checks instead.
   placement (including the blank part of a dual dialogue row). It exits
   1 on a miss.
 
-Both tools restore the window settings they found. They use
-`tools/inspector.ts` at `ws://127.0.0.1:9339/socket/1/1/WebPage`.
+Both tools restore the window settings they found.
+`tools/inspector.ts` discovers the page from the loopback inspector.
 `globalThis.tirView`, `tirDesk`, `tirSaver` and `tirScreen` expose
 the dev app's editor, settings, saver and Projects screen. `?fixture=spike`
 opens a 120-page script with forced scene breaks, `feature` one without
@@ -957,13 +883,13 @@ two). Native dialogs have their own addresses in `hyprctl clients -j`;
 verify the trial's dialog before sending keys. In the Open dialog, press
 Ctrl+L before typing a path. Close only the trial window.
 
-See the [measuring traps](findings.md#measuring-traps). To profile
-WebKit with `perf`, start Vite with `mise exec -- pnpm exec vite`, then
-run the debug binary in a fresh trial from the Nix shell:
+See the [measuring traps](findings.md#measuring-traps). For WebKit
+profiling, start Vite with `mise exec -- pnpm exec vite`, then use the
+[isolated launch](#isolated-native-trial) with this command in place of
+`mise run dev`:
 
 ```sh
-trial=$(mktemp -d) &&
-  TIR_CONFIG_DIR="$trial" nix develop --command bash -c '
+nix develop --command bash -c '
     perf=$(nix build --no-link --print-out-paths nixpkgs#perf) || exit
     exec "$perf/bin/perf" record -e task-clock:u -g --user-callchains \
       -o "$TIR_CONFIG_DIR/tir.perf" -- src-tauri/target/debug/tir

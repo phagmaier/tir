@@ -289,6 +289,14 @@ body.focus #canvas {
   color: var(--fg);
   background: var(--hover);
 }
+@media (max-width: 960px) {
+  #topbar {
+    --element-padding: 4px;
+  }
+  .bar-right > :not(.sep) {
+    padding-inline: 4px;
+  }
+}
 .bar-right .pg {
   font-variant-numeric: tabular-nums;
 }

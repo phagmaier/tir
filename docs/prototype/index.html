@@ -1,8 +1,7 @@
 <!doctype html>
 <!--
-  Index of Tir's design prototypes: throwaway, simulated fixtures, not the
-  app. Each piece's header comment records its question and variants. The
-  choices they settle are recorded in ../brief.md under "Look".
+  Approved visual references and historical comparisons for Tir.
+  Product behaviour is specified in ../brief.md.
 -->
 <html lang="en">
 <head>
@@ -31,13 +30,12 @@ code { font-size: 13.5px; background: #262521; padding: 1px 5px; border-radius: 
 <body>
 <main>
   <h1>Tir prototypes</h1>
-  <p>Throwaway, simulated designs for settling the look before the app is
-    built. The script, drafts and backup states are fake and live in memory
-    only. The yellow bar at the bottom of each piece is prototype controls,
-    not part of the design. See <a href="../brief.md">the brief</a> for the
-    decisions they must respect.</p>
+  <p><a href="../brief.md">The brief</a> governs behaviour; the chosen
+    prototypes are visual references. Demo behaviour and rejected
+    variants are historical. The data and backup states are simulated;
+    yellow controls are for the demos, not part of the app.</p>
 
-  <h2>The rest of the app, in the settled look</h2>
+  <h2>Approved visual references</h2>
   <div class="piece">
     <h3>5 · The writing window, finished look <span style="font-size:12px;color:#a09a8f;font-weight:450">· approved</span></h3>
     <p>Desk in Ink &amp; Brass, with the paper switch in the sidebar footer
@@ -52,19 +50,18 @@ code { font-size: 13.5px; background: #262521; padding: 1px 5px; border-radius: 
   </div>
   <div class="piece" style="margin-top:12px">
     <h3>6 · Projects <span style="font-size:12px;color:#a09a8f;font-weight:450">· List chosen</span></h3>
-    <p>The Projects screen (Ctrl+O) in two layouts, with New project, Import
-      (where it goes, then the report of anything left out), Rename and
-      Delete. "Empty library" in the yellow bar shows the first-run state.</p>
+    <p>Projects, Import and the import report. “Empty library” in the
+      yellow bar shows first run. The Delete dialog illustrates a
+      fully backed-up project; see the
+      <a href="../brief.md#projects">brief</a> for other backup states.</p>
     <div class="vs">
-      <a href="06-projects.html?variant=list">List</a><span>Chosen. One row per project: title, active draft, pages, drafts, last edit.</span>
+      <a href="06-projects.html?variant=list">List</a><span>Chosen. One row per project: title, active draft, pages, drafts, last edit, and the folder when two projects share a name.</span>
       <a href="06-projects.html?variant=shelf">Shelf</a><span>Not chosen. Title-page thumbnails, like scripts on a shelf.</span>
     </div>
   </div>
   <div class="piece" style="margin-top:12px">
     <h3>7 · Go to page <span style="font-size:12px;color:#a09a8f;font-weight:450">· In the top bar chosen</span></h3>
-    <p>Ctrl+G, or a click on "Page N of M", asks for a page number; Enter
-      puts the caret at the top of that page and scrolls there, Esc goes back
-      to the script. Otherwise piece 5.</p>
+    <p>A focused comparison of two places for the page-number field.</p>
     <div class="vs">
       <a href="07-go-to-page.html?open=1">A · In the top bar</a><span>Chosen. "Page N of M" turns into a field in place.</span>
       <a href="07-go-to-page.html?open=1&amp;v=B">B · Popover</a><span>Not chosen. A small panel under the page position, as the find bar opens.</span>
@@ -72,15 +69,14 @@ code { font-size: 13.5px; background: #262521; padding: 1px 5px; border-radius: 
   </div>
   <div class="piece" style="margin-top:12px">
     <h3>8 · Collapsing the sidebar <span style="font-size:12px;color:#a09a8f;font-weight:450">· Top bar toggle chosen</span></h3>
-    <p>The scene sidebar collapses, and the page centres in the space left.
-      Otherwise piece 5.</p>
+    <p>A focused comparison of how to collapse and reopen the sidebar.</p>
     <div class="vs">
       <a href="08-sidebar-collapse.html?v=A">A · Top bar toggle</a><span>Chosen. A sidebar button at the top bar's left end hides and shows the whole sidebar; the paper switch and zoom go with it.</span>
       <a href="08-sidebar-collapse.html?v=B">B · Rail</a><span>Not chosen. A « in the sidebar's heading folds it to a rail that keeps », the paper switch and zoom.</span>
     </div>
   </div>
 
-  <h2>Decided</h2>
+  <h2>Earlier comparisons</h2>
   <div class="piece">
     <h3>4 · Light theme: dark frame, white paper</h3>
     <p>Chosen over Linen, Sand, Mist and the all-white original. Both themes
@@ -117,23 +113,10 @@ code { font-size: 13.5px; background: #262521; padding: 1px 5px; border-radius: 
     </div>
   </div>
 
-
-  <h2>What is simulated</h2>
-  <ul>
-    <li>Page breaks come from a rough sketch of the rules at 54 lines a page,
-      not the real layout engine; (MORE) and (CONT'D) are placed by it.</li>
-    <li>The page is not editable: click a paragraph to put the cursor there,
-      then change its element with the toolbar or the number keys 1–7 and 0.
-      Browsers keep Ctrl+1–9 for tabs; the app will use Ctrl as Final Draft
-      does.</li>
-    <li>Rename and Delete in the draft menu do nothing.</li>
-  </ul>
-
   <h2>Running it</h2>
-  <p>From the project root: <code>python3 -m http.server -d docs/prototype 8765</code>,
-    then open <code>http://127.0.0.1:8765/</code>. Opening the files
-    directly also works in Firefox; Chrome may refuse the bundled fonts from
-    a local file.</p>
+  <p>From the project root:
+    <code>python3 -m http.server --bind 127.0.0.1 --directory docs 8765</code>.
+    Open <a href="http://127.0.0.1:8765/prototype/">/prototype/</a>.</p>
 </main>
 </body>
 </html>

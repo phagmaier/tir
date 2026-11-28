@@ -17,9 +17,11 @@ import type { Project } from "./library.ts";
 import {
   type CloseSide,
   closer,
+  DraftChanged,
   type Place,
   RETRY_MS,
   SAVE_DELAY_MS,
+  SAVE_WITHIN_MS,
   type SaveListener,
   Saver,
   type SaveSide,
@@ -46,13 +48,13 @@ const salt: Place = { project: project("Salt Line"), file: "First Draft.tir" };
 /**
  * The library's side over a temporary folder: a draft and its copy are
  * files there. A write can be held at `gate`, to be under way, fail with
- * `fail`'s message, or fail after writing the draft and not its copy, with
- * `failCopy`.
+ * `fail` (an error, or an error's message), or fail after writing the
+ * draft and not its copy, with `failCopy`.
  */
 class DiskSide implements SaveSide {
   readonly writes: DraftTexts[] = [];
   readonly created: Script[] = [];
-  fail: string | null = null;
+  fail: string | Error | null = null;
   failCopy = false;
   gate: Promise<void> | null = null;
   writing = 0;
@@ -66,7 +68,7 @@ class DiskSide implements SaveSide {
     this.mostAtOnce = Math.max(this.mostAtOnce, ++this.writing);
     try {
       if (this.gate) await this.gate;
-      if (this.fail) throw new Error(this.fail);
+      if (this.fail) throw typeof this.fail === "string" ? new Error(this.fail) : this.fail;
       writeFileSync(join(dir, place.file), texts.draft);
       if (this.failCopy) throw new Error("No space left on device");
       writeFileSync(join(dir, copyOf(place.file)), texts.copy);
@@ -157,10 +159,11 @@ const harbour: Script = {
 };
 
 describe("saving after a pause", () => {
-  it("saves a moment after typing pauses, never while typing goes on", async () => {
+  it("saves a moment after typing pauses, not while typing goes on", async () => {
     const { side, heard, typed, script } = editing(harbour);
     expect(heard.states).toEqual([["saved", null]]);
-    for (const letter of "Waves break") {
+    // Short of `SAVE_WITHIN_MS` in all.
+    for (const letter of "Wav") {
       typed(letter);
       await pass(SAVE_DELAY_MS - 100);
     }
@@ -258,6 +261,54 @@ describe("saving after a pause", () => {
     expect(side.writes).toHaveLength(2);
     expect(side.onDisk().draft).toEqual(script());
   });
+
+  it("saves typing that never pauses, each key at most SAVE_WITHIN_MS after it was typed", async () => {
+    const { side, typed, script } = editing(harbour);
+    const every = 200;
+    // The heading after each key, and when the key was typed.
+    const typedAt: [number, string | undefined][] = [];
+    for (let now = 0; now < 10_000; now += every) {
+      typed("x");
+      typedAt.push([now, script().elements[0]?.text]);
+      await pass(every);
+      const due = typedAt.filter(([at]) => at <= now + every - SAVE_WITHIN_MS).at(-1);
+      if (due) {
+        // Typing at the start of the heading: the draft holds that key and all before it.
+        const onDisk = side.onDisk().draft.elements[0]?.text ?? "";
+        expect(onDisk.length).toBeGreaterThanOrEqual(due[1]?.length ?? 0);
+      }
+    }
+    // A save every few seconds, not one a key.
+    expect(side.writes.length).toBeLessThanOrEqual(Math.ceil(10_000 / SAVE_WITHIN_MS));
+    await pass(SAVE_DELAY_MS);
+    expect(side.onDisk().draft).toEqual(script());
+  });
+
+  it("typing on during a long save waits for one save after it, not one a key", async () => {
+    const { side, typed, script } = editing(harbour);
+    const first = gate(side);
+    // The first save starts after `SAVE_WITHIN_MS` and is held throughout.
+    for (let key = 0; key < 40; key++) {
+      typed("a");
+      await pass(200);
+    }
+    expect(side.writes).toEqual([]);
+    first();
+    const second = gate(side);
+    await pass(0);
+    // The second save, held, takes everything typed during the first.
+    expect(side.writes).toHaveLength(1);
+    typed("b");
+    await pass(200);
+    second();
+    await pass(0);
+    // What was typed during the second waits for its own pause.
+    expect(side.writes).toHaveLength(2);
+    expect(side.mostAtOnce).toBe(1);
+    await pass(SAVE_DELAY_MS);
+    expect(side.writes).toHaveLength(3);
+    expect(side.onDisk().draft).toEqual(script());
+  });
 });
 
 describe("a save that fails", () => {
@@ -272,7 +323,7 @@ describe("a save that fails", () => {
     await pass(RETRY_MS);
     typed("y");
     await pass(SAVE_DELAY_MS);
-    expect(heard.failures).toEqual(["No space left on device."]);
+    expect(heard.failures).toEqual(["No space left on device. Tir tries again in a moment."]);
     expect(side.writes).toEqual([]);
 
     side.fail = null;
@@ -306,6 +357,23 @@ describe("a save that fails", () => {
     expect(draft).toEqual(script());
     expect(copy).toEqual(draft);
     expect(heard.last).toBe("saved");
+  });
+
+  it("says how to keep what is on screen when the draft changed on disk, without promising a retry", async () => {
+    const { side, heard, saver, typed } = editing(harbour);
+    const refused =
+      "“First Draft” has changed on disk since Tir opened it, perhaps by a git pull, so Tir saved nothing over it.";
+    side.fail = new DraftChanged(refused);
+    typed("x");
+    await pass(SAVE_DELAY_MS);
+    expect(heard.last).toBe("failed");
+    expect(heard.failures).toHaveLength(1);
+    const told = heard.failures[0] ?? "";
+    expect(told.startsWith(`${refused} `)).toBe(true);
+    expect(told).toContain("Export Fountain…");
+    expect(told).not.toContain("tries again");
+    // The indicator, the close question and the draft actions give the same advice.
+    expect(saver.failure).toBe(told);
   });
 });
 
@@ -369,11 +437,11 @@ describe("saving at once", () => {
     side.fail = "Permission denied.";
     typed("a");
     expect(await saver.settle(true)).toBe(false);
-    expect(heard.failures).toEqual(["Permission denied."]);
+    expect(heard.failures).toEqual(["Permission denied. Tir tries again in a moment."]);
     // Not again: neither when reported again nor when tried after a while.
     expect(await saver.settle(true)).toBe(false);
     await pass(RETRY_MS);
-    expect(heard.failures).toEqual(["Permission denied."]);
+    expect(heard.failures).toEqual(["Permission denied. Tir tries again in a moment."]);
     side.fail = null;
     expect(await saver.settle(true)).toBe(true);
   });

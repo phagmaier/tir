@@ -95,8 +95,7 @@ const saver = new Saver(
       showSaved(state, why);
       if (screen?.shown) screen.saved(state, why);
     },
-    failed: (why) =>
-      void tell(`Tir could not save “${projectShown()}”`, `${why} Tir tries again in a moment.`),
+    failed: (message) => void tell(`Tir could not save “${projectShown()}”`, message),
     placed: (place) => {
       const { project } = place;
       title.textContent = project.info.name;

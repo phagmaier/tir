@@ -3,6 +3,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// Replaces the file at `path` with `bytes`. They go to a temporary file
@@ -20,25 +21,29 @@ pub(crate) fn replace_with(
     path: &Path,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
-    publish_with(path, write, |temporary| fs::rename(temporary, path))?;
+    publish_with(path, write)?;
     sync_parent(path)
 }
 
 /// Replaces `path` like `replace`, but leaves the directory sync to the
 /// caller. An error means the new file has not been published.
 pub(crate) fn publish(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    publish_with(
-        path,
-        |file| file.write_all(bytes),
-        |temporary| fs::rename(temporary, path),
-    )
+    publish_with(path, |file| file.write_all(bytes))
+}
+
+/// `publish`, with `write` filling the temporary file.
+pub(crate) fn publish_with(
+    path: &Path,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
+    write_temporary(path, write, |temporary| fs::rename(temporary, path))
 }
 
 /// Publishes a complete new file without replacing even a symlink at `path`.
 /// A link, unlike a check followed by a rename, cannot overwrite a file
 /// that appeared while writing. The temporary file is on the same filesystem.
 pub fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    publish_with(
+    write_temporary(
         path,
         |file| file.write_all(bytes),
         |temporary| {
@@ -56,7 +61,7 @@ fn sync_parent(path: &Path) -> io::Result<()> {
     }
 }
 
-fn publish_with(
+fn write_temporary(
     path: &Path,
     write: impl FnOnce(&mut File) -> io::Result<()>,
     publish: impl FnOnce(&Path) -> io::Result<()>,
@@ -79,9 +84,9 @@ pub fn sync_dir(dir: &Path) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
-/// A file beside `path` that did not exist before, `NAME.<pid>-<n>.tmp` with
-/// the first `n` free, so a file of that kind Tir did not make is never
-/// opened, replaced or removed.
+/// An owner-only file beside `path` that did not exist before,
+/// `NAME.<pid>-<n>.tmp` with the first `n` free. A file of that kind Tir
+/// did not make is never opened, replaced or removed.
 fn create_temporary(path: &Path) -> io::Result<(PathBuf, File)> {
     let name = path
         .file_name()
@@ -94,6 +99,7 @@ fn create_temporary(path: &Path) -> io::Result<(PathBuf, File)> {
         match OpenOptions::new()
             .write(true)
             .create_new(true)
+            .mode(0o600)
             .open(&temporary)
         {
             Ok(file) => return Ok((temporary, file)),
@@ -172,6 +178,22 @@ pub mod tests {
         replace(&path, second.as_bytes()).unwrap();
         assert_eq!(read_text(&path).unwrap(), second);
         assert_eq!(dir.names(), ["Salt Line.tir"]);
+    }
+
+    #[test]
+    fn replacing_a_private_file_keeps_it_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = TempDir::new();
+        let path = dir.0.join("draft.tir");
+        fs::write(&path, b"old\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        replace_with(&path, |file| {
+            assert_eq!(file.metadata()?.permissions().mode() & 0o077, 0);
+            file.write_all(b"new\n")
+        })
+        .unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o077, 0);
     }
 
     #[test]

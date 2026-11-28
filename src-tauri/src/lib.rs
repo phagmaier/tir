@@ -153,7 +153,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(find_library(app.handle()));
             // The window (`create: false` in tauri.conf.json) is made only
-            // once no other Tir has this settings file and library open.
+            // after claiming the settings directory lock.
             match settings_dir(app.handle())
                 .and_then(|dir| instance::claim(&dir).map_err(|error| error.to_string()))
             {
@@ -164,10 +164,12 @@ pub fn run() {
                     dialogs::already_open(app.handle());
                     return Ok(());
                 }
-                // Tir still runs, as it would without the lock.
-                Err(error) => eprintln!("Tir could not check for another Tir: {error}"),
+                Err(error) => {
+                    dialogs::cannot_lock(app.handle(), &error);
+                    return Ok(());
+                }
             }
-            // Only the one Tir with this library backs it up.
+            // Keep the instance lock through the final backup.
             let library = app.state::<library::Library>();
             let emitter = app.handle().clone();
             let backup = backup::Backup::start(

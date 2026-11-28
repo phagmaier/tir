@@ -50,7 +50,7 @@ const squiggled = (state: EditorState) =>
 
 describe("spell check's squiggles", () => {
   const script = [
-    heading("INT. HARBOUR OFFICE - NIGHT"),
+    heading("EXT./ INT. HARBOUR OFFICE - NIGHT"),
     action("Okafor recieves the Halcyon’s log at the harbour.|"),
     cue("OKAFOR"),
     dialogue("Teh tide is wrong."),

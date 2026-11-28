@@ -263,21 +263,21 @@ screenplay convention, shows no number.
   top bar) lists every project with its title, active draft, page count,
   number of drafts and last edit, most recent first (prototype piece 6).
   From it the user creates, opens, renames and deletes projects. Deleting
-  asks for confirmation, which says what GitHub keeps of the project:
-  "GitHub keeps the backup history, so it can still be recovered from
-  there" when GitHub holds it as it is (prototype piece 6); "GitHub keeps a
-  backup without its latest changes, so only the backed-up version can be
-  recovered from there" when GitHub holds an older version *(agent-selected,
-  task 6.3)*; and "Tir has no backup of it yet, so this can't be undone"
-  when GitHub holds none of it *(the user's choice, 2026-11-27)*. Deleting a
-  draft says the same of the draft. *(agent-selected: the screen covers the
+  asks for confirmation. For the project or draft being deleted, Tir
+  distinguishes a matching backup, a different version at the path,
+  no backup found at the path, and a backup it could not verify. Do not
+  promise recovery for the last three cases. Deletion cannot be undone
+  in Tir. *(Agent-selected: the screen covers the
   writing window, and Esc, or a click on the open project, goes back to
   the script as it was left; while it shows, the writing window's keys do
-  nothing. A project's last edit is when one of its drafts was last saved
-  on this machine, and its pages are its active draft's. A folder Tir
+  nothing. A project's last edit comes from the latest modification time
+  of its drafts; its pages are its active draft's. A folder Tir
   cannot read as a project is listed last, with why, and its menu offers
   only Delete. A new project's title page starts empty. Deleting the
   project on screen leaves the screen up with no script open.)*
+  *(Agent-selected, task 7.3b: a project whose name another shares shows
+  its folder, which no two share, in its row, its Delete confirmation and
+  Import's list of projects.)*
 - **Import…** uses the system's Open dialog. A Fountain file that is not
   UTF-8 text is refused, not guessed at.
 - **Import** reads a Fountain or FDX file into either a new project (the
@@ -297,7 +297,7 @@ Each scene shows its number in order (on screen only, never printed), its
 heading and the page it starts on. The scene containing the cursor is
 highlighted, and clicking a scene jumps to it. The sidebar collapses, and
 focus mode hides it. A toggle at the top bar's left end collapses the
-sidebar and brings it back ([piece 8](prototype/08-sidebar-collapse.html),
+sidebar and brings it back ([piece 8](prototype/08-sidebar-collapse.html?v=A),
 A, chosen over a rail on 2026-11-26); the page centres in the space left,
 and the paper switch and zoom control go with the sidebar.
 
@@ -318,7 +318,7 @@ caret in the script shows the caret's page. M is the script's page count.
 **Go to page**: Ctrl+G *(agent-selected: Final Draft's key,
 [findings](findings.md#final-drafts-keys))*, or a click on "Page N of M",
 turns N into a field in place holding the current page
-([piece 7](prototype/07-go-to-page.html), A; the user's choice,
+([piece 7](prototype/07-go-to-page.html?open=1), A; the user's choice,
 2026-11-26). Enter puts the caret at the start of that page's first line
 and scrolls the page's top to where page 1's sits when the script opens;
 Esc goes back to the script with the caret where it was. *(agent-selected:
@@ -440,51 +440,25 @@ curly apostrophe match each other.
   element buttons in the centre, and the page position, finding count and
   saved/backed-up indicator at the right.
 - Aesthetic references the user likes: iA Writer, Highland and Arc Studio.
-- The look is settled through prototypes before the interface is built.
-  [The prototype index](prototype/index.html) lists the pieces.
-- **Direction: A, "Desk"** ([piece 1](prototype/01-writing-window.html)).
-  The user chose it over B "Ink" and C "Studio" as clearly the best:
-  attached scene sidebar and top bar, a full element toolbar, a serif
-  project title. The user found its first colour scheme unpolished.
-- **Colours: "Ink & Brass"** ([piece 2](prototype/02-desk-colours.html)),
-  chosen over Graphite, Slate & Sage and Charcoal & Ember: deep blue-black
-  surfaces with a muted brass accent; warnings in coral so they never look
-  like the accent. Every text colour meets 4.5:1 contrast.
-- **Dark paper: "Night"** ([piece 3](prototype/03-dark-paper.html)),
-  chosen over Dusk and Lamplight: page #141920 with ivory text #d6d0c2 on a
-  #0a0d11 desk, so the page barely lifts from the background. Find
-  highlights, the spelling squiggle, the caret and ghost text are
-  recoloured for it.
-- **Light theme: the dark frame with white paper**
-  ([piece 4](prototype/04-light-theme.html)). The user found Ink & Brass's
-  all-light theme too white and chose this over Linen, Sand and Mist. Both
-  themes therefore share the Ink & Brass dark chrome, and switching theme
-  switches only the paper: Night in the dark theme, white (#fdfcf8) with
-  black text in the light theme. The page's on-screen marks (find
-  highlights, squiggles, caret) follow the paper.
+- The [prototype index](prototype/index.html) leads to the chosen visual
+  references. The brief governs behaviour; demo behaviour and rejected
+  variants are historical.
+- **Direction: A, "Desk"** ([piece 1](prototype/01-writing-window.html?variant=A)).
+  The user chose it over B "Ink" and C "Studio": attached panels, a
+  full element toolbar, and a serif project title.
+- **Colours: "Ink & Brass"** ([piece 2](prototype/02-desk-colours.html?palette=brass)).
+  Deep blue-black surfaces, muted brass accent and coral warnings.
+- **Dark paper: "Night"** ([piece 3](prototype/03-dark-paper.html?paper=night))
+  barely lifts from the desk. The [light theme](prototype/04-light-theme.html?light=frame)
+  uses white paper with the same dark frame. On-screen marks follow the paper.
 - [look.css](prototype/look.css) holds the chosen prototype colours and
   chrome. The app uses those colours in [theme.css](../src/ui/theme.css).
-- **The finished writing window** ([piece 5](prototype/05-writing-window.html)),
-  approved by the user: the paper switch in the sidebar footer; a "Title
-  page" row at the top of the sidebar opening the title page form beside a
-  live preview; the saved/backed-up indicator opening a backup panel for
-  each state (backed up, saving, offline, paused, not connected) and the
-  one-time GitHub connection, which warns about a public or unreachable
-  repository.
-- **Projects screen: the list** ([piece 6](prototype/06-projects.html)),
-  chosen over a shelf of title-page thumbnails: one row per project with
-  its title, active draft, pages, number of drafts and last edit, most
-  recent first; New project and Import at the top; Rename and Delete from
-  each row's menu; the import dialog, its report and the empty library as
-  that piece shows them.
-- **Go to page** ([piece 7](prototype/07-go-to-page.html)): "Page N of M"
-  turns into a field in place, chosen over a popover under it
-  (2026-11-26).
-- **Collapsing the sidebar** ([piece 8](prototype/08-sidebar-collapse.html)):
-  A, a toggle at the top bar's left end, chosen over B, a rail keeping the
-  paper switch and zoom (2026-11-26).
-- **The design is complete.** The prototype pieces are the reference for
-  every screen; [the plan](plan.md) builds them.
+- **[Writing window](prototype/05-writing-window.html)**: the approved Desk,
+  including the Title page preview and backup panel.
+- **[Projects screen](prototype/06-projects.html?variant=list)**: the chosen
+  list, not the shelf. See [Projects](#projects) for behaviour.
+- See [Page position](#page-position) and [Scene sidebar](#scene-sidebar)
+  for their chosen focused views.
 
 ## Page parity
 
@@ -492,16 +466,13 @@ One page in Tir is one page in Final Draft: **every page starts on the same
 line** that it would in Final Draft. Matching only the total page count does
 not meet this.
 
-Since the user has no Final Draft, a check tool verifies parity against
-public screenplay PDFs that Final Draft produced, as their PDF metadata
-shows. It reads each PDF's text and positions, infers each element's type
-from its indent, rebuilds the script in Tir, paginates it, and compares where
-every page starts. These PDFs are other people's copyrighted scripts: they
-stay on the user's machine as test data and never enter version control.
-
-Reference implementations to study: Beat (its pagination imitates Final
-Draft), afterwriting and Story Architect. The user has already looked at all
-three.
+The [calibration tool](findings.md#calibration) compares rebuilt scripts
+with public Final Draft PDFs. A PDF shows printed positions, not the
+original element boundaries or authored breaks, so those comparisons
+are diagnostic. These copyrighted PDFs stay out of version control.
+[Tir editor/PDF agreement](history.md#task-3-2) is a separate check.
+Exact Final Draft parity still needs the [controlled comparison](plan.md#task-7-3a)
+using matched original FDX and PDF files.
 
 ## Drafts
 
@@ -519,7 +490,9 @@ three.
 
 - **Saving is automatic**, a moment after the user pauses typing. Ctrl+S
   requests an immediate save. *(agent-selected: a second after the last
-  change, and at once before another script takes the screen and before
+  change, or three seconds after the first unsaved change when typing
+  goes on without that pause, so an abrupt exit loses only the last few
+  seconds; and at once before another script takes the screen and before
   the window closes, each save writing the draft and its Fountain copy.)*
 - **The saved half of the indicator** reads "Saved", "Saving…" from the
   first change until the draft holds it, or "Not saved" in the warning
@@ -557,16 +530,18 @@ three.
   with why, when Tir cannot use git in the library. The connect dialog
   also refuses a repository that already holds commits the library
   lacks, such as a README GitHub made.)*
-- If GitHub has changes this machine lacks, for example from a second
-  computer, Tir does not merge. It pauses backup and tells the user.
-  *(agent-selected: Tir asks GitHub at launch and every few minutes, so
-  it pauses before the user writes on an older draft, and while paused it
-  keeps committing here.)*
-- **The other machine's work arrives with Tir closed**: the user closes
-  Tir, runs `git pull` in the library, and opens Tir again. A save never
-  writes over a draft that changed on disk since Tir opened it; it says
-  to close Tir and open it again, so a pull made with Tir open loses only
-  what was typed after it *(the user's choice, 2026-11-27)*.
+- If a background check finds GitHub has changes this machine lacks, Tir
+  pauses backup and tells the user. Tir still commits locally and never
+  merges. The startup check may finish after writing starts.
+- **The other machine's work arrives with Tir closed** *(the user's
+  choice, 2026-11-27)*: close Tir, run the backup panel's `git pull`
+  command in the actual library, then reopen Tir. A save refuses a draft
+  found to have changed since Tir read or last wrote it. Pulling while
+  Tir is open can put all edits since the last successful save at risk.
+  *(Agent-selected, task 7.3b: the refusal says that saving again cannot
+  fix it, and how to keep what is on screen: Export Fountain… in the
+  draft menu, close without saving, reopen, and Import… the file as a new
+  draft.)*
 
 ## Stack
 
@@ -576,9 +551,9 @@ three.
 - **ProseMirror** as the editor: a script is a sequence of typed paragraphs,
   which is what ProseMirror models.
 - **Our own layout engine**, in plain TypeScript with no interface code. It
-  computes line wrapping and page breaks for the on-screen pages, the PDF and
-  page counts alike, so all three always agree. Screenplay text is fixed-pitch
-  Courier, so layout is exact character and line arithmetic.
+  supplies line wrapping and page breaks for the screen, PDF and page
+  counts. The [architecture](architecture.md#design-rules) has the
+  layout constraints.
 - **Our own spell checker** on a standard Hunspell dictionary, so it behaves
   the same everywhere and can learn the script's character names and
   locations.
@@ -615,9 +590,10 @@ The user accepted this as the agent's recommendation.
 - **Project**: one feature screenplay, stored as a folder in the library.
 - **Draft**: one version of a project's screenplay, stored as one file, with
   its own title page.
-- **Active draft**: the draft currently open for editing in a project.
+- **Active draft**: the draft a project reopens for editing.
 - **Fork**: create a new draft as a copy of the active draft's current state.
 - **Element**: one paragraph of the script with a type, such as Scene
   Heading, Action, Character or Dialogue.
-- **Saved** means written to the draft file on this machine. **Backed up**
-  means pushed to GitHub. The indicator shows them separately.
+- **Saved** means the draft and its Fountain copy are written on this
+  machine. **Backed up** means pushed to GitHub. The indicator shows
+  them separately.

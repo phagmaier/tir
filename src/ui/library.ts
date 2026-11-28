@@ -24,6 +24,7 @@ import {
   writeProject,
 } from "../core/project-file.ts";
 import type { DraftTexts } from "./draft-texts.ts";
+import { DraftChanged } from "./saving.ts";
 
 /** A project in the library. */
 export interface Project {
@@ -179,18 +180,29 @@ export function readDraftToCount(
   return invoke("read_draft", { folder: project.folder, draft: file, shown: false });
 }
 
-/** Saves the draft in `file`: its file and its Fountain copy. */
+/**
+ * Saves the draft in `file`: its file and its Fountain copy. Rejects with
+ * `DraftChanged` when the draft has changed on disk since Tir read or
+ * wrote it.
+ */
 export async function saveDraft(
   project: { readonly folder: string },
   file: string,
   texts: DraftTexts,
 ): Promise<void> {
-  await invoke("write_draft", {
-    folder: project.folder,
-    draft: file,
-    text: texts.draft,
-    copy: texts.copy,
-  });
+  try {
+    await invoke("write_draft", {
+      folder: project.folder,
+      draft: file,
+      text: texts.draft,
+      copy: texts.copy,
+    });
+  } catch (error) {
+    // The command's own failures are `{ message, changed }`; Tauri's are strings.
+    if (typeof error !== "object" || error === null || !("message" in error)) throw error;
+    const message = String(error.message);
+    throw "changed" in error && error.changed ? new DraftChanged(message) : new Error(message);
+  }
 }
 
 /**

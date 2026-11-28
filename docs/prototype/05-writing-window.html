@@ -1,8 +1,7 @@
 <!doctype html>
 <!--
-  PROTOTYPE, throwaway. The settled writing window (Desk layout, Ink &
-  Brass, Night or white paper from look.css) with two more pieces of the
-  design to judge:
+  PROTOTYPE. Approved writing window (Desk layout, Ink & Brass, Night
+  or white paper from look.css), including Title page and backup:
 
     Title page  the "Title page" row at the top of the sidebar opens a form
                 with a live preview of the printed page (docs/brief.md,
@@ -400,7 +399,7 @@ function backupHTML() {
   let extra = '';
   if (b.kind === 'none') actions = '<button class="btn primary" data-act="connect">Connect a repository…</button>';
   else if (b.kind === 'warn') {
-    extra = '<div class="note"><span>To resume, bring the library up to date from GitHub in a terminal (<code>git pull</code> in ~/Screenplays), then press Resume.</span></div>';
+    extra = '<div class="note"><span>Close Tir, run the backup panel’s <code>git pull</code> command in your library in a terminal, then open Tir again.</span></div>';
     actions = '<button class="btn primary" data-act="resume">Resume backup</button><button class="btn quiet" data-act="connect">Change repository…</button>';
   } else actions = `<button class="btn primary" data-act="backupnow"${b.kind === 'busy' ? ' disabled' : ''}>Back up now</button><button class="btn quiet" data-act="connect">Change repository…</button>`;
   return `<div class="bp-h"><span class="bp-ic ${head[0]}">${head[1] === 'spin' ? svg('spin', 17, 'spin') : svg(head[1], 18)}</span><div><b>${head[2]}</b><span>${head[3]}</span></div></div>

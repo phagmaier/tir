@@ -10,11 +10,12 @@ Read only what the task needs.
 
 | Document | Holds | Read when |
 | --- | --- | --- |
-| [Plan](docs/plan.md#current-status) | Active tasks, reviews, user checks and known gaps | For planned implementation: read "Current status", then the assigned task |
+| [Plan](docs/plan.md#current-status) | Ready tasks, open reviews, user checks and known gaps | For planned implementation: read "Current status", then the assigned task |
 | [Product brief](docs/brief.md) | Intended behaviour, the user's decisions, and shared terms | When working on product behaviour or terminology; read the relevant sections |
 | [Architecture](docs/architecture.md) | Design rules, where things live, the library on disk, and how to run and check things | Before touching a part you have not read; "Working here" before running anything |
 | [Findings](docs/findings.md) | Outside-world facts the code depends on (Final Draft's format, Fountain, the toolchain) and rejected designs | When touching that topic, or before trying an approach that may have been rejected |
 | [Prototype index](docs/prototype/index.html) | The chosen screen designs, and the ones not chosen | When a task builds or changes a screen |
+| [History](docs/history.md) | Completed records and measurements, not current instructions | Only for prior evidence, a review snapshot, or a user sign-off |
 
 Use the terms as `brief.md` defines them (library, project, draft, active
 draft, fork, element, saved, backed up). Do not introduce synonyms in code
@@ -62,7 +63,7 @@ to the user as a new prototype piece.
 ## Project rules
 
 - **Tests and trial runs never use the real library, real settings, or a
-  real GitHub repository.** Use the [isolated launch](docs/architecture.md#running-and-checking),
+  real GitHub repository.** Use the [isolated launch](docs/architecture.md#isolated-native-trial),
   temporary test directories, and a local bare git repository.
 - **Tir writes inside the library or its own settings file.** An export
   may also create a new file at a destination picked in the native Save

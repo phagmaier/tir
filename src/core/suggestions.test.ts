@@ -156,6 +156,18 @@ describe("locations already used, after the prefix", () => {
   ])("typing %j in a heading", (typed, expected) => {
     expect(typing(script, heading(typed))).toEqual(expected);
   });
+
+  test.each(["EXT./INT.", "EXT./ INT.", "INT./ EXT."])(
+    "learns a location and continues typing after %s",
+    (prefix) => {
+      expect(typing([heading(`${prefix} BOATHOUSE - NIGHT`)], heading("INT. BOA"))).toEqual([
+        ["BOATHOUSE", 1],
+      ]);
+      expect(typing([heading("INT. BOATHOUSE - NIGHT")], heading(`${prefix} BOA`))).toEqual([
+        ["BOATHOUSE", 1],
+      ]);
+    },
+  );
 });
 
 describe("times of day, after ' - ': Final Draft's, then any used", () => {

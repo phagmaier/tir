@@ -126,7 +126,9 @@ export function pagePosition(
       window.addEventListener("scroll", onScroll, { passive: true });
       return {
         update(next, previous) {
-          if (next.state === previous) return;
+          // A spell-check decoration update must not undo scroll-based page position.
+          if (next.state.doc === previous.doc && next.state.selection.eq(previous.selection))
+            return;
           show(projection.pageAt(next.state.selection.head));
           // Let editing and jumps win over the scroll they trigger in this frame.
           // Scroll events are delivered before animation frame callbacks.

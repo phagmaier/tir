@@ -72,7 +72,14 @@ export function formattingCheck(
       let waiting = 0;
       // The element the writer last typed in while the caret stays there: empty, it
       // is the place being written, as after Enter, and no stray line yet.
-      let writing = -1;
+      // A blank new draft is already at its first writing position.
+      const { doc } = view.state;
+      let writing =
+        doc.childCount === 1 &&
+        doc.firstChild?.attrs.type === "sceneHeading" &&
+        doc.firstChild.content.size === 0
+          ? caretElement(view.state)
+          : -1;
       const indicateCaret = () => {
         const { selection } = view.state;
         const next = selection.empty ? marks.get(selection.$head.index(0)) : undefined;

@@ -194,6 +194,14 @@ describe("model → Fountain → model", () => {
     expect(roundTrip(everyFormat)).toEqual(everyFormat);
   });
 
+  it("round-trips private-use characters, emphasis and literal note delimiters", () => {
+    const script: Script = {
+      titlePage: { ...noTitle, title: "\uE000\uE001" },
+      elements: [{ type: "shot", text: "\uE000 \uE001 [[literal]]", bold: [[2, 3]] }],
+    };
+    expect(readFountain(writeFountain(script))).toEqual({ script, leftOut: [] });
+  });
+
   it("keeps a new title page's default credit", () => {
     const titlePage = { ...noTitle, credit: "Written by" };
     expect(roundTrip({ titlePage, elements: [] }).titlePage).toEqual(titlePage);

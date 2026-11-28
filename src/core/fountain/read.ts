@@ -64,9 +64,6 @@ interface Draft {
   open?: boolean;
 }
 
-const LEFT_OUT = "\uE000";
-const MARKER = "\uE001";
-
 export interface ReadOptions {
   /**
    * Whether an opening block of `Key: value` lines is a title page, as at the
@@ -86,6 +83,9 @@ export function readFountain(source: string, options: ReadOptions = {}): ScriptR
   let titlePage = emptyTitlePage();
   let body = lines;
   if (options.titlePage !== false && isTitlePage(titleLines)) {
+    for (let i = 0; i < start; i++) {
+      for (const item of lines[i]?.removed ?? []) leftOut.push({ ...item, at: null });
+    }
     titlePage = readTitlePage(titleLines, leftOut);
     body = lines.slice(titleEnd);
   }
@@ -96,44 +96,35 @@ export function readFountain(source: string, options: ReadOptions = {}): ScriptR
   return { script: { titlePage, elements }, leftOut };
 }
 
-/** Splits into lines, setting aside notes and boneyard as it goes. */
+/** Splits lines and tracks notes as metadata, not as reserved characters in the text. */
 function splitLines(source: string): Line[] {
-  const removed: Removed[] = [];
-  const markers: ElementType[] = [];
-  const text = setAside(source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"), removed, markers);
-
+  const text = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const lines: Line[] = [];
-  let pending: Removed[] = [];
-  for (const raw of text.split("\n")) {
-    const lineRemoved = [...raw]
-      .filter((c) => c === LEFT_OUT)
-      .map(() => removed.shift() as Removed);
-    const lineMarkers = [...raw].filter((c) => c === MARKER).map(() => markers.shift());
-    const cleaned = raw.replace(/^[\uE000\uE001]+ ?| ?[\uE000\uE001]/g, "");
-    // A line that held only a note or boneyard goes, so a note between two
-    // lines of a speech does not split it.
-    if (raw !== cleaned && cleaned.trim() === "" && lineMarkers.length === 0) {
-      pending.push(...lineRemoved);
+  let removed: Removed[] = [];
+  let marker: ElementType | undefined;
+  let cleaned = "";
+  let segmentStart = 0;
+  let removedSyntax = false;
+  let leading = true;
+  let i = 0;
+  while (i <= text.length) {
+    if (i === text.length || text[i] === "\n") {
+      cleaned += text.slice(segmentStart, i);
+      // An omission alone on a line must not split the surrounding speech.
+      if (!removedSyntax || cleaned.trim() || marker !== undefined) {
+        lines.push({ text: cleaned, marker, removed });
+        removed = [];
+      }
+      marker = undefined;
+      cleaned = "";
+      removedSyntax = false;
+      leading = true;
+      segmentStart = ++i;
       continue;
     }
-    lines.push({ text: cleaned, marker: lineMarkers[0], removed: [...pending, ...lineRemoved] });
-    pending = [];
-  }
-  if (pending.length > 0) lines.push({ text: "", marker: undefined, removed: pending });
-  return lines;
-}
-
-/**
- * Replaces each note and each stretch of boneyard with a placeholder,
- * skipping escaped characters, so `\/**bold**` is not boneyard.
- */
-function setAside(text: string, removed: Removed[], markers: ElementType[]): string {
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
     if (text[i] === "\\") {
-      out += text.slice(i, i + 2);
-      i += 2;
+      // Keep escapes for inline parsing, but do not interpret escaped note delimiters here.
+      i += i + 1 < text.length && text[i + 1] !== "\n" ? 2 : 1;
       continue;
     }
     const boneyard = text.startsWith("/*", i);
@@ -142,17 +133,30 @@ function setAside(text: string, removed: Removed[], markers: ElementType[]): str
       if (end >= 0) {
         const inside = text.slice(i + 2, end);
         const type = boneyard ? null : markerType(inside);
-        if (type) markers.push(type);
+        if (type) marker ??= type;
         else removed.push({ kind: boneyard ? "boneyard" : "note", text: inside.trim() });
-        out += type ? MARKER : LEFT_OUT;
+        removedSyntax = true;
+
+        // Remove one space after an opening run of omissions, or before each
+        // later omission, so removing the syntax does not leave doubled spaces.
+        leading &&= i === segmentStart;
+        if (!leading) {
+          const trim = i > segmentStart && text[i - 1] === " " ? 1 : 0;
+          cleaned += text.slice(segmentStart, i - trim);
+        }
         i = end + 2;
+        if (leading && text[i] === " ") {
+          i++;
+          leading = false;
+        }
+        segmentStart = i;
         continue;
       }
     }
-    out += text[i];
     i++;
   }
-  return out;
+  if (removed.length > 0) lines.push({ text: "", marker: undefined, removed });
+  return lines;
 }
 
 function isBlank(line: Line): boolean {
@@ -217,7 +221,7 @@ function readTitlePage(block: readonly Line[], leftOut: LeftOut[]): TitlePage {
   let current: string[] | null = null;
   let shown = false;
   for (const line of block) {
-    for (const item of line.removed) leftOut.push({ ...item, at: 0 });
+    for (const item of line.removed) leftOut.push({ ...item, at: null });
     const keyed = titleKey(line);
     if (!keyed) {
       current?.push(parseInline(line.text.trim()).text);
@@ -226,7 +230,7 @@ function readTitlePage(block: readonly Line[], leftOut: LeftOut[]): TitlePage {
     const key = normaliseKey(keyed.key);
     const field = TITLE_FIELDS.get(key);
     if (!field) {
-      leftOut.push({ kind: "titlePageField", text: keyed.key.trim(), at: 0 });
+      leftOut.push({ kind: "titlePageField", text: keyed.key.trim(), at: null });
       current = null;
       continue;
     }
@@ -441,5 +445,5 @@ function collectLeftOut(lines: readonly Line[], count: number, leftOut: LeftOut[
       pending = [];
     }
   }
-  for (const item of pending) leftOut.push({ ...item, at: Math.max(0, count - 1) });
+  for (const item of pending) leftOut.push({ ...item, at: count === 0 ? null : count - 1 });
 }

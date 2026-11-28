@@ -9,6 +9,11 @@ editor guidance.
 - [Stage 0 · Skeleton and page engine](#stage-0-skeleton-and-page-engine)
 - [Stage 1 · Writing](#stage-1-writing)
 - [Stage 2 · Library, projects and drafts](#stage-2-library-projects-and-drafts)
+- [Stage 3 · PDF](#stage-3-pdf)
+- [Stage 4 · Final Draft files](#stage-4-final-draft-files)
+- [Stage 5 · Find, formatting check, spell check](#stage-5-find-formatting-check-spell-check)
+- [Stage 6 · GitHub backup](#stage-6-github-backup)
+- [Stage 7 · Release build and hardening](#stage-7-install-and-finish)
 - [Editor experiments and measurements](#editor)
 
 ## Stage 0: skeleton and page engine
@@ -191,6 +196,8 @@ editor guidance.
     gaps. `mise run check` exited 0 (241 tests); `mise run dev` still shows
     the page.
 
+<a id="task-0-7"></a>
+
 - [x] 0.7 — Parity check tool
   - Status: done
   - Depends on: 0.6
@@ -217,10 +224,12 @@ editor guidance.
     reported as the first differing page, with the pages before it the
     same; a PDF made at 50 lines matches at `--lines 50`; split runs,
     ligatures, double printing and an unknown indent are handled or noted.
-    A one-off sweep of 120 generated PDFs matched 1,280 of 1,304 page
-    starts, and every differing page was preceded by a note (findings,
-    "Reading screenplay PDFs"). `mise run parity -- <three PDFs>` printed
-    the per-page report and summary. `mise run check` exited 0 (247 tests).
+    One recorded sweep of 120 generated PDFs matched 1,280 of 1,304 page
+    starts, and every differing page was preceded by a note. The
+    [documented 40-script corpus](findings.md#reading-screenplay-pdfs) has
+    a different denominator; these records do not identify the same run.
+    `mise run parity -- <three PDFs>` printed the per-page report and
+    summary. `mise run check` exited 0 (247 tests).
 
 - [x] 0.8 — Calibration against Final Draft
   - Status: done
@@ -306,8 +315,8 @@ editor guidance.
 
 ## Stage 1: writing
 
-Stage 1 edits one draft file opened directly. Projects and automatic
-saving arrive in Stage 2.
+Stage 1 edited one draft file directly. Its opening and saving flow was
+superseded by [autosave](#task-2-2) and the [Projects screen](#task-2-3).
 
 - [x] 1.1 — Editor spike: ProseMirror showing the engine's breaks
   - Status: done
@@ -468,6 +477,8 @@ saving arrive in Stage 2.
     end) and two stale comments; no other findings. `mise run check`
     passed (257 Vitest tests, both type checks, Biome and Rust checks).
 
+<a id="task-1-4"></a>
+
 - [x] 1.4 — Elements and keys
   - Status: done
   - Depends on: 1.3
@@ -521,6 +532,8 @@ saving arrive in Stage 2.
     Draft's element keys; that Ctrl+0 resets no zoom, from Ctrl+= zooming
     nothing). `mise run check` passed (346 Vitest tests, both type checks,
     Biome and Rust checks).
+
+<a id="task-1-5"></a>
 
 - [x] 1.5 — Autocomplete
   - Status: done
@@ -581,6 +594,8 @@ saving arrive in Stage 2.
     target, which kept later connections from the page (findings, measuring
     traps). `mise run check` passed (403 Vitest tests, both type checks,
     Biome and Rust checks).
+
+<a id="task-1-6"></a>
 
 - [x] 1.6 — Undo and redo, copy and paste
   - Status: done
@@ -649,6 +664,8 @@ saving arrive in Stage 2.
     changed). Not checked: drag and drop, and middle-click paste (Known
     gaps).
 
+<a id="task-1-7"></a>
+
 - [x] 1.7 — Scene sidebar, page position, Go to page
   - Status: done
   - Depends on: 1.3
@@ -714,6 +731,8 @@ saving arrive in Stage 2.
     list as it was before an edit, and two comments; no other findings.
     `mise run check` passed (497 Vitest tests, both type checks, Biome and
     Rust checks).
+
+<a id="task-1-8"></a>
 
 - [x] 1.8 — Zoom, focus mode, the paper switch, and settings
   - Status: done
@@ -890,6 +909,8 @@ saving arrive in Stage 2.
     natively: a save failing on disk (Rust tests cover it), and the
     laptop.
 
+<a id="task-1-10"></a>
+
 - [x] 1.10 — Review: Stage 1
   - Status: done
   - Depends on: 1.9
@@ -971,9 +992,10 @@ saving arrive in Stage 2.
     10–12 ms, frame 17–21 ms); the paragraph check costs 0.35 ms an edit
     and four alternating runs with it off and on measured alike; making
     the sidebar inert in focus mode, as first done, slowed focus mode by
-    12–16 ms and was replaced (findings, "Editor"). Scrolling and the
-    sidebar, no target: findings ("Scrolling keeps 60 Hz…"), brought to
-    the user. Accessibility: every top bar, sidebar and footer control has
+    12–16 ms and was replaced (findings, "Editor"). The [scripted
+    scrolling and sidebar measurements](#stage-1-scroll-probe) had no
+    agreed target and were brought to the user.
+    Accessibility: every top bar, sidebar and footer control has
     a name (text, `aria-label`) and the editor is a named multi-line
     textbox; controls reached by key show look.css's ring; the editor's
     focus shows only as its 1 px brass caret, its ring off by design; the
@@ -1082,6 +1104,8 @@ saving arrive in Stage 2.
     case-insensitive volume (Known gaps). `mise run check` passed (551
     Vitest tests, both type checks, Biome, rustfmt, clippy, 28 Rust
     tests). Not checked: the laptop.
+
+<a id="task-2-2"></a>
 
 - [x] 2.2 — Automatic saving and the Fountain copy
   - Status: done
@@ -1198,6 +1222,8 @@ saving arrive in Stage 2.
     failure. `vite build` built (the worker as a file of its own); `mise
     run check` passed (566 Vitest tests, both type checks, Biome, rustfmt,
     clippy, 31 Rust tests). Not checked: the laptop, a release build.
+
+<a id="task-2-3"></a>
 
 - [x] 2.3 — Projects screen
   - Status: done
@@ -1357,6 +1383,8 @@ saving arrive in Stage 2.
     the menu was clickable over the sidebar. See architecture, "Saving and
     opening".
 
+<a id="task-2-5"></a>
+
 - [x] 2.5 — Title page form
   - Status: done
   - Depends on: 2.4
@@ -1376,6 +1404,8 @@ saving arrive in Stage 2.
     and switching back to the original after editing the fork.
     Reviewed with user-code-review; corrected preview whitespace that
     moved the title down two lines in WebKitGTK.
+
+<a id="task-2-6"></a>
 
 - [x] 2.6 — Fountain import and export
   - Status: done
@@ -1398,6 +1428,8 @@ saving arrive in Stage 2.
     also verified that export refuses existing files and symlinks.
     Reviewed the 2.6 working-tree changes over `db8aaef` with
     user-code-review; no unresolved in-scope findings.
+
+<a id="task-2-7"></a>
 
 - [x] 2.7 — Review: Stage 2
   - Status: done
@@ -1478,6 +1510,8 @@ saving arrive in Stage 2.
     type checks, Biome, rustfmt, clippy, 38 Rust tests). Not checked: the
     laptop, a release build, an export to a FAT drive.
 
+<a id="task-2-8"></a>
+
 - [x] 2.8 — User check: Stage 2
   - Status: done
   - Depends on: 2.7
@@ -1488,13 +1522,265 @@ saving arrive in Stage 2.
     looks good, it feels good and everything appears to be working i'm very
     pleased." No notes, so no tasks were added before Stage 3.
 
+## Stage 3: PDF
+
+<a id="task-3-1"></a>
+
+- [x] 3.1 — PDF export. 2026-11-27: readback tests checked hand-worked
+  positions, the 7.2 pt grid, engine lines and marks, the title page,
+  labels, bookmarks, metadata, subset embedding and worker fallback.
+  In isolated WebKitGTK, native export made three pages with the title
+  page, two without; `pdffonts` showed four embedded subsets with
+  Unicode maps. A 121-page worker export took 564–597 ms; the longest
+  main-thread pause was 8 ms. Review found italic ligatures breaking the
+  grid; disabling them passed a regression test that failed without the
+  fix. `mise run check` and `vite build` passed. Neither the release nor
+  the laptop was tried. Dependency rationale: `percent-encoding` for
+  the export-name header; `@cantoo/pdf-lib` and `@cantoo/fontkit` moved
+  from development to runtime.
+
+<a id="task-3-2"></a>
+
+- [x] 3.2 — PDF verified against the engine. 2026-11-27: a one-off Node
+  comparison read the first body row's text and baseline on each of
+  Tir's exported pages (excluding repeated cues) against `paginate`,
+  which also drives the editor. All 839 script-page starts matched:
+  716 from seven reconstructed calibration scripts, two from Salt Line
+  and 121 from the seeded feature fixture. This did **not** compare
+  Tir's output to Final Draft's pages. Firefox 160.0.1 and Papers 51.1
+  both rendered the script, allowed text selection/copy, and found
+  "No boats after dark" on script page 2.
+
+<a id="task-3-3"></a>
+
+- [x] 3.3 — Review: Stage 3. 2026-11-27: reviewed
+  `1425e2df9f41de6237291a0079d19512309f2b40` plus uncommitted changes,
+  with `da76a1f` as the [2.7](#task-2-7) snapshot. Checked shared
+  layout, exact positions, embedding and the OFL, metadata, navigation
+  and native new-file writes. Reproduced and fixed two regressions: long
+  project names clipping the draft name, and title fields with tabs
+  shifting between preview and export. Both had regression cases and
+  isolated native verification. `mise run check` passed. Reused 3.1's
+  performance evidence; the export worker path did not change.
+
+<a id="task-3-4"></a>
+
+- [x] 3.4 — User check: Stage 3. 2026-11-27: after comparing a PDF to the
+  editor, the user reported “everything worked as intended and looks
+  good”. No issues reported.
+
+## Stage 4: Final Draft files
+
+<a id="task-4-1"></a>
+
+- [x] 4.1 — FDX import. 2026-11-27: focused codec, Projects and native
+  dialog tests passed, along with type checks, Biome, rustfmt and clippy.
+  Isolated native import retained emphasis and dual dialogue, reported
+  four omission kinds, and left the source hash unchanged. A DOCTYPE
+  fixture was refused without writing to the library.
+
+<a id="task-4-2"></a>
+
+- [x] 4.2 — FDX export. 2026-11-27: focused Vitest, type checks, Biome,
+  rustfmt and native dialog tests passed. The native Save dialog used
+  the project and draft name, wrote a new file and returned focus to the
+  editor. The file decoded to the on-screen draft, including literal
+  XML punctuation. Final Draft was not run.
+
+<a id="task-4-3"></a>
+
+- [x] 4.3 — Review: Stage 4. 2026-11-27: reviewed
+  `1425e2df9f41de6237291a0079d19512309f2b40` plus uncommitted changes,
+  excluding work covered by 3.3. Reviewed XML limits, escaping and
+  defaults, omission reports and original fixtures. Fixed and tested
+  omissions on dual-dialogue wrappers and title paragraphs. The isolated
+  native flow again left the source unchanged and exported a new file
+  matching the draft. `mise run check` passed.
+
+<a id="task-4-4"></a>
+
+- [x] 4.4 — User check: Stage 4. 2026-11-27: for the Story Architect FDX
+  versus Fountain import check, the user reported “I did the final draft
+  check it's fine”. No notes. This did not test opening Tir's export
+  in Final Draft. The user waived waiting for this check before Stage 5
+  started; Stage 5 initially depended on 4.3.
+
+## Stage 5: find, formatting check, spell check
+
+<a id="task-5-1"></a>
+
+- [x] 5.1 — Find and replace. 2026-11-27: focused logic and UI-state
+  Vitest, type checks and Biome passed. Cases covered whole words,
+  punctuation, capitals, one-step Replace all and incremental
+  highlights. Isolated native checks covered real navigation, undo and
+  redo, both paper settings and focus return. Cost of thousands of
+  highlights justified searching after a pause; see
+  [Editor findings](findings.md#editor). Review corrected selection
+  seeding, stale pending searches and navigation to a lone match. The
+  full check and the laptop were not run. For the Find bar's composition,
+  see [piece 5](prototype/05-writing-window.html), not the earlier piece 1.
+
+<a id="task-5-2"></a>
+
+- [x] 5.2 — Formatting check. 2026-11-27: focused tests, type checks and
+  Biome passed. Accounted for all 47 findings in seven reconstructed
+  calibration scripts; see [Calibration](findings.md#calibration) for
+  the later run. In isolated WebKitGTK, F8 wrapped across pages, marks
+  followed edits and Undo, and simultaneous dual-dialogue marks and
+  their tips were visible on both papers. Review fixed overlapping
+  tips and gutter placement. Native Save dialogs were not exercised.
+
+<a id="task-5-3"></a>
+
+- [x] 5.3 — Spell check. 2026-11-27: reviewed `41bfe96` plus uncommitted
+  changes. Core and plugin cases covered the actual Hunspell dictionary,
+  learned names, suggestions, undo and persistence. In isolated
+  WebKitGTK, real right-click and F7 opened the menu, adding a word
+  persisted across reload, and placement had no misses with squiggles.
+  The [spell-check findings](findings.md#spell-check) record the
+  licences, rejected libraries, worker timings and Vite asset-inlining
+  fix. Review fixed stale/split squiggles, suggestions, mapping cost,
+  popup key precedence and hit testing. `mise run check` and `vite build`
+  passed; the release and laptop were not tried. The user delegated
+  remaining dictionary choices: accept screenplay terms and accented
+  equivalents, but keep US English spellings.
+
+<a id="task-5-4"></a>
+
+- [x] 5.4 — Review: Stage 5. 2026-11-27: reviewed `751797f..ec7f6ea`
+  (`41bfe96`, `cc213fd`, `ec7f6ea`; no uncommitted changes) with three
+  independent reviewers. Verified literal escaping, whole-word matching,
+  30,000 random edits against a fresh search, one-step Replace all and
+  exclusion of marks from exports. Fixed large-transaction decoration
+  mapping cost; timings and limitations are in [Editor findings](findings.md#editor).
+  The user accepted EXT./INT. and a space after a combined prefix's
+  slash; the new calibration run had 42 explained flags. Fixed live-empty
+  element warnings, zoomed tips, focus and spelling suggestion issues.
+  The user kept learning each word of character names and locations.
+  `mise run check` passed. Native checks of mark-button presses were
+  synthetic; neither the laptop nor the release was tried. A subsequent
+  focused regression check confirmed that adding a word drops stale
+  squiggles even when a recheck never answers.
+
+<a id="task-5-5"></a>
+
+- [x] 5.5 — User check: Stage 5. 2026-11-27, the user delegated the
+  check: “I'm not at my computer right now I'll check later shouldn't
+  you be able to see if it passes or not though? if so you check”.
+  Isolated native WebKitGTK, using real keys and clicks: Replace all
+  changed cues and action, Undo and Redo worked; F8 went to the flagged
+  cue and fixing it reduced the count; the right-click spelling menu
+  corrected a typo and supported Undo and Redo. After normal close the
+  Fountain copy held the corrected names, cue and spelling. No user
+  trial was claimed.
+
+## Stage 6: GitHub backup
+
+<a id="task-6-1"></a>
+
+- [x] 6.1 — Git in the library. 2026-11-27: Rust tests, clippy and
+  rustfmt passed. Temporary libraries covered quiet and close commits,
+  repository creation and damaged, missing or busy repositories. In an
+  isolated trial normal close committed only `.gitignore`, the project
+  file, the draft and its copy.
+
+<a id="task-6-2"></a>
+
+- [x] 6.2 — Push, offline and pause. 2026-11-27: the user chose to bring
+  in the other machine's work with Tir closed and to refuse a stale
+  save. Rust tests with file-only transport plus clippy and rustfmt
+  passed. Local bare repositories verified a normal push, retry and
+  recovery, pause when a remote was ahead, and no automatic merge. In
+  an isolated native trial a changed-on-disk draft was not overwritten
+  and close asked whether to leave without saving.
+
+<a id="task-6-3"></a>
+
+- [x] 6.3 — Connect dialog and backup panel. 2026-11-28: Rust, Vitest,
+  both type checks, Biome, clippy and rustfmt passed. The isolated native
+  trial used a sandbox in place of GitHub to exercise connect refusals,
+  successful connection, backup states, offline recovery, resume,
+  keyboard focus and deletion warnings. No live public-repository
+  request was made; see [GitHub findings](findings.md#github).
+
+<a id="task-6-4"></a>
+
+- [x] 6.4 — Review: Stage 6. 2026-11-28: reviewed `2526989` plus
+  uncommitted changes (`ec7f6ea..HEAD`, including carry-over `18c0b37`
+  and `1179b46`) with two independent reviewers. Verified library-only
+  Git operation using argument lists, no automatic merges or forced
+  pushes, offline behavior and privacy checks against test doubles.
+  Fixed credential redaction and prompts, foreign-tree and conflict
+  guards, sandbox configuration isolation, copy-failure recovery,
+  concurrent connect, blocking-thread use and focus/status races.
+  `mise run check` passed. In an isolated native trial the connect
+  dialog kept Ctrl+O; during an eight-second push a second Enter opened
+  nothing, focus returned to Back up now, and close committed and pushed.
+  Public GitHub verification remained open; transport and data-safety
+  follow-ups are recorded in 6.5a and the [live gaps](plan.md#known-gaps).
+
+<a id="task-6-5"></a>
+
+- [x] 6.5 — User check: Stage 6. The laptop's backup reached GitHub with
+  both files. The user reported that an ordinary action appeared as
+  `!Testing 1 2 3 testing.  [[tir:action]]` in its Fountain copy.
+  After retesting 6.5a on the laptop (2026-11-28): “Yup that worked and
+  seemed to work fine.” Asked whether Tir showed an offline queue and
+  the commit arrived automatically after reconnecting, the user replied
+  on 2026-11-28: “Yes i think so.”
+
+<a id="task-6-5a"></a>
+
+- [x] 6.5a — Fountain copy fix and backup review. Two independent
+  reviewers covered saving, Git storage and transport, the worker and
+  the panel. Fixed redundant Fountain markers, destination and privacy
+  checks, unrelated staged and historical paths, escaped `.git`
+  storage, subprocess timeouts, retries, pause and close handling,
+  manual save-before-backup, and misleading status and delete warnings.
+  Focused Vitest (238) and Rust (78) tests, TypeScript, Biome, clippy and
+  rustfmt passed. In an isolated native trial Back up now changed
+  Backup pending to Backed up; the bare repository held the action
+  without redundant markup. No real library or backup repository was
+  used in agent verification.
+
+## Stage 7: install and finish
+
+<a id="task-7-1"></a>
+
+- [x] 7.1 — Release build and installation on NixOS. 2026-11-28:
+  `nix profile add --profile "$trial/profile" .#tir` installed the
+  release in a new profile. It opened Projects on Hyprland outside
+  `nix develop` using isolated settings, WebKit storage and library.
+  The identifier stayed `dev.tir.desktop`. All font and dictionary
+  notices matched; the app wrote both draft files, showed squiggles
+  and F7 suggestions, and exported a two-page US Letter PDF with the
+  title page and an embedded Courier Prime subset. Tools: `pdfinfo`,
+  `pdftotext`, `pdffonts`. A separate dev trial opened Projects after
+  fixing the native CLI binding's missing liblzma.
+
+<a id="task-7-2"></a>
+
+- [x] 7.2 — Desktop entry, icon and release hardening. 2026-11-28:
+  `desktop-file-validate` and installed icon comparisons passed; Wofi
+  launched the isolated release. WebKitGTK still advertised the page
+  when an inspector variable was inherited; the package wrapper now
+  strips both inspector variables, and neither port listened on
+  relaunch. Devtools keys opened nothing. The observed response CSP
+  denied by default, allowed bundled scripts, workers, fonts and IPC,
+  and allowed neither Vite WebSocket nor inline scripts or eval. The
+  wrapper used a byte-identical executable; the selected local
+  capability granted event listening only. Rechecked layout, spelling,
+  autosave, PDF export and backup; the edit made just before close
+  reached the Fountain copy and the isolated bare repository.
+
+The [live plan](plan.md#task-7-3) holds the rest of Stage 7.
+
 ## Editor
 
-All observations on the desktop's Tauri window (WebKitGTK 2.54.2,
-Hyprland, 60 Hz, window 931×1010), 2026-11-26, on the 120-page fixture
-(`?fixture=spike` in `src/ui/dev-fixtures.ts`: 2,280 elements, a forced
-break before each scene) unless a line says otherwise. How to repeat them:
-architecture, "Measuring the editor".
+Unless noted, observations used the desktop's Tauri window (WebKitGTK
+2.54.2, Hyprland, 60 Hz, 931×1010) and `?fixture=spike`, the 120-page
+fixture with 2,280 elements and a forced break before each scene. These
+probes span 2026-11-26–27. See [Measuring the editor](architecture.md#measuring-the-editor).
 
 **Technique (task 1.1).** One ProseMirror text block holds each element;
 the browser never wraps (`white-space: pre`). The editor sets each
@@ -1804,6 +2090,8 @@ nothing measurable. Kept, since hidden content takes no focus, no clicks
 and no screen reader's attention; the scroll came back to the pixel each
 time.
 
+<a id="stage-2-3-timing"></a>
+
 **The Projects screen leaves typing as it was** (task 2.3; while hidden it
 adds no listener, and the saved state's listener only remembers the state
 for it). Three full runs of `mise run editor-timing` at 100%, the third
@@ -1832,6 +2120,8 @@ to layout (at most 4), 13.5 ms to the frame (at most 23), 14.5–15 ms busy
 16–17 ms (at most 27). Every jump landed on the engine's scroll position,
 (page − 1) × 1,086 px plus the row. WebKitGTK and Tauri deliver Ctrl+G to
 the page's `keydown`.
+
+<a id="stage-1-scroll-probe"></a>
 
 **Scrolling keeps 60 Hz; a scene click and bringing the sidebar back take
 longer** (task 1.10, through the inspector on the 120-page fixture at 100%

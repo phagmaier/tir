@@ -14,8 +14,8 @@ export type LeftOutKind =
 export interface LeftOut {
   readonly kind: LeftOutKind;
   readonly text: string;
-  /** The index of the element it sat beside, or 0 when not anchored to the script. */
-  readonly at: number;
+  /** The index of the body element it sat beside, or null without a body location. */
+  readonly at: number | null;
 }
 
 export interface ScriptRead {

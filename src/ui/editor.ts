@@ -12,7 +12,7 @@ import { schema, toDocument } from "./editor-model.ts";
 import { find } from "./find.ts";
 import { type Block, Projection, ROW_PX, SHEET_PX, sameBlock } from "./projection.ts";
 import { SheetLayer } from "./sheets.ts";
-import { placeSpellingMenu, spelling } from "./spelling.ts";
+import { placeSpellingMenu, spelling, spellingMenu } from "./spelling.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
 
 /**
@@ -157,8 +157,8 @@ function crossPageGap(view: EditorView, event: KeyboardEvent, projection: Projec
   const down = event.key === "ArrowDown";
   if (!down && event.key !== "ArrowUp") return false;
   if (event.ctrlKey || event.altKey || event.metaKey || view.composing) return false;
-  // The autocomplete popup's arrows choose a suggestion.
-  if (popupOf(view.state)) return false;
+  // An open suggestion menu owns the unmodified arrows.
+  if (popupOf(view.state) || (!event.shiftKey && spellingMenu(view.state))) return false;
   const { selection } = view.state;
   if (!(selection instanceof TextSelection) || selection.$head.depth !== 1) return false;
   const { $head } = selection;
