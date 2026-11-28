@@ -9,8 +9,8 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: 5.5, the Stage 5 user check, waiting for the user's report.
-- Next: Stage 6, once 5.5 passes.
+- Active: none. Stage 5 is complete.
+- Next: 6.1, git in the library.
 - Blockers: none.
 
 ## How to work this plan
@@ -451,11 +451,29 @@ anything else. V1 is done when 7.4 is checked.
     rustfmt, clippy). Not checked: a real pointer press on a mark, the
     laptop, a release build (7.1).
 
-- [ ] 5.5 — User check: Stage 5
-  - Status: in progress (waiting for the user's report)
+- [x] 5.5 — User check: Stage 5
+  - Status: done
   - Depends on: 5.4
   - Check: the user renames a character with Replace all, fixes a flagged
     cue, and corrects a misspelling from its suggestions.
+  - Evidence: 2026-11-27, the user handed the check to the agent: "I'm not
+    at my computer right now I'll check later shouldn't you be able to see
+    if it passes or not though? if so you check". Run by the agent in
+    isolated WebKitGTK on the sample, with real key presses, typing and
+    pointer clicks (Hyprland, wtype, wlrctl). Renaming MARA: Ctrl+F, "MARA"
+    with Aa and Word on, NADIA, a click on Replace all showed "Replaced 12
+    · one Undo reverses it" and changed the 11 cues and the introduction,
+    and "Mara" to "Nadia" changed the 10 mentions in action and dialogue,
+    "Nadia's" and "Aunt Nadia" included; one Ctrl+Z in the script undid
+    the second pass alone and Ctrl+Shift+Z redid it. The flagged cue: F8
+    went to "ELIS" with its explanation ("Did you mean “ELLIS”?") at the
+    caret; retyping it as ELLIS took the count from 3 to 2. The
+    misspelling: a right click on "recieve" opened the spelling menu, no
+    native one, with "receive" first; Enter replaced it and its squiggle
+    went, Ctrl+Z restored it and Ctrl+Shift+Z redid it. After a normal
+    close, the saved draft's Fountain copy held NADIA and Nadia, no Mara,
+    no ELIS, and "We receive". The user's own run may still add notes,
+    which become 5.5a tasks.
 
 ## Stage 6: GitHub backup
 
