@@ -1,10 +1,12 @@
 /**
  * Drives the running dev app through WebKitGTK's remote inspector and sends
- * it keys through Hyprland's dispatcher. Follow the isolated launch and
- * single-window precautions in docs/architecture.md#measuring-the-editor.
+ * it keys through Hyprland's dispatcher. The window helpers find, type into,
+ * click, screenshot and close a trial's windows, native dialogs included.
+ * Follow the isolated launch and single-window precautions in
+ * docs/architecture.md#measuring-the-editor.
  */
 import { execFile } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 const INSPECTOR = "127.0.0.1:9339";
@@ -32,6 +34,89 @@ export async function dispatch(command: string): Promise<void> {
 /** A real key press: `wtype` gives arrow keys the wrong code in WebKitGTK (findings, "Editor"). */
 export function press(key: string, mods = ""): Promise<void> {
   return dispatch(`hl.dsp.send_shortcut({window="title:^Tir$",mods="${mods}",key="${key}"})`);
+}
+
+/** A window as `hyprctl clients -j` lists it. */
+export interface Window {
+  readonly address: string;
+  readonly title: string;
+  readonly pid: number;
+  readonly at: readonly [number, number];
+  readonly size: readonly [number, number];
+}
+
+/**
+ * The windows of the Tir started with `TIR_CONFIG_DIR=trial`: its main
+ * window and any native dialog it has open, which share its process.
+ * Target them by address, never by the shared title "Tir".
+ */
+export async function trialWindows(trial: string): Promise<Window[]> {
+  const { stdout } = await exec("hyprctl", ["clients", "-j"], { env });
+  const ours = (pid: number) => {
+    try {
+      const environment = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0");
+      return environment.includes(`TIR_CONFIG_DIR=${trial}`);
+    } catch {
+      // Gone, or another user's process.
+      return false;
+    }
+  };
+  return (JSON.parse(stdout) as Window[]).filter((window) => ours(window.pid));
+}
+
+/**
+ * Sends `key`, an XKB name such as "Return" or "BackSpace", to `window`,
+ * focused or not. In a GTK file dialog `wtype`'s named keys did not arrive.
+ */
+export function sendKey(window: Window, key: string, mods = ""): Promise<void> {
+  return dispatch(
+    `hl.dsp.send_shortcut({ window = "address:${window.address}", mods = "${mods}", key = "${key}" })`,
+  );
+}
+
+/** Focuses `window` and types `text`, such as a path into a file dialog's name field. */
+export async function typeText(window: Window, text: string): Promise<void> {
+  await dispatch(`hl.dsp.focus({ window = "address:${window.address}" })`);
+  await sleep(200);
+  await exec(await nixTool("wtype"), [text], { env });
+}
+
+/** A real left click at `x`, `y` in `window`, such as a page element's client position. */
+export async function click(window: Window, x: number, y: number): Promise<void> {
+  const { stdout } = await exec("hyprctl", ["cursorpos"], { env });
+  const [fromX = 0, fromY = 0] = stdout.trim().split(", ").map(Number);
+  const wlrctl = await nixTool("wlrctl");
+  const dx = Math.round(window.at[0] + x - fromX);
+  const dy = Math.round(window.at[1] + y - fromY);
+  await exec(wlrctl, ["pointer", "move", String(dx), String(dy)], { env });
+  await sleep(200);
+  await exec(wlrctl, ["pointer", "click", "left"], { env });
+}
+
+/** Screenshots `window` to the PNG `file`. */
+export async function screenshot(window: Window, file: string): Promise<void> {
+  const [x, y] = window.at;
+  const [width, height] = window.size;
+  await exec(await nixTool("grim"), ["-g", `${x},${y} ${width}x${height}`, file], { env });
+}
+
+/** Asks `window` to close, as its close button does: Tir saves first, or asks. */
+export function closeWindow(window: Window): Promise<void> {
+  return dispatch(`hl.dsp.window.close({ window = "address:${window.address}" })`);
+}
+
+const built = new Map<string, Promise<string>>();
+
+/** The program `name` from nixpkgs (grim, wtype, wlrctl), built at most once a run. */
+function nixTool(name: string): Promise<string> {
+  let path = built.get(name);
+  if (!path) {
+    path = exec("nix", ["build", "--no-link", "--print-out-paths", `nixpkgs#${name}`]).then(
+      ({ stdout }) => `${stdout.trim().split("\n").at(-1)}/bin/${name}`,
+    );
+    built.set(name, path);
+  }
+  return path;
 }
 
 interface Message {

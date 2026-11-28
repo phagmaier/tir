@@ -41,7 +41,8 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
   within the stage, and rerun affected checks. In `Evidence:`, record the
   reviewed commit (`git rev-parse HEAD`, plus "uncommitted changes" if
   any), findings, and fixes or deferrals. Put deferred findings in
-  "Known gaps".
+  "Known gaps". Commit verified fixes even while the review stays open,
+  so the tasks after it start from a clean tree.
 - **User check tasks** (titled "User check: …"): give the user exact
   steps and wait for their report. Only the user can delegate the check
   or waive the gate. Record their words and date, and the observed result

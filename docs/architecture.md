@@ -795,25 +795,22 @@ Not in git:
 - **pnpm's supply-chain settings** are in `pnpm-workspace.yaml`. Install
   scripts are off; allow one by name under `allowBuilds` only when a package
   needs it.
-- **Inspect the trial window:** if the shell lacks
-  `HYPRLAND_INSTANCE_SIGNATURE`, use the folder name in
-  `$XDG_RUNTIME_DIR/hypr/`. In `hyprctl clients -j`, match the trial
-  process by PID to get the window's `address`, `at` and `size`. Use
-  `address:0x…`, not the shared title "Tir", when targeting it.
-  Screenshot its rectangle with
-  `nix shell nixpkgs#grim --command grim -g "X,Y WxH" "$trial/shot.png"`.
-  If needed, float and resize that address for the screenshot and put
-  it back afterwards. If Vite is already running, the prototypes are
-  at `http://localhost:1420/docs/prototype/`; otherwise use the
-  [standalone prototype index](prototype/index.html).
-  Close the trial window normally so it saves, with
-  `hyprctl dispatch 'hl.dsp.window.close({ window = "address:0x…" })'`
-  (this Hyprland takes Lua dispatcher calls), then stop the dev command
-  you started; do not kill Tir processes by name. Send a key to one window,
-  such as a native dialog, with
-  `hyprctl dispatch 'hl.dsp.send_shortcut({ window = "address:0x…", mods = "", key = "Return" })'`.
-  In a GTK file dialog, `wtype` text reached the name field but its
-  `-k` and `-M` keys did not; send those keys this way.
+- **Inspect the trial window** with the window helpers in
+  `tools/inspector.ts`. `trialWindows` finds the trial's windows, native
+  dialogs included, by their `TIR_CONFIG_DIR`, and each helper targets a
+  window by address, never the shared title "Tir": `screenshot`,
+  `sendKey` (a Hyprland shortcut; in a GTK file dialog `wtype`'s `-k` and
+  `-M` keys did not arrive), `typeText` (`wtype` text), `click` and
+  `closeWindow`, which closes normally so Tir saves. They take Hyprland's
+  instance from `$XDG_RUNTIME_DIR/hypr/` when the shell lacks
+  `HYPRLAND_INSTANCE_SIGNATURE`. This Hyprland takes Lua dispatcher calls,
+  such as `hyprctl dispatch 'hl.dsp.window.close({ window = "address:0x…" })'`.
+  If needed, float and resize a window for the screenshot and put it back
+  afterwards. If Vite is already running, the prototypes are at
+  `http://localhost:1420/docs/prototype/`; otherwise use the
+  [standalone prototype index](prototype/index.html). After closing the
+  trial window, stop the dev command you started; do not kill Tir
+  processes by name.
 - **Rust** builds inside the shell only. The shell sets `RUSTFLAGS` to link
   without Rust's bundled LLD ([findings](findings.md#nixos-development-shell)),
   so a build outside it differs and rebuilds everything.
@@ -873,15 +870,14 @@ them, `every` every element type and format, and `sample` the prototype's
 "Salt Line". A fixture becomes a project in the trial library on its
 first save.
 
-For a real click, use `wlrctl pointer move DX DY` and `wlrctl pointer click left`;
-the window's `at` plus the element's client coordinates give its screen
-position. Use `wtype -k dead_acute -k e` for "é" or
+For a real click, use `click` from `tools/inspector.ts` with the element's
+client coordinates. Use `wtype -k dead_acute -k e` for "é" or
 `wtype -k Multi_key -k o -k c` for "©", but use the Hyprland dispatcher
 for arrow keys. These tools, and `wl-copy` and `wl-paste` for clipboard
 checks, are available through `nix shell` (`wl-clipboard` for the latter
-two). Native dialogs have their own addresses in `hyprctl clients -j`;
-verify the trial's dialog before sending keys. In the Open dialog, press
-Ctrl+L before typing a path. Close only the trial window.
+two). `trialWindows` lists native dialogs too; check the dialog's title
+before sending keys. In the Open dialog, press Ctrl+L before typing a
+path. Close only the trial window.
 
 See the [measuring traps](findings.md#measuring-traps). For WebKit
 profiling, start Vite with `mise exec -- pnpm exec vite`, then use the
