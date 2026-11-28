@@ -57,9 +57,10 @@ describe("the indicator", () => {
     });
     expect(indicator(backedUp, "saving", null, NOW)).toEqual({
       icon: "spin",
-      label: "Backed up",
+      label: "Backup pending",
       warn: false,
-      title: "Saving to this machine. Last backed up to GitHub 3 minutes ago.",
+      title:
+        "Saving to this machine. Changes not yet backed up. Last backed up to GitHub 3 minutes ago.",
     });
     expect(indicator({ ...backedUp, state: "offline", waiting: 6 }, "saved", null, NOW)).toEqual({
       icon: "cloudoff",
@@ -109,7 +110,7 @@ describe("the indicator", () => {
 
   it("says why a save failed before backup", () => {
     expect(indicator(backedUp, "failed", "No space left.", NOW).title).toBe(
-      "Not saved: No space left. Tir tries again in a moment. Backed up to GitHub 3 minutes ago.",
+      "Not saved: No space left. Tir tries again in a moment. Changes not yet backed up. Last backed up to GitHub 3 minutes ago.",
     );
   });
 });
@@ -131,7 +132,7 @@ describe("the backup panel", () => {
     expect(panel(backedUp, "saving", "~/Screenplays", NOW)).toMatchObject({
       icon: "spin",
       heading: "Saving…",
-      busy: true,
+      busy: false,
     });
     expect(panel({ ...backedUp, state: "pushing" }, "saved", "~/Screenplays", NOW)).toMatchObject({
       heading: "Backing up…",
@@ -144,12 +145,22 @@ describe("the backup panel", () => {
     );
   });
 
+  it("does not report saved changes or a queued commit as already backed up", () => {
+    for (const backup of [
+      { ...backedUp, pending: true },
+      { ...backedUp, waiting: 1 },
+    ]) {
+      expect(indicator(backup, "saved", null, NOW).label).toBe("Backup pending");
+      expect(panel(backup, "saved", "~/Screenplays", NOW).heading).toBe("Backup pending");
+    }
+  });
+
   it("tells how to bring in the other machine's work while paused, with Tir closed", () => {
     const paused = panel({ ...backedUp, state: "paused" }, "saved", "~/Scripts/Tir", NOW);
     expect(paused).toMatchObject({ tone: "warn", actions: ["resume", "change"] });
     expect(paused.note).toEqual([
       "To bring them in, close Tir, run ",
-      { code: "git pull" },
+      { code: 'git pull --no-rebase --no-edit origin "refs/heads/$(git branch --show-current)"' },
       " in ",
       { code: "~/Scripts/Tir" },
       " in a terminal, then open Tir again.",
@@ -197,10 +208,11 @@ describe("the connect dialog's notes", () => {
 
 describe("the warning before deleting", () => {
   it("says what GitHub keeps", () => {
-    expect(deletionNote("none")).toBe("Tir has no backup of it yet, so this can't be undone.");
+    expect(deletionNote("none")).toContain("no backup at this path");
     expect(deletionNote("all")).toBe(
       "GitHub keeps the backup history, so it can still be recovered from there.",
     );
-    expect(deletionNote("older")).toContain("without its latest changes");
+    expect(deletionNote("older")).toContain("couldn’t confirm that it holds this version");
+    expect(deletionNote("unknown")).toContain("couldn’t verify the backup");
   });
 });

@@ -9,8 +9,7 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: 6.5, the user's check of Stage 6 (the user asked for 6.1 to
-  6.4, stopping at 6.5): waiting for the user's report.
+- Active: 6.5, laptop user check after the backup fixes in 6.5a.
 - Next: Stage 7, once 6.5 passes.
 - Blockers: none.
 
@@ -662,10 +661,32 @@ anything else. V1 is done when 7.4 is checked.
     the panel in focus mode.
 
 - [ ] 6.5 — User check: Stage 6
-  - Status: todo
-  - Depends on: 6.4
+  - Status: verification pending — repeat on the laptop after 6.5a.
+  - Depends on: 6.4, 6.5a
   - Check: the user connects a new private repository, writes for a while,
     goes offline and back online, and sees the backups arrive on GitHub.
+  - Evidence: the laptop's backup reached GitHub with both files. The user
+    reported that an ordinary action appeared as
+    `!Testing 1 2 3 testing.  [[tir:action]]` in its Fountain copy. No
+    result reported for the offline and reconnect steps.
+
+- [x] 6.5a — Fountain copy fix and backup review
+  - Status: done
+  - Depends on: 6.4
+  - Check: trailing spaces do not force an ordinary Fountain action;
+    review saved files, commit and push safety, the backup worker and the
+    panel. Verify with temporary libraries and local bare repositories.
+  - Evidence: reviewed the Fountain writer, saving, Git storage and
+    transport, the backup worker and the UI, with two independent
+    reviewers. Fixed redundant Fountain markers, destination and privacy
+    checks, unrelated staged and historical paths, escaped `.git`
+    storage, subprocess timeouts, retries, pause and close handling,
+    manual save-before-backup, and misleading status and delete warnings.
+    Focused Vitest (238) and Rust (78) tests, TypeScript, Biome, clippy,
+    and rustfmt passed. In an isolated native trial, a keyboard edit
+    showed Backup pending; Back up now changed it to Backed up, and the
+    bare repository held the action without the unnecessary markup.
+    No real library or backup repository was used in verification.
 
 ## Stage 7: install and finish
 
@@ -873,25 +894,24 @@ that will close it.
   a sandbox git instead (6.3; findings, "GitHub"). The user's check (6.5)
   connects a private repository through it; connecting a public one
   would show its warning.
-- A push or check under way when Tir closes finishes before closing's
-  own record and push, within git's two-minute limit (architecture,
-  "Backup"): the window has gone, but Tir may take three minutes to exit
-  and a new Tir is refused until the instance lock goes after the record
-  (6.4).
+- Closing still waits behind a sync already under way, then makes its
+  own final attempt. The window is gone during the wait; a new Tir must
+  wait for the old instance to release the lock (6.5a).
 - A save refused because the draft changed on disk says to close Tir
   and open it again, then, like any failed save, "Tir tries again in a
   moment." (`main.ts` and `backup.ts`), though no retry can succeed
   before reopening. The page cannot tell this refusal from other
   failures, which reach it as text (6.4).
-- Connecting checks the address `origin` fetches from; a
-  `remote.origin.pushurl` or a `url.*.pushInsteadOf` rule in the
-  writer's own git configuration could send pushes elsewhere, unchecked
-  (6.4).
-- A git command past its time limit is killed, but its output is read
-  until the pipes close (`git::output`): a program git started that keeps
-  them open, such as an ssh connection left to share, holds backup's
-  thread until it exits. ssh's `ConnectTimeout=20` bounds the usual case
-  (6.4).
+- Backup trusts the writer's local Git installation and configuration,
+  including credential helpers and clean filters. Destination and file
+  checks do not make arbitrary local Git configuration safe (6.5a).
+- Deletion warnings compare the current path with the last known remote
+  tip. They do not search old paths after a rename or prove a version
+  recoverable from history (6.5a).
+- If a manual `git pull` replaces a draft after Tir's fingerprint check
+  but before its save renames the replacement, the save can still
+  overwrite the pulled version. The supported sequence is to close Tir
+  before pulling (6.5a).
 - In focus mode the top bar fades while the backup panel under it stays
   open (`app.css`'s focus rules apply to the bar, the panel lives in the
   page's body); Esc closes it (6.4).

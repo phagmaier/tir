@@ -371,13 +371,11 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   minutes (`quiet`), then pushes. Back up now (`back_up_now`) records and
   pushes at once. At closing, on `RunEvent::Exit` after the library's
   command under way has finished (`finish_commands`), backup records what
-  is left, lets the instance lock go (`Instance::release`) so a new Tir
-  may start, and pushes for at most a minute before Tir exits. A push or
-  check already under way when Tir closes finishes first, within git's
-  two-minute limit, so the window gone, Tir may take three minutes to
-  exit and a new Tir be refused for the first two. At launch,
-  changes git has not recorded, made while Tir was closed or left by a
-  Tir that stopped, are recorded after the quiet spell, and backup asks
+  is left and attempts one last sync. Tir holds the instance lock through
+  that sync: another instance must not fetch or push while this one still
+  updates the tracking ref. A check already under way finishes first.
+  At launch, changes git has not recorded, made while Tir was closed or
+  left by a Tir that stopped, are recorded after the quiet spell, and backup asks
   GitHub at once. Backup holds the library's command lock
   (`Library::busy`) while it records, never while it talks to GitHub, so
   no save writes mid-commit and none waits for the network. The commands
@@ -385,25 +383,24 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   `connect_repository`) run on a blocking thread (`blocking` in `lib.rs`),
   never on one the async runtime shares.
 - **GitHub.** The connected repository is the remote `origin`, which a
-  clone names too; with none, the state is `off` and the library is
-  recorded here only. A push sends the current branch to GitHub's branch
-  of that name, never forced (`git push --porcelain`), and moves Tir's
-  record of it (`refs/remotes/origin/BRANCH`); how many commits wait, and
-  when the newest on GitHub was made, come from that record
-  (`git::Standing`). Every five minutes while all is well (`check`), and
-  at launch, backup fetches GitHub's branch into that record, never into
-  the branch or the work tree, so it hears of the other machine's work
-  before the writer starts on an older draft.
+  clone names too. With none, the state is `off` and Tir records locally.
+  A sync verifies that fetch and push address the same GitHub repository,
+  fetches the current branch into its tracking ref only, and checks
+  privacy again before uploading. An absent branch clears the tracking
+  ref; a network failure leaves it alone. Tir checks the paths in outgoing
+  commits, then pushes that exact commit, the current branch only, without
+  force, tags or submodules. The fetch and push share one network budget.
+  Tir also checks at launch and every five minutes while all is well.
 - **Offline and failures.** A push or check that fails is tried again
   after 30 seconds, doubling to five minutes. The failure is `offline`
   when git's words say GitHub could not be reached or git ran past its
   two-minute limit (`git::unreachable`), and `failing` otherwise, with
-  git's words as the `reason`, less any login an address in them carries
-  (`git::redact`, also on the repository's address in the status);
-  offline with nothing waiting reads as backed up. Nothing asks the
-  writer anything: git's ssh runs in batch mode, `ssh -o BatchMode=yes -o
-  ConnectTimeout=20`, unless the writer's environment or configuration
-  names another command, so it never waits for a passphrase or a host
+  git's words as the `reason`, less any credentials an address carries
+  (`git::redact`). Offline is shown even when nothing waits. Nothing asks
+  the writer anything: git's ssh runs in batch mode,
+  `ssh -o BatchMode=yes -o ConnectTimeout=20`, unless the writer's
+  environment or configuration names another command, so it never waits
+  for a passphrase or a host
   question, and an empty `GIT_ASKPASS` (git then skips `core.askPass`
   and `SSH_ASKPASS` too; findings, "Git"), `SSH_ASKPASS_REQUIRE=never`
   and `GCM_INTERACTIVE=never` keep any program from opening a window for
@@ -412,8 +409,10 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   branch lacks, or a check finds them, backup is `paused`: it keeps
   recording here and pushes nothing until Resume (`resume_backup`), which
   checks again. Tir never merges, rebases, resets or forces. The writer
-  brings the other machine's work in with Tir closed, by `git pull` in
-  the library (the user's choice, 2026-11-27); should they pull with Tir
+  brings the other machine's work in with Tir closed, by running the
+  panel's `git pull` command in the library: it names the current branch
+  on `origin` and specifies a merge, so it works without an upstream and
+  when each machine has made commits. Should they pull with Tir
   open, a save refuses to write over a draft that has changed on disk
   since Tir read it to show or last wrote it (`Library::holds`, by each
   draft's fingerprint; `read_draft`'s `shown` marks the reads that count),
@@ -421,10 +420,11 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
 - **The repository.** A library with no `.git` is made a repository on
   the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`,
   written first, unless one is there; a repository the writer made gets
-  it too, before Tir records anything. Git records only each project's
-  `project.json`, its drafts and their Fountain copies, the dictionary
-  and the `.gitignore`, never a file the writer put there or a `*.tmp`
-  left by a crash ([Writing files](#writing-files)). Tir makes no
+  it too. Independently of the ignore rules, Tir refuses
+  to commit unrelated paths and non-regular files and refuses to push
+  unrelated paths even if they have since been deleted from the branch.
+  The allowed paths are each project's `project.json`, its drafts and
+  their Fountain copies, `dictionary.txt` and `.gitignore`. Tir makes no
   repository of a folder holding anything but its projects, the
   dictionary, hidden entries and temporary files
   (`library::foreign_entry`), and records nothing in one, checking before
@@ -440,11 +440,13 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   never finds a repository above the library. Its input is empty,
   `GIT_TERMINAL_PROMPT=0` keeps it from prompting, `LC_ALL=C` keeps its
   messages recognisable, and a command is stopped after a time limit.
-  Every command runs with hooks and the file system monitor off; a commit
-  is unsigned (`commit.gpgSign=false`) and, when git has no name or email
-  for the writer, made as `Tir <tir@localhost>`. A commit is
-  `git add --all` and `git commit`, its message naming the projects it
-  backs up ("Back up Salt Line and the dictionary").
+  Hooks and the file system monitor are off. Tir refuses a `.git` file,
+  link, or shared common directory. A deadline bounds both the Git process
+  and its output collection; expiry stops its process group. A commit is
+  unsigned (`commit.gpgSign=false`) and falls back to `Tir <tir@localhost>`
+  when git has no name or email for the writer.
+  The commit message names what it backs up ("Back up Salt Line and the
+  dictionary").
 - **What stops it.** Nothing is recorded while the repository's HEAD is
   detached, a merge, squash merge, rebase, cherry-pick or revert is under
   way in it, or files are left in conflict, as a popped stash leaves them
@@ -466,19 +468,18 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   findings, "GitHub"), and one holding a commit the branch lacks, such as
   a README GitHub made, since pushing would then need a merge. Only then
   does backup's thread set `origin` (`git::connect`, which drops Tir's
-  record of the repository it replaces and marks `tir.private` in the
-  library's git configuration), record and push, so no push to the old
-  repository is under way while it changes.
+  tracking refs for the repository it replaces), record and sync, so no
+  push to the old repository is under way while it changes.
 - **The page.** `status-indicator.ts` shows the saved state and backup's
   beside it, in words and icons from `backup.ts` (prototype piece 5), and
   in the writing window opens `backup-panel.ts`'s panel: its state, the
   repository, the library's place, and Back up now (`back_up_now`),
   Resume backup (`resume_backup`) or Connect / Change repository…, which
-  opens the connect dialog. Back up now and Resume answer once backup has
-  done them, so the panel can say how it went. The Projects screen's and
-  the draft menu's warnings before a deletion say how much of the project
-  or draft GitHub holds (`backup_of`, `git::Coverage`: none, all, or an
-  older version).
+  opens the connect dialog. Back up now and Resume flush the editor's save
+  first and wait for the sync. Saved but uncommitted changes are shown as
+  waiting, separately from commits that have not reached GitHub. Deletion
+  warnings compare the path against the last-known remote tip and say when
+  Tir could not verify it (`backup_of`, `git::Coverage`).
 - **In a sandbox** (`TIR_CONFIG_DIR` set; tests use the same), git reads
   only `$TIR_CONFIG_DIR/gitconfig` (`GIT_CONFIG_GLOBAL`, with
   `GIT_CONFIG_NOSYSTEM`, `XDG_CONFIG_HOME` set to `$TIR_CONFIG_DIR`, and
@@ -558,6 +559,8 @@ The writer uses plain Fountain where inference reads an element back
 correctly, a forcing character (`!`, `.`, `>`, `@`) where needed, and
 otherwise appends Tir's type note, such as `[[tir:shot]]`, which other
 Fountain apps hide as a note and Tir's reader treats as the element's type.
+Trailing spaces are not part of the Fountain reader's text: they do not
+cause the writer to force an otherwise plain action or add a type note.
 A draft date that is not shown goes under `Hidden draft date:`. Each
 paragraph is checked by reading it back. What a round trip cannot keep is
 listed at the top of `write.ts`.

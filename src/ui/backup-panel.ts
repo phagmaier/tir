@@ -84,6 +84,7 @@ export class BackupPanel {
   private readonly address = el("input");
   private readonly result = el("div", "connect-result");
   private readonly go = button("btn primary", "Check and connect", "submit");
+  private readonly cancel = button("btn quiet", "Cancel");
   private anchor: HTMLElement | null = null;
   private place = "~/Screenplays";
   /** A Back up now or a Resume waits for its answer. */
@@ -136,10 +137,12 @@ export class BackupPanel {
     field.append(label, this.address, help);
     this.result.setAttribute("role", "status");
     this.result.setAttribute("aria-live", "polite");
-    const cancel = button("btn quiet", "Cancel");
-    cancel.addEventListener("click", () => this.dialog.close());
+    this.cancel.addEventListener("click", () => this.dialog.close());
+    this.dialog.addEventListener("cancel", (event) => {
+      if (this.checking) event.preventDefault();
+    });
     const actions = el("div", "actions");
-    actions.append(cancel, this.go);
+    actions.append(this.cancel, this.go);
     form.append(heading, intro, field, this.result, actions);
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -150,7 +153,7 @@ export class BackupPanel {
     this.dialog.append(form);
     // A click on the dimmed window around the dialog closes it, as Cancel does.
     this.dialog.addEventListener("click", (event) => {
-      if (event.target !== this.dialog) return;
+      if (event.target !== this.dialog || this.checking) return;
       const { left, right, top, bottom } = this.dialog.getBoundingClientRect();
       const { clientX: x, clientY: y } = event;
       if (x < left || x > right || y < top || y > bottom) this.dialog.close();
@@ -292,16 +295,21 @@ export class BackupPanel {
     this.update();
     if (!status) return;
     if (status.problem) return;
-    if (status.state === "backedUp") {
+    if (
+      status.state === "backedUp" &&
+      status.backedUp !== null &&
+      !status.pending &&
+      status.waiting === 0
+    ) {
       this.side.toast(
-        action === "resume" ? "Backup resumed. Backed up just now." : "Backed up just now",
+        action === "resume" ? "Backup resumed. Up to date on GitHub." : "Up to date on GitHub.",
       );
     } else if (status.state === "offline") {
       this.side.toast("Still offline. Tir will back up as soon as GitHub is reachable.");
     } else if (status.state === "paused") {
       this.side.toast(
         action === "resume"
-          ? "GitHub still has changes this machine doesn’t have."
+          ? (status.reason ?? "GitHub still has changes this machine doesn’t have.")
           : "Backup paused: GitHub has changes this machine doesn’t have.",
       );
     } else if (status.state === "failing") {
@@ -342,6 +350,7 @@ export class BackupPanel {
     // One check at a time: two could connect two repositories in turn.
     this.checking = true;
     this.go.disabled = true;
+    this.cancel.disabled = true;
     this.address.readOnly = true;
     this.result.replaceChildren(
       note({
@@ -359,6 +368,7 @@ export class BackupPanel {
         : { projects: 0, drafts: 0 };
     this.checking = false;
     this.go.disabled = false;
+    this.cancel.disabled = false;
     this.address.readOnly = false;
     // The dialog was closed, or opened afresh, meanwhile.
     if (!this.dialog.open || this.address.value.trim() !== address) {
@@ -386,8 +396,9 @@ export class BackupPanel {
     if (this.pop.hidden && !this.dialog.open) return;
     event.preventDefault();
     event.stopPropagation();
-    if (this.dialog.open) this.dialog.close();
-    else this.close(true);
+    if (this.dialog.open) {
+      if (!this.checking) this.dialog.close();
+    } else this.close(true);
   };
 
   private readonly position = () => {

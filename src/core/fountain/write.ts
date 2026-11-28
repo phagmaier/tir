@@ -159,19 +159,22 @@ function readsBack(paragraph: string, expected: readonly Element[], check: Check
   );
 }
 
-/** What must survive: type, text and flags, and in strict mode each visible character's styles. */
+/** Compare types, flags, and text as Fountain can keep it, plus visible styles in strict mode. */
 function signature(element: Element, strict: boolean): string {
   const { text } = element;
   const styles: string[] = [];
   for (let i = 0; strict && i < text.length; i++) {
-    const visible = !/\s/.test(text[i] as string);
-    styles.push(
-      visible
-        ? STYLES.filter((style) => element[style]?.some(([s, e]) => s <= i && i < e)).join()
-        : "",
-    );
+    if (!/\s/.test(text[i] as string)) {
+      styles.push(
+        STYLES.filter((style) => element[style]?.some(([s, e]) => s <= i && i < e)).join(),
+      );
+    }
   }
-  return JSON.stringify([element.type, text, !!element.centred, !!element.dual, styles]);
+  const trimmed = text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n");
+  return JSON.stringify([element.type, trimmed, !!element.centred, !!element.dual, styles]);
 }
 
 /** An element's lines, styled and escaped, so no line reads as Fountain syntax. */
@@ -187,7 +190,7 @@ export function elementLines(element: Element): string[] {
           styled[style].push([Math.max(s, start) - start, Math.min(e, end) - start]);
       }
     }
-    lines.push(escapeLine(writeInline(styled), element.type));
+    lines.push(escapeLine(writeInline(styled).trimEnd(), element.type));
     start = end + 1;
   }
   return lines;

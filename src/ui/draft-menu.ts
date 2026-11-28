@@ -74,6 +74,7 @@ export class DraftMenu {
   private readonly label = el("span", "draft-label");
   private readonly trigger: HTMLButtonElement;
   private readonly side: DraftMenuSide;
+  private confirmation = 0;
 
   constructor(trigger: HTMLButtonElement, side: DraftMenuSide) {
     this.trigger = trigger;
@@ -124,6 +125,7 @@ export class DraftMenu {
 
   /** Closes the popover, returning keyboard focus to its trigger. */
   dismiss(): void {
+    this.confirmation++;
     this.closeMenu(true);
   }
 
@@ -132,6 +134,7 @@ export class DraftMenu {
   }
 
   private open(): void {
+    this.confirmation++;
     const place = this.side.place();
     if (!place) return;
     const { project, file } = place;
@@ -295,10 +298,18 @@ export class DraftMenu {
   /** Asks before deleting the draft on screen, saying how much of it GitHub holds. */
   private async askDelete(folder: string, file: string, active: string): Promise<void> {
     this.dismiss();
+    const confirmation = this.confirmation;
     const coverage = await this.side.backupOf(folder, file);
     // Another draft may have taken the screen meanwhile.
     const place = this.side.place();
-    if (place?.project.folder !== folder || place.file !== file) return;
+    if (
+      confirmation !== this.confirmation ||
+      this.dialog.open ||
+      place?.project.folder !== folder ||
+      place.file !== file
+    ) {
+      return;
+    }
     this.ask("delete", active, coverage);
   }
 

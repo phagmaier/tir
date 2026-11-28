@@ -646,6 +646,25 @@ fn draft_entry(name: &str) -> io::Result<&str> {
     }
 }
 
+/// Library paths Git may record, independent of any ignore rules.
+pub fn is_backup_path(path: &str) -> bool {
+    if path == DICTIONARY {
+        return true;
+    }
+    let Some((folder, file)) = path.split_once('/') else {
+        return false;
+    };
+    if entry(folder).is_err() || folder.ends_with(".tmp") {
+        return false;
+    }
+    if file == PROJECT {
+        return true;
+    }
+    file.split_once('/').is_some_and(|(dir, name)| {
+        dir == DRAFTS && entry(name).is_ok() && (name.ends_with(DRAFT) || name.ends_with(COPY))
+    })
+}
+
 /// The project folder `folder`, which must be in the library.
 fn project_dir(root: &Path, folder: &str) -> io::Result<PathBuf> {
     real_dir(root.join(entry(folder)?))

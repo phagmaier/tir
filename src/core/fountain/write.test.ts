@@ -148,6 +148,13 @@ describe("writeFountain forces a type wherever inference would misread", () => {
   });
 });
 
+it("ignores trailing spaces when choosing how to write an action", () => {
+  expect(body({ type: "action", text: "Testing 1 2 3 testing.  " })).toBe(
+    "Testing 1 2 3 testing.\n",
+  );
+  expect(body({ type: "action", text: "INT. LIGHTHOUSE   " })).toBe("!INT. LIGHTHOUSE\n");
+});
+
 describe("writeFountain: the title page", () => {
   it("writes each field Fountain's way", () => {
     expect(writeFountain({ titlePage: everyFormat.titlePage, elements: [] })).toBe(

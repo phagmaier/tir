@@ -152,8 +152,10 @@ const backupPanel = new BackupPanel({
   status: () => backup,
   saved: () => lastSaved.state,
   place: libraryPlace,
-  backUpNow: () => invoke<BackupStatus | null>("back_up_now"),
-  resume: () => invoke<BackupStatus | null>("resume_backup"),
+  backUpNow: async () =>
+    (await saver.settle(true)) ? invoke<BackupStatus | null>("back_up_now") : null,
+  resume: async () =>
+    (await saver.settle(true)) ? invoke<BackupStatus | null>("resume_backup") : null,
   connect: (address) => invoke<Checked>("connect_repository", { address }),
   async library() {
     const { projects } = await listLibrary();
@@ -180,7 +182,7 @@ const heardBackup = (status: BackupStatus) => {
 };
 /** How much of the project `folder`, or its draft `file`, GitHub holds. */
 const backupOf = (folder: string, file?: string): Promise<Coverage> =>
-  invoke<Coverage>("backup_of", { folder, draft: file ?? null }).catch(() => "none" as const);
+  invoke<Coverage>("backup_of", { folder, draft: file ?? null }).catch(() => "unknown" as const);
 const settingsFile = settingsSaver();
 desk = new Desk(editor, settings, settingsFile.save, {
   topbar: byId("topbar"),
@@ -242,7 +244,8 @@ draftMenu = new DraftMenu(draftTrigger, {
   place: () => (closing || draftAction || screen?.shown ? null : saver.where),
   list: listLibrary,
   run: runDraftAction,
-  backupOf,
+  backupOf: async (folder, file) =>
+    (await saver.settle(true)) ? backupOf(folder, file) : "unknown",
 });
 
 function showDraft(place: Place | null): void {

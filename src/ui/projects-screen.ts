@@ -144,6 +144,7 @@ export class ProjectsScreen {
   private busy = false;
   /** Counts the screen's showings and listings, so one overtaken stops. */
   private generation = 0;
+  private confirmation = 0;
   /** The writing window's scroll, kept for the return. */
   private scroll = 0;
   /** Where the library is, once asked. */
@@ -673,6 +674,8 @@ export class ProjectsScreen {
   }
 
   private async deleteProject(row: Row, name: string): Promise<void> {
+    const confirmation = ++this.confirmation;
+    const generation = this.generation;
     const drafts = row.project?.info.drafts.length;
     const what =
       drafts === undefined
@@ -681,7 +684,15 @@ export class ProjectsScreen {
           ? "Its draft"
           : `Its ${drafts} drafts`;
     const coverage = await this.side.backupOf(row.folder);
-    if (!this.shownNow) return;
+    if (
+      confirmation !== this.confirmation ||
+      generation !== this.generation ||
+      !this.shownNow ||
+      this.root.inert ||
+      this.dialog.open
+    ) {
+      return;
+    }
     this.ask({
       title: `Delete “${name}”?`,
       text: `${what} will be deleted from this machine. ${deletionNote(coverage)}`,
@@ -697,6 +708,7 @@ export class ProjectsScreen {
    * first field opens selected; without fields, Cancel has focus.
    */
   private ask({ title, text, fields = [], submit, danger = false, run }: DialogSpec): void {
+    this.confirmation++;
     const form = el("form");
     const heading = el("h2", "", title);
     heading.id = "dialog-title";

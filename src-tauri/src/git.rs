@@ -11,8 +11,10 @@
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -48,6 +50,10 @@ const ELSEWHERE: &[&str] = &[
     "GIT_CEILING_DIRECTORIES",
     "GIT_DISCOVERY_ACROSS_FILESYSTEM",
     "GIT_PREFIX",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_ATTR_SOURCE",
 ];
 
 /// Settings for every command Tir runs: no hooks, which could run anything
@@ -58,6 +64,8 @@ const QUIET: &[&str] = &[
     "core.hooksPath=/dev/null",
     "-c",
     "core.fsmonitor=false",
+    "-c",
+    "http.followRedirects=false",
 ];
 
 /// The library's `.gitignore`, written when Tir makes the library a
@@ -168,6 +176,7 @@ impl Git {
             // Reading the status writes nothing, so it never takes a lock a
             // command of the writer's needs.
             .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_NO_REPLACE_OBJECTS", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -180,8 +189,6 @@ impl Git {
                 .env("GIT_CONFIG_GLOBAL", config)
                 .env("GIT_CONFIG_NOSYSTEM", "1")
                 .env("XDG_CONFIG_HOME", home)
-                .env_remove("GIT_CONFIG_PARAMETERS")
-                .env_remove("GIT_CONFIG_COUNT")
                 .env("GIT_ALLOW_PROTOCOL", "file");
         }
         command
@@ -200,6 +207,7 @@ impl Git {
         if !root.is_dir() {
             return Err(Error::Io(format!("{} is not a folder", root.display())));
         }
+        git_dir(root)?;
         Ok(self.command(root))
     }
 
@@ -231,11 +239,8 @@ impl Git {
     /// What `root`, the library, is to git; an error when git is missing or
     /// the repository cannot be read.
     pub fn repository(&self, root: &Path) -> Result<Repository, Error> {
-        if let Err(error) = fs::symlink_metadata(root.join(".git")) {
-            return match error.kind() {
-                io::ErrorKind::NotFound => Ok(Repository::None),
-                _ => Err(Error::Io(error.to_string())),
-            };
+        if !git_dir(root)? {
+            return Ok(Repository::None);
         }
         let branch = match self.text(root, &["symbolic-ref", "-q", "--short", "HEAD"]) {
             Ok(branch) => branch,
@@ -299,17 +304,37 @@ impl Git {
     /// Records every change in the work tree as one commit, its message
     /// naming what changed; the message, or `None` when nothing changed.
     pub fn commit(&self, root: &Path) -> Result<Option<String>, Error> {
+        let candidates = self.run(
+            root,
+            &[
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+        )?;
+        for path in paths(&candidates) {
+            let path = library_path(path)?;
+            match fs::symlink_metadata(root.join(path)) {
+                Ok(metadata) if !metadata.is_file() => return Err(not_a_library_file(path)),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(Error::Io(error.to_string())),
+            }
+        }
         self.run(root, &["add", "--all"])?;
-        let staged = self.run(root, &["diff", "--cached", "--name-only", "-z"])?;
-        let paths: Vec<_> = staged
-            .split(|&byte| byte == 0)
-            .filter(|path| !path.is_empty())
-            .map(String::from_utf8_lossy)
-            .collect();
+        let staged = self.run(
+            root,
+            &["diff", "--cached", "--name-only", "--no-renames", "-z"],
+        )?;
+        let paths = paths(&staged)
+            .map(library_path)
+            .collect::<Result<Vec<_>, _>>()?;
         if paths.is_empty() {
             return Ok(None);
         }
-        let message = message(paths.iter().map(|path| path.as_ref()));
+        let message = message(paths.into_iter());
         let mut args = vec!["-c", "commit.gpgSign=false"];
         // Commits carry the writer's name and address when git has them,
         // and Tir's otherwise, since git refuses to commit with neither.
@@ -338,19 +363,62 @@ impl Git {
         self.config(root, &format!("remote.{REMOTE}.url"))
     }
 
-    /// Whether Tir found, when it connected the repository, that only a
-    /// login can read it.
-    pub fn private(&self, root: &Path) -> Result<bool, Error> {
-        Ok(self.config(root, "tir.private")?.as_deref() == Some("true"))
+    /// Refuse Git config that would send a push anywhere except the checked
+    /// repository. The sandbox may rewrite that one address to a local file.
+    pub fn verify_destination(&self, root: &Path, url: &str) -> Result<(), Error> {
+        let expected = self.read_destination(root, url)?;
+        if self.text(root, &["remote", "get-url", "--all", REMOTE])? != expected
+            || self.text(root, &["remote", "get-url", "--push", "--all", REMOTE])? != expected
+        {
+            return Err(wrong_destination());
+        }
+        Ok(())
     }
 
-    /// Pushes to `url` from now on, recording whether only a login can
-    /// read it. Tir's record of the branch on the repository it replaces,
-    /// if any, goes, so nothing counts as there that the new one lacks.
-    pub fn connect(&self, root: &Path, url: &str, private: bool) -> Result<(), Error> {
+    fn read_destination(&self, root: &Path, url: &str) -> Result<String, Error> {
+        let reached = self.text(root, &["ls-remote", "--get-url", "--", url])?;
+        if reached.contains('\n') || (self.sandbox.is_none() && reached != url) {
+            return Err(wrong_destination());
+        }
+        Ok(reached)
+    }
+
+    /// Pushes to `url` from now on.
+    /// The tracking refs for a replaced destination go with its old address.
+    pub fn connect(&self, root: &Path, url: &str) -> Result<(), Error> {
+        self.read_destination(root, url)?;
+        let rewrites = match self.run(
+            root,
+            &[
+                "config",
+                "--null",
+                "--get-regexp",
+                r"^url\..*\.pushinsteadof$",
+            ],
+        ) {
+            Ok(values) => values,
+            Err(Error::Failed { code: Some(1), .. }) => Vec::new(),
+            Err(error) => return Err(error),
+        };
+        if self.config(root, "remote.origin.pushurl")?.is_some()
+            || paths(&rewrites).any(|entry| {
+                entry
+                    .iter()
+                    .position(|&byte| byte == b'\n')
+                    .is_some_and(|at| url.as_bytes().starts_with(&entry[at + 1..]))
+            })
+        {
+            return Err(wrong_destination());
+        }
         match self.remote(root)? {
             Some(was) if was == url => {}
             Some(_) => {
+                if self
+                    .text(root, &["remote", "get-url", "--all", REMOTE])?
+                    .contains('\n')
+                {
+                    return Err(wrong_destination());
+                }
                 self.run(root, &["remote", "set-url", REMOTE, url])?;
                 let records = self.text(
                     root,
@@ -368,14 +436,13 @@ impl Git {
                 self.run(root, &["remote", "add", REMOTE, url])?;
             }
         }
-        let private = if private { "true" } else { "false" };
-        self.run(root, &["config", "tir.private", private])?;
-        Ok(())
+        self.verify_destination(root, url)
     }
 
     /// The branches of the repository at `url`, as this machine's git login
     /// reaches it: each one's name and its newest commit.
     pub fn ls_remote(&self, root: &Path, url: &str) -> Result<Vec<(String, String)>, Error> {
+        self.read_destination(root, url)?;
         let mut command = self.network(root)?;
         command.args(["ls-remote", url]);
         let listed = output(command, NETWORK)?;
@@ -487,6 +554,7 @@ impl Git {
         command.args([
             "fetch",
             "-q",
+            "--no-write-fetch-head",
             "--no-tags",
             "--no-recurse-submodules",
             REMOTE,
@@ -499,7 +567,8 @@ impl Git {
                 if message
                     .starts_with(&format!("couldn't find remote ref refs/heads/{branch}")) =>
             {
-                Ok(())
+                self.run(root, &["update-ref", "-d", &tracking(branch)])
+                    .map(drop)
             }
             Err(error) => Err(error),
         }
@@ -508,12 +577,39 @@ impl Git {
     /// Pushes `branch` to GitHub's branch of that name, only ever adding
     /// commits to it: never forced.
     pub fn push(&self, root: &Path, branch: &str, limit: Duration) -> Result<Pushed, Error> {
-        let Some(head) = self.commit_id(root, "HEAD")? else {
+        let source = format!("refs/heads/{branch}");
+        let Some(head) = self.commit_id(root, &source)? else {
             return Ok(Pushed::Done);
         };
+        // A file deleted before HEAD is still sent in its original commit.
+        // Audit all newly reachable commits, then push that exact tip.
+        let known = self
+            .commit_id(root, &tracking(branch))?
+            .map(|id| format!("^{id}"));
+        let mut history = vec![
+            "log",
+            "--format=",
+            "--name-only",
+            "--no-renames",
+            "--diff-merges=first-parent",
+            "--root",
+            "-z",
+            &head,
+        ];
+        history.extend(known.as_deref());
+        let outgoing = self.run(root, &history)?;
+        paths(&outgoing).try_for_each(|path| library_path(path).map(drop))?;
         let mut command = self.network(root)?;
-        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-        command.args(["push", "--porcelain", "--no-verify", REMOTE, &refspec]);
+        let refspec = format!("{head}:{source}");
+        command.args([
+            "push",
+            "--porcelain",
+            "--no-verify",
+            "--no-follow-tags",
+            "--no-recurse-submodules",
+            REMOTE,
+            &refspec,
+        ]);
         let ran = exec(command, limit)?;
         let stdout = String::from_utf8_lossy(&ran.stdout);
         // `!` marks a refused ref, its reason last, in brackets.
@@ -524,7 +620,7 @@ impl Git {
             let reason = refused.rsplit('\t').next().unwrap_or(refused).trim();
             return Err(Error::Failed {
                 code: ran.status.code(),
-                message: format!("GitHub refused the backup: {reason}"),
+                message: format!("GitHub refused the backup: {}", said(reason)),
             });
         }
         if !ran.status.success() {
@@ -534,6 +630,60 @@ impl Git {
         // remote's configuration says to.
         self.run(root, &["update-ref", &tracking(branch), &head])?;
         Ok(Pushed::Done)
+    }
+}
+
+fn wrong_destination() -> Error {
+    Error::Io(
+        "Git configuration redirects this repository or gives it multiple addresses. \
+         Use one GitHub address for both fetching and pushing."
+            .into(),
+    )
+}
+
+/// A gitfile, link, or worktree's common directory can route operations out
+/// of the library even when GIT_DIR is set.
+fn git_dir(root: &Path) -> Result<bool, Error> {
+    let dir = root.join(".git");
+    match fs::symlink_metadata(&dir) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => {
+            return Err(Error::Io(
+                "The library's .git must be a directory, not a file or link.".into(),
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(Error::Io(error.to_string())),
+    }
+    match fs::symlink_metadata(dir.join("commondir")) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(Error::Io(error.to_string())),
+        Ok(_) => Err(Error::Io(
+            "The library's .git must not share another repository's storage.".into(),
+        )),
+    }
+}
+
+fn paths(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    bytes
+        .split(|&byte| byte == 0)
+        .filter(|path| !path.is_empty())
+}
+
+fn not_a_library_file(path: &str) -> Error {
+    Error::Io(format!(
+        "“{path}” is not a Tir file. Tir backs up only its own files."
+    ))
+}
+
+fn library_path(path: &[u8]) -> Result<&str, Error> {
+    let Ok(path) = std::str::from_utf8(path) else {
+        return Err(not_a_library_file(&String::from_utf8_lossy(path)));
+    };
+    if path == ".gitignore" || crate::library::is_backup_path(path) {
+        Ok(path)
+    } else {
+        Err(not_a_library_file(path))
     }
 }
 
@@ -604,8 +754,10 @@ pub enum Coverage {
     None,
     /// It as it is here.
     All,
-    /// An older version, without what changed since.
+    /// A different version exists at that path at the last known remote tip.
     Older,
+    /// Tir could not check.
+    Unknown,
 }
 
 /// What a push did.
@@ -673,51 +825,74 @@ fn output(command: Command, limit: Duration) -> Result<Vec<u8>, Error> {
 
 /// Runs `command` for at most `limit`, whether it succeeds or not.
 fn exec(mut command: Command, limit: Duration) -> Result<Ran, Error> {
-    let mut child = command.spawn().map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound => Error::Missing,
-        _ => Error::Io(error.to_string()),
-    })?;
+    let deadline = Instant::now() + limit;
+    let mut child = command
+        .process_group(0)
+        .spawn()
+        .map_err(|error| match error.kind() {
+            io::ErrorKind::NotFound => Error::Missing,
+            _ => Error::Io(error.to_string()),
+        })?;
     let stdout = read_in_thread(child.stdout.take());
     let stderr = read_in_thread(child.stderr.take());
-    let Some(status) = wait(&mut child, limit)? else {
-        // Its output is left to its threads: a program git started may
-        // hold it open for a while yet.
-        return Err(Error::TimedOut);
-    };
-    Ok(Ran {
-        status,
-        stdout: stdout.join().unwrap_or_default(),
-        stderr: stderr.join().unwrap_or_default(),
-    })
+    let result = (|| {
+        // Collect both pipes within the same deadline, before reaping Git:
+        // a helper can still hold its pipes open after Git itself exits.
+        let stdout = read_before(stdout, deadline)?;
+        let stderr = read_before(stderr, deadline)?;
+        let status = wait(&mut child, deadline)?;
+        Ok(Ran {
+            status,
+            stdout,
+            stderr,
+        })
+    })();
+    if result.is_err() {
+        // SAFETY: process_group(0) made this child's PID its group ID.
+        // It has not been reaped on an error, so the ID cannot be recycled.
+        unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+        let _ = child.wait();
+    }
+    result
 }
 
-fn read_in_thread(pipe: Option<impl Read + Send + 'static>) -> thread::JoinHandle<Vec<u8>> {
+fn read_in_thread(pipe: Option<impl Read + Send + 'static>) -> Receiver<io::Result<Vec<u8>>> {
+    let (send, receive) = mpsc::sync_channel(1);
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        if let Some(mut pipe) = pipe {
-            let _ = pipe.read_to_end(&mut bytes);
-        }
-        bytes
-    })
+        let result = match pipe {
+            Some(mut pipe) => pipe.read_to_end(&mut bytes).map(|_| bytes),
+            None => Ok(bytes),
+        };
+        let _ = send.send(result);
+    });
+    receive
 }
 
-/// Waits for `child` for at most `limit`, then kills it: its exit status,
-/// or `None` when it was killed.
-fn wait(child: &mut Child, limit: Duration) -> Result<Option<std::process::ExitStatus>, Error> {
-    let deadline = Instant::now() + limit;
+fn read_before(pipe: Receiver<io::Result<Vec<u8>>>, deadline: Instant) -> Result<Vec<u8>, Error> {
+    pipe.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|error| match error {
+            mpsc::RecvTimeoutError::Timeout => Error::TimedOut,
+            mpsc::RecvTimeoutError::Disconnected => {
+                Error::Io("Git's output could not be read.".into())
+            }
+        })?
+        .map_err(|error| Error::Io(error.to_string()))
+}
+
+/// Waits for `child` until `deadline`; leaves it unreaped on error.
+fn wait(child: &mut Child, deadline: Instant) -> Result<std::process::ExitStatus, Error> {
     let mut pause = Duration::from_millis(1);
     loop {
         if let Some(status) = child
             .try_wait()
             .map_err(|error| Error::Io(error.to_string()))?
         {
-            return Ok(Some(status));
+            return Ok(status);
         }
         let now = Instant::now();
         if now >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(None);
+            return Err(Error::TimedOut);
         }
         thread::sleep(pause.min(deadline - now));
         pause = (pause * 2).min(Duration::from_millis(50));
@@ -761,11 +936,8 @@ fn said(stderr: &str) -> String {
     message
 }
 
-/// `text` without the login any address in it carries, such as a token in
-/// `https://TOKEN@github.com/…` from a clone made with one: Tir shows and
-/// logs git's words and the repository's address, never a credential. The
-/// user of an ssh address, such as `ssh://git@…`, is no secret and stays.
-pub fn redact(text: &str) -> String {
+/// Remove credentials, queries and fragments from URLs in Git's output.
+fn redact(text: &str) -> String {
     let mut kept = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(at) = rest.find("://") {
@@ -776,17 +948,21 @@ pub fn redact(text: &str) -> String {
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
-        let end = tail
-            .find(|c: char| c == '/' || c.is_whitespace() || c == '\'' || c == '"')
+        let word_end = tail
+            .find(|c: char| c.is_whitespace() || c == '\'' || c == '"')
             .unwrap_or(tail.len());
-        let authority = &tail[..end];
+        let (url, after) = tail.split_at(word_end);
+        let url = url.split(['?', '#']).next().unwrap_or("");
+        let end = url.find('/').unwrap_or(url.len());
+        let authority = &url[..end];
         match authority.rfind('@') {
             Some(at) if scheme == "http" || scheme == "https" || authority[..at].contains(':') => {
                 kept.push_str(&authority[at + 1..]);
             }
             _ => kept.push_str(authority),
         }
-        rest = &tail[end..];
+        kept.push_str(&url[end..]);
+        rest = after;
     }
     kept.push_str(rest);
     kept
@@ -868,6 +1044,33 @@ pub mod tests {
         );
         assert!(!git.changed(&root).unwrap());
         assert_eq!(git.commit(&root), Ok(None));
+        assert_eq!(subjects(&git, &root).len(), 1);
+    }
+
+    #[test]
+    fn refuses_unrelated_files_without_rewriting_the_index() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let root = library(&dir);
+        git.init(&root).unwrap();
+        git.commit(&root).unwrap();
+        let foreign = "Salt Line/research.pdf";
+        fs::write(root.join(foreign), "%PDF").unwrap();
+        fs::write(root.join(".gitignore"), "").unwrap();
+        assert!(git.commit(&root).unwrap_err().to_string().contains(foreign));
+        assert!(
+            git.run(&root, &["diff", "--cached", "--name-only"])
+                .unwrap()
+                .is_empty()
+        );
+        fs::write(root.join(".gitignore"), IGNORE).unwrap();
+        git.run(&root, &["add", "-f", "--", foreign]).unwrap();
+        assert!(git.commit(&root).unwrap_err().to_string().contains(foreign));
+        assert_eq!(
+            git.text(&root, &["diff", "--cached", "--name-only"])
+                .unwrap(),
+            foreign
+        );
         assert_eq!(subjects(&git, &root).len(), 1);
     }
 
@@ -1011,14 +1214,18 @@ pub mod tests {
             panic!("a repository without HEAD read as whole");
         };
         assert!(message.starts_with("not a git repository"), "{message}");
-        // A `.git` file that names no repository.
+        // Git can follow gitfiles or symlinks; Tir must not do that.
         let other = dir.0.join("other");
         fs::create_dir(&other).unwrap();
-        fs::write(other.join(".git"), "junk\n").unwrap();
-        let Err(Error::Failed { message, .. }) = git.repository(&other) else {
-            panic!("a broken .git file read as a repository");
-        };
-        assert!(message.starts_with("invalid gitfile format"), "{message}");
+        fs::write(
+            other.join(".git"),
+            format!("gitdir: {}\n", root.join(".git").display()),
+        )
+        .unwrap();
+        assert!(matches!(git.repository(&other), Err(Error::Io(_))));
+        fs::remove_file(other.join(".git")).unwrap();
+        std::os::unix::fs::symlink(root.join(".git"), other.join(".git")).unwrap();
+        assert!(matches!(git.run(&other, &["status"]), Err(Error::Io(_))));
     }
 
     #[test]
@@ -1058,6 +1265,21 @@ pub mod tests {
         let mut command = Command::new("sleep");
         command
             .arg("10")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        assert_eq!(
+            output(command, Duration::from_millis(200)),
+            Err(Error::TimedOut)
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn stops_waiting_when_a_helper_outlives_git_and_holds_its_pipes() {
+        let started = Instant::now();
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 10 &"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         assert_eq!(
@@ -1252,6 +1474,31 @@ pub mod tests {
         assert_eq!(
             elsewhere(&dir, &bare, &["rev-list", "--count", BRANCH]),
             "3"
+        );
+    }
+
+    #[test]
+    fn refuses_to_send_unrelated_files_deleted_from_the_current_tree() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let bare = github(&dir);
+        let root = connected(&dir, &git, &bare);
+        let foreign = "Salt Line/research.pdf";
+        fs::write(root.join(foreign), "%PDF").unwrap();
+        elsewhere(&dir, &root, &["add", "-f", foreign]);
+        elsewhere(&dir, &root, &["commit", "-qm", "Local research"]);
+        elsewhere(&dir, &root, &["rm", "-q", foreign]);
+        elsewhere(&dir, &root, &["commit", "-qm", "Remove local research"]);
+        assert!(!git.changed(&root).unwrap());
+        assert!(
+            git.push(&root, BRANCH, NETWORK)
+                .unwrap_err()
+                .to_string()
+                .contains(foreign)
+        );
+        assert_eq!(
+            elsewhere(&dir, &bare, &["rev-list", "--count", "--all"]),
+            "0"
         );
     }
 

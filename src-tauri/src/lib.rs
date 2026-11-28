@@ -234,8 +234,8 @@ pub fn run() {
     app.run(|app, event| {
         if let RunEvent::Exit = event {
             // A save or change under way when the window went finishes
-            // first; then backup records what is left and pushes it. Once
-            // it is recorded, another Tir may start: this one only pushes.
+            // first; hold the instance lock through the final push so the
+            // next Tir cannot race this one's update of the tracking ref.
             app.state::<library::Library>().finish_commands();
             let release = || {
                 if let Some(instance) = app.try_state::<instance::Instance>() {

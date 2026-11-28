@@ -28,3 +28,5 @@ percent-encoding = "2"
 # 6.3; findings, "GitHub"); already in the build through WebKitGTK, whose
 # HTTP library it is.
 soup3 = "0.5"
+# Stops a timed-out Git command and its helpers as a Unix process group.
+libc = "0.2"

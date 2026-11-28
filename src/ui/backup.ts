@@ -15,13 +15,15 @@ export interface BackupStatus {
   readonly remote: string | null;
   /** Commits GitHub does not have yet. */
   readonly waiting: number;
+  /** Saved changes awaiting their local commit. */
+  readonly pending: boolean;
   /** When the newest commit GitHub has was made, in milliseconds since 1970. */
   readonly backedUp: number | null;
   /** Why the last push or check failed, while Tir tries again. */
   readonly reason: string | null;
   /** Why Tir cannot record the library's changes, if it cannot. */
   readonly problem: string | null;
-  /** Only a login can read the repository, as Tir found when it connected it. */
+  /** This destination last passed a privacy check. */
   readonly private: boolean;
 }
 
@@ -29,6 +31,7 @@ export const NOT_CONNECTED: BackupStatus = {
   state: "off",
   remote: null,
   waiting: 0,
+  pending: false,
   backedUp: null,
   reason: null,
   problem: null,
@@ -47,7 +50,7 @@ export type Checked =
   | { readonly result: "problem"; readonly reason: string };
 
 /** How much of a project or draft GitHub holds (`git::Coverage`). */
-export type Coverage = "none" | "all" | "older";
+export type Coverage = "none" | "all" | "older" | "unknown";
 
 export type Icon = "cloudok" | "cloudoff" | "alert" | "spin" | "check";
 
@@ -119,6 +122,10 @@ function savedSentence(saved: SaveState, problem: string | null, off: boolean): 
   return off ? "Saved on this machine only." : "Saved on this machine.";
 }
 
+function waiting(backup: BackupStatus): boolean {
+  return backup.pending || backup.waiting > 0 || backup.backedUp === null || !backup.private;
+}
+
 /** The indicator's backup half, given the saved state beside it. */
 export function indicator(
   backup: BackupStatus,
@@ -143,6 +150,8 @@ export function indicator(
     case "pushing":
       return shown("spin", "Backing up…", false, "Backing up to GitHub.");
     case "offline":
+      if (backup.waiting === 0)
+        return shown("cloudoff", "Offline", false, "Tir can’t reach GitHub and will try again.");
       return shown(
         "cloudoff",
         `Offline, ${backup.waiting} waiting`,
@@ -165,8 +174,11 @@ export function indicator(
       );
     case "backedUp": {
       const when = backup.backedUp === null ? "" : ` ${ago(backup.backedUp, now)}`;
-      const last = saved === "saving" ? "Last backed up" : "Backed up";
-      return shown("cloudok", "Backed up", false, `${last} to GitHub${when}.`);
+      if (saved !== "saved" || waiting(backup)) {
+        const last = when ? ` Last backed up to GitHub${when}.` : "";
+        return shown("cloudoff", "Backup pending", false, `Changes not yet backed up.${last}`);
+      }
+      return shown("cloudok", "Backed up", false, `Backed up to GitHub${when}.`);
     }
   }
 }
@@ -210,10 +222,13 @@ export function panel(
         {
           note: [
             "To bring them in, close Tir, run ",
-            { code: "git pull" },
+            {
+              code: 'git pull --no-rebase --no-edit origin "refs/heads/$(git branch --show-current)"',
+            },
             " in ",
             { code: place },
             " in a terminal, then open Tir again.",
+            ...(backup.reason ? [` Last check: ${backup.reason}`] : []),
           ],
         },
       );
@@ -222,7 +237,9 @@ export function panel(
         "",
         "cloudoff",
         "Offline",
-        `Your work is saved here. ${plural(backup.waiting, "change")} will back up when GitHub is reachable again; Tir keeps retrying on its own.`,
+        backup.waiting > 0
+          ? `Your work is saved here. ${plural(backup.waiting, "change")} will back up when GitHub is reachable again; Tir keeps retrying on its own.`
+          : "Tir can’t reach GitHub. It keeps retrying on its own.",
         backUp,
       );
     case "failing":
@@ -245,7 +262,15 @@ export function panel(
           "Saving…",
           "Writing your changes to this machine. A backup follows after a few quiet minutes.",
           backUp,
-          { busy: true },
+        );
+      }
+      if (saved === "failed" || waiting(backup)) {
+        return view(
+          "",
+          "cloudoff",
+          "Backup pending",
+          "The latest changes are not yet backed up to GitHub.",
+          backUp,
         );
       }
       return view(
@@ -312,8 +337,10 @@ export function deletionNote(coverage: Coverage): string {
     case "all":
       return "GitHub keeps the backup history, so it can still be recovered from there.";
     case "older":
-      return "GitHub keeps a backup without its latest changes, so only the backed-up version can be recovered from there.";
+      return "GitHub has a different version at this path. Tir couldn’t confirm that it holds this version.";
     case "none":
-      return "Tir has no backup of it yet, so this can't be undone.";
+      return "Tir found no backup at this path. This can’t be undone in Tir.";
+    case "unknown":
+      return "Tir couldn’t verify the backup. This can’t be undone in Tir.";
   }
 }
