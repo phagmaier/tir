@@ -614,6 +614,21 @@ bookmark per scene, from `ScriptMap`) and the page labels are written as
 PDF dictionaries, since the library has neither. Text is black on white
 whatever the paper.
 
+Every line is set and checked before the document is begun. Setting
+gives each engine cell one glyph: a body tab prints as a space (the engine
+counts it as one cell, and the editor's `.tab` decoration draws it so), each
+character (grapheme) is composed (NFC), so a pasted letter and accent
+print as the font's accented letter, and a style boundary inside a
+character moves to its end. A character Courier Prime cannot set as one
+glyph, or one that prints differently than it shows (controls, format
+characters, separators, private use), an element line below the page's
+last row, and a title-page line off the paper are collected as misprints;
+any misprint makes `writePdf` throw a message listing them by page and
+word or title-page field, so no PDF is written and the Save dialog never
+opens. The drawing library would otherwise draw a missing glyph, turn a
+tab into four spaces and break lines at a carriage return
+([findings](findings.md#pdf-libraries)).
+
 Export PDF… in the draft menu asks whether to include the title page,
 then `pdf-export.ts` makes the PDF in a worker of its own
 (`pdf.worker.ts`), since a 120-page script takes over half a second; it
@@ -643,7 +658,8 @@ The [brief](brief.md) governs behaviour.
   speech. Adjust native Up/Down at page gaps: WebKit can lose the column.
   ProseMirror can reuse equal paragraph DOM across positions, so recheck
   geometry after drawing. Keep text as typed; display capitals must not
-  expand a character into extra cells.
+  expand a character into extra cells, and a tab, in a `.tab` decoration
+  of its own, takes one cell rather than reaching a tab stop.
 - **WebKit performance.** Scroll the document, not an overflow container.
   Keep touch/wheel listeners off the page and the editor's native outline
   off; all three otherwise add whole-draft work per keystroke. Use a
@@ -882,17 +898,19 @@ open, leave it alone and use address-targeted manual checks instead.
   [dated baseline](findings.md#typing-baseline).
 - `mise run editor-placement [--fixture NAME] [--zoom Z] [--focus]`
   checks engine line and mark positions, rendered text, and click
-  placement (including the blank part of a dual dialogue row). It exits
-  1 on a miss.
+  placement (including the blank part of a dual dialogue row); in lines
+  holding a tab or text beyond ASCII it checks every character's cell.
+  It exits 1 on a miss. At 150% WebKit's pixel snapping already puts
+  some boxes 1.2 px off, line starts included.
 
 Both tools restore the window settings they found.
 `tools/inspector.ts` discovers the page from the loopback inspector.
 `globalThis.tirView`, `tirDesk`, `tirSaver` and `tirScreen` expose
 the dev app's editor, settings, saver and Projects screen. `?fixture=spike`
 opens a 120-page script with forced scene breaks, `feature` one without
-them, `every` every element type and format, and `sample` the prototype's
-"Salt Line". A fixture becomes a project in the trial library on its
-first save.
+them, `every` every element type and format, with pasted tabs and
+separate accents, and `sample` the prototype's "Salt Line". A fixture
+becomes a project in the trial library when its first edit is saved.
 
 For a real click, use `click` from `tools/inspector.ts` with the element's
 client coordinates. Use `wtype -k dead_acute -k e` for "é" or

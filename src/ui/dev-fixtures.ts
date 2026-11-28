@@ -177,13 +177,35 @@ const TYPED_LOWER: Element[] = [
   { type: "transition", text: "fade out." },
 ];
 
+/**
+ * Text as it arrives from elsewhere: tabs, which take one cell, and accents
+ * typed as a letter and a combining mark, which show and print as the
+ * accented letter, one cell each (task 7.3d).
+ */
+const PASTED: Element[] = [
+  { type: "action", text: "Name:\tMara Ellison\tAge:\t34\tFrom:\tSa\u0303o Paulo\tFlat:\t4B" },
+  {
+    type: "action",
+    text: "Jose\u0301 and Zoe\u0308 count:\tun, deux, trois.\tThen the bell, and the long silence\tafter it.",
+    bold: [[0, 5]],
+  },
+  {
+    type: "action",
+    // The second line starts half a cell off the first's grid.
+    text: "Somewhere a radio plays an old song the whole street knows by heart, and so does she.\tSo\tdoes\tshe.",
+    centred: true,
+  },
+  { type: "character", text: "jose\u0301" },
+  { type: "dialogue", text: "Ça va?\tOui. Øresund, Łódź,\tŞiret, and back." },
+];
+
 /** The script for `?fixture=NAME`: `feature`, `every`, `sample`, or else the 120-page spike. */
 export function devScript(name: string | null): Script {
   switch (name) {
     case "feature":
       return { titlePage: newTitlePage(), elements: featureScript(150) };
     case "every":
-      return { ...everyFormat, elements: [...everyFormat.elements, ...TYPED_LOWER] };
+      return { ...everyFormat, elements: [...everyFormat.elements, ...TYPED_LOWER, ...PASTED] };
     case "sample":
       return { titlePage: { ...newTitlePage(), title: "Salt Line" }, elements: sample() };
     default:

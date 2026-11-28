@@ -425,6 +425,20 @@ curly apostrophe match each other.
   heading as "Scene 2"; a viewer numbers the pages as they print, the
   title page outside the numbering.)*
 - File name "Title - Draft.pdf": the project's name and the draft's.
+- Accented Latin prints as Courier Prime's own letters, whether typed whole
+  or pasted as a letter and a separate accent. *(Agent-selected, task
+  7.3d: a tab in the script's text takes one character's width on screen
+  and on paper, as a space does; title-page tabs keep their eight-character
+  stops.)*
+- Tir makes no PDF that would print differently from the screen. When the
+  script holds a character Courier Prime lacks (Greek, Cyrillic, emoji,
+  accented letters outside Western and Central European Latin) or a hidden
+  one such as a soft hyphen, dual dialogue longer than a page, or a
+  title-page line wider or taller than the paper, the export stops before
+  the Save dialog with a message listing each problem by page and word, or
+  by title-page field. *(Agent-selected, task 7.3d: the existing export
+  error message box; Tir has no fallback font, and the writer changes the
+  text.)*
 
 ## Look
 

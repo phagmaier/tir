@@ -9,14 +9,14 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
 
 ## Current status
 
-- Next ready: [7.3d — PDF fidelity](#task-7-3d). Also ready:
-  [7.3e — selection and keyboard access](#task-7-3e).
-  [7.3b](#task-7-3b) is done; [7.3c](#task-7-3c)'s local work is done.
+- In progress: [7.3e — selection and keyboard access](#task-7-3e).
+  [7.3b](#task-7-3b) and [7.3d](#task-7-3d) are done; [7.3c](#task-7-3c)'s
+  local work is done.
 - Not tested in Final Draft: the user has no copy and deferred
   [7.3a](#task-7-3a) and 7.3c's [Final Draft check](#final-draft-evidence)
   (2026-11-28). Both are under [Known gaps](#known-gaps).
-- Release gate: the [V1 review](#task-7-3) stays open until 7.3d and 7.3e
-  are verified. Then run the [user writing check](#task-7-4).
+- Release gate: the [V1 review](#task-7-3) stays open until 7.3e is
+  verified. Then run the [user writing check](#task-7-4).
 
 ## How to work this plan
 
@@ -73,7 +73,7 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3"></a>
 
 - [ ] 7.3 — Review: V1
-  - Status: verification pending (7.3d, 7.3e and disposition of remaining gaps)
+  - Status: verification pending (7.3e and disposition of remaining gaps)
   - Depends on: [7.2](history.md#task-7-2), 7.3b, 7.3d and 7.3e. The
     user deferred the Final Draft checks of 7.3a and 7.3c (Known gaps).
     None of the follow-ups waits for this review to close.
@@ -275,12 +275,11 @@ V1 is done when [7.4](#task-7-4) passes.
 
 <a id="task-7-3d"></a>
 
-- [ ] 7.3d — PDF fidelity for submitted scripts
-  - Status: todo
+- [x] 7.3d — PDF fidelity for submitted scripts
   - Depends on: [7.2](history.md#task-7-2).
   - Spec: [PDF export](brief.md#pdf-export).
-  - Current gap: the PDF embeds only Courier Prime; missing glyphs, body
-    tabs and overlong dual dialogue can silently misrender.
+  - Gap closed: the PDF embedded only Courier Prime; missing glyphs, body
+    tabs and overlong dual dialogue could silently misrender.
   - Do: Print accented Latin text correctly in body and title fields,
     including pasted decomposed accents. Use the same body-tab layout
     in the editor and PDF. Do not silently clip overlong dual dialogue
@@ -291,11 +290,37 @@ V1 is done when [7.4](#task-7-4) passes.
     accented Latin text, and an overlong dual pair and an unsupported
     character either render completely or produce an actionable message
     before any misleading PDF is written.
+  - Evidence (2026-11-28, `8898d5e` plus uncommitted changes): `mise run
+    check` passed (Biome, both TypeScript checks, 780 Vitest tests,
+    rustfmt, clippy, 100 Rust tests). New `pdf` tests read the PDF back
+    with pdf.js: "é", "ë" and "É" pasted as a letter and an accent, in
+    body, cue and title fields, print as Courier Prime's letters on the
+    engine's grid, and a bold span ending inside "é" prints it whole and
+    bold; body tabs print one cell each; "Ж" (twice), a title-page "✓"
+    and a soft hyphen stop the export, naming "Page 1, in “Жить.”",
+    "Title page, Contact" and U+00AD, the repeated word once; dual
+    dialogue of 61 rows stops it, naming page 2, MAYA and JO, while 54
+    rows print; a 71-cell contact line stops it and a 70-cell one prints.
+    All five failed against the earlier writer, which read "Zoe" and
+    U+0308 back as "Zoé", set a tab as four spaces and wrote the other
+    three PDFs. In isolated development WebKitGTK, `editor-placement` on
+    the `every` fixture, now holding pasted tabs and separate accents and
+    a centred line half a cell off the grid, found all 314 characters of
+    those lines in their cells at 75%, 90% in focus mode, 100% and 125%;
+    at 150% WebKit's pixel snapping put boxes 1.2 px off on lines without
+    tabs, including the existing line-start check's "MAYA". A native
+    export read back with `pdftotext` as "José and Zoë count: un, deux,
+    trois." and "São Paulo", each tab one space, and `pdffonts` listed
+    the four subset faces. After typing "Жить" the export showed only the
+    message box "Tir could not export “First Draft”" naming page 2 and
+    the word; no Save dialog opened and no file was written. Writing the
+    120-page feature script with curly quotes and accents took a 484 ms
+    median in Node, against 461 ms before.
 
 <a id="task-7-3e"></a>
 
 - [ ] 7.3e — Predictable selection edits and keyboard access
-  - Status: todo
+  - Status: in progress
   - Depends on: [7.2](history.md#task-7-2).
   - Spec: [Elements and keys](brief.md#elements-and-keys),
     [Copy and paste](brief.md#copy-and-paste).
@@ -342,7 +367,7 @@ Neither check can substitute for the other. Both are deferred by the user
 ## Known gaps
 
 This list holds limitations not owned by an open task. Remaining V1
-blockers and their acceptance criteria are on [7.3d–7.3e](#task-7-3d).
+blockers and their acceptance criteria are on [7.3e](#task-7-3e).
 
 - Not tested in Final Draft (the user's choice, 2026-11-28; see
   [7.3a](#task-7-3a)). Page parity follows Final Draft's documented
@@ -375,8 +400,9 @@ blockers and their acceptance criteria are on [7.3d–7.3e](#task-7-3d).
   accent styled apart from its letter) would give the line two line-end
   decorations and an extra row (1.10 review, from the source), and so
   would a find highlight ending inside one there, such as "Jose" found in
-  a stored "Jose" and U+0301 (5.4 review). Defer the general decoration
-  fix, except where needed for accented-Latin rendering in 7.3d.
+  a stored "Jose" and U+0301 (5.4 review). The PDF prints such a
+  character whole, in its letter's style (7.3d). Defer the editor's
+  decoration fix.
 - After a save wrote the draft but failed on its Fountain copy, the copy
   stays a save behind the draft until a save succeeds; the indicator shows
   "Not saved" meanwhile (2.2, by design: the draft is written first).
@@ -409,8 +435,11 @@ blockers and their acceptance criteria are on [7.3d–7.3e](#task-7-3d).
   `project.json` declaring another format, but an unrecognisable or
   format-less project file can still be deleted after confirmation so a
   damaged Tir project can be removed (2.7, narrowed in 7.3).
-- Full multilingual PDF typesetting and right-to-left layout are
-  outside [7.3d](#task-7-3d).
+- The PDF prints only what Courier Prime holds; export stops with a
+  message naming any other character and where it is (7.3d). On screen
+  such characters draw in a fallback font, whose widths need not match
+  the engine's cells. Defer a fallback font, full multilingual
+  typesetting and right-to-left layout.
 - FDX export refuses an emphasis span that splits the two UTF-16 code
   units of one character, which can occur in a hand-edited `.tir` draft
   (4.3). XML cannot carry either half in a separate text run.

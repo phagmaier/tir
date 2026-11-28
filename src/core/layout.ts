@@ -165,7 +165,7 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * The UTF-16 offset where each grapheme starts, then the text's length; or
  * null when every code unit is its own character.
  */
-function graphemeStarts(text: string): number[] | null {
+export function graphemeStarts(text: string): number[] | null {
   if (!COMPLEX.test(text)) return null;
   const starts = Array.from(segmenter.segment(text), (segment) => segment.index);
   starts.push(text.length);

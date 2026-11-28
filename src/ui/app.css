@@ -1503,6 +1503,12 @@ html.title-page-shown .find-bar {
 .script-editor .keep-case {
   text-transform: none;
 }
+/* A tab takes one cell, as in the engine and the PDF, not the browser's next
+   tab stop, which depends on where the line starts. WebKitGTK sets a tab
+   alone in its span at tab size 0 as one space (findings, "Editor"). */
+.script-editor .tab {
+  tab-size: 0;
+}
 /* The engine's line breaks: on the last character of a line, and with a page's gap. */
 .script-editor .line-end::after {
   content: "\a";

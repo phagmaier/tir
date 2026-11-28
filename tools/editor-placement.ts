@@ -4,9 +4,11 @@
  * start in the editor where the engine puts it, scaled by the page's zoom,
  * and a click on its first or last character must put the caret before that
  * character; in dual dialogue, a click in the blank part of a column's row
- * must land at that line's end. Each element must show the engine's text,
- * capitals included. What the sheets print (page numbers, (MORE), repeated
- * cues and the automatic (CONT'D)) must sit where the engine puts it too.
+ * must land at that line's end. In a line holding a tab or text beyond
+ * ASCII, every character must sit in its own cell of the engine's line.
+ * Each element must show the engine's text, capitals included. What the
+ * sheets print (page numbers, (MORE), repeated cues and the automatic
+ * (CONT'D)) must sit where the engine puts it too.
  * With `--fixture` it loads that script first (`?fixture=NAME`); otherwise
  * it checks the one open. `--zoom` (such as 1.25) and `--focus` set the
  * window's settings for the check and put back the ones it found. Start the
@@ -37,7 +39,7 @@ const CHECK = `(async () => {
   // What the bars cover, as the editor keeps the caret clear of it.
   const { top: bar, left: side } = view.someProp("scrollThreshold");
   const scroll = [scrollX, scrollY];
-  const out = { zoom: Z, focus: tirDesk.settings.focus, pages: 0, lines: 0, empty: 0, marks: 0, offset: null, placed: [], clicked: [], shown: [], printed: [] };
+  const out = { zoom: Z, focus: tirDesk.settings.focus, pages: 0, lines: 0, empty: 0, marks: 0, characters: 0, offset: null, placed: [], cells: [], clicked: [], shown: [], printed: [] };
 
   /** The caret position a click lands on, \`left\` and \`top\` px at 100% from the editor's corner. */
   const click = (left, top) => {
@@ -69,6 +71,21 @@ const CHECK = `(async () => {
       const where = { element: line.element, page: p + 1, row: line.row, text: line.text };
       if (Math.abs(dx) >= 1 || Math.abs(dy - out.offset) >= 1) {
         out.placed.push({ ...where, dx, dy: dy - out.offset });
+      }
+      // Where tabs and wider text could leave the grid, where each character
+      // ends: the right edge of the character before each position. Zoomed
+      // character boxes can round a whole pixel off; a tab or a fallback
+      // glyph misses by most of a cell.
+      if (/[^\\x20-\\x7e]/.test(line.text)) {
+        const own = doc.child(line.element).textContent.slice(line.start, line.end);
+        const chars = cells(own);
+        chars.forEach((_char, k) => {
+          out.characters++;
+          const end = chars[k + 1]?.index ?? own.length;
+          const want = box.left + Z * (line.x * 96 + ((k + 1) * 96) / CHARS_PER_INCH);
+          const got = view.coordsAtPos(pos + end, -1).left;
+          if (Math.abs(got - want) > 1) out.cells.push({ ...where, cell: k, dx: got - want });
+        });
       }
       const first = click(left + 2, top + ROW_PX / 2);
       if (first !== pos) out.clicked.push({ ...where, got: first, want: pos });
@@ -199,7 +216,9 @@ interface Result {
   lines: number;
   empty: number;
   marks: number;
+  characters: number;
   placed: Miss[];
+  cells: Miss[];
   clicked: Miss[];
   shown: Miss[];
   printed: Miss[];
@@ -230,17 +249,18 @@ async function main(args: string[]): Promise<number> {
     page.close();
   }
   console.log(
-    `At ${Math.round(result.zoom * 100)}%${result.focus ? " in focus mode" : ""}: ${result.pages} pages, ${result.lines} lines checked (${result.empty} of them empty), and ${result.marks} printed marks besides page numbers.`,
+    `At ${Math.round(result.zoom * 100)}%${result.focus ? " in focus mode" : ""}: ${result.pages} pages, ${result.lines} lines checked (${result.empty} of them empty), ${result.characters} characters in lines with tabs or text beyond ASCII, and ${result.marks} printed marks besides page numbers.`,
   );
   const show = (title: string, misses: Miss[]) => {
     console.log(`${title}: ${misses.length}`);
     for (const miss of misses.slice(0, 10)) console.log(`  ${JSON.stringify(miss)}`);
   };
   show("Lines not where the engine puts them", result.placed);
+  show("Characters not ending on the engine's cells", result.cells);
   show("Clicks that missed their character or line end", result.clicked);
   show("Elements not showing the engine's text", result.shown);
   show("Page numbers and marks not as the engine sets them", result.printed);
-  const misses = [result.placed, result.clicked, result.shown, result.printed].flat();
+  const misses = [result.placed, result.cells, result.clicked, result.shown, result.printed].flat();
   return misses.length ? 1 : 0;
 }
 

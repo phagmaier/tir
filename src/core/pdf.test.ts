@@ -405,4 +405,124 @@ describe("writePdf", () => {
     expect(info.Creator).toBe("Tir");
     expect(info.Language).toBe("en-US");
   });
+
+  it("prints accented Latin as Courier Prime's own letters, typed whole or pasted as a letter and a mark", async () => {
+    // Decomposed: "e" then U+0301, "e" then U+0308, as some systems paste them.
+    const titlePage = {
+      ...newTitlePage(),
+      title: "Cafe\u0301 Noir",
+      authors: "Rene\u0301e Dubois",
+    };
+    const elements = [
+      el("sceneHeading", "int. cafe\u0301 - night"),
+      // Bold ends between "e" and its accent: the letter's style takes the whole character.
+      el("action", "Jose\u0301 counts: un, deux. Zoe\u0308 waits.", { bold: [[0, 4]] }),
+      el("character", "jose\u0301"),
+      el("dialogue", "Ça va, señor? Øresund, Łódź, Șiret."),
+    ];
+    const bytes = await writePdf({ titlePage, elements }, fonts, { titlePage: true });
+    const { pages } = await readBack(bytes);
+    const [title = [], one = []] = pages;
+    // Nine and twelve cells, centred between 1.5 and 7.5 in.
+    expectAt(lineAt(title, "CAFÉ NOIR"), 291.6, topY(3.5));
+    expectAt(lineAt(title, "Renée Dubois"), 280.8, topY(3.5 + 4 / 6));
+    expectAt(lineAt(one, "INT. CAFÉ - NIGHT"), 108, rowY(0));
+    expectAt(lineAt(one, "José counts: un, deux. Zoë waits."), 108, rowY(2));
+    expectAt(lineAt(one, "JOSÉ"), 252, rowY(4));
+    expectAt(lineAt(one, "Ça va, señor? Øresund, Łódź, Șiret."), 180, rowY(5));
+    // Each accented letter takes one cell: the words after them stay on the grid.
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    const items = (await (await pdf.getPage(2)).getTextContent()).items as TextItem[];
+    const word = (text: string) => items.find((item) => item.str === text)?.transform[4];
+    expect(word("counts:")).toBeCloseTo(108 + 5 * 7.2, 3);
+    expect(word("waits.")).toBeCloseTo(108 + 27 * 7.2, 3);
+    const [, page] = await drawn(bytes);
+    const fontAt = (x: number) =>
+      page?.texts.find((text) => Math.abs(text.x - x) < 0.001 && Math.abs(text.y - rowY(2)) < 0.001)
+        ?.font;
+    expect(fontAt(108)).toBe("TIRAAB+CourierPrime-Bold");
+    expect(fontAt(108 + 4 * 7.2)).toBe("TIRAAA+CourierPrime-Regular");
+  });
+
+  it("sets a tab in the script's text in one cell, as the engine lays it out", async () => {
+    const elements = [el("action", "Name:\tMara Ellison\tAge:\t34")];
+    const bytes = await writePdf({ titlePage: newTitlePage(), elements }, fonts, noTitlePage);
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    const items = (await (await pdf.getPage(1)).getTextContent()).items as TextItem[];
+    const word = (text: string) => items.find((item) => item.str === text)?.transform[4];
+    // "Name:" fills cells 0–4 and the tab cell 5; "Ellison" ends at 17, its tab is 18.
+    expect(word("Name:")).toBeCloseTo(108, 3);
+    expect(word("Mara")).toBeCloseTo(108 + 6 * 7.2, 3);
+    expect(word("Age:")).toBeCloseTo(108 + 19 * 7.2, 3);
+    expect(word("34")).toBeCloseTo(108 + 24 * 7.2, 3);
+  });
+
+  it("makes no PDF of a character it cannot print as shown, and says where each is", async () => {
+    const titlePage = { ...newTitlePage(), title: "Salt Line", contact: "mara@example.com ✓" };
+    const elements = [
+      el("sceneHeading", "INT. DACHA - NIGHT"),
+      el("action", "A sign over the door reads Жить."),
+      el("action", "The hos\u00adpital door swings.", { pageBreakBefore: true }),
+      el("action", "Under it, Жить again."),
+    ];
+    const script = { titlePage, elements };
+    const refusal = await writePdf(script, fonts, { titlePage: true }).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(/Title page, Contact\b.*“✓” \(U\+2713\)/);
+    expect(refusal).toMatch(/Page 1, in “Жить\.”.*“Ж” \(U\+0416\).*1 more place/);
+    // The soft hyphen is invisible on screen but would print: named by its code alone.
+    expect(refusal).toMatch(/Page 2, in “hos\u00adpital”.*U\+00AD/);
+    expect(refusal.match(/U\+0416/g)).toHaveLength(1);
+    // Without the title page, only the script's own characters count.
+    const untitled = await writePdf(script, fonts, noTitlePage).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(untitled).not.toMatch(/Title page/);
+    expect(untitled).toMatch(/Page 1/);
+  });
+
+  it("makes no PDF when dual dialogue is longer than a page, and names its page and speakers", async () => {
+    const lines = (count: number) =>
+      Array.from({ length: count }, (_, i) => `Line ${i + 1}.`).join("\n");
+    const elements = [
+      el("sceneHeading", "INT. HALL - DAY"),
+      el("action", "They argue at once."),
+      el("character", "maya"),
+      el("dialogue", lines(60)),
+      el("character", "jo", { dual: true }),
+      el("dialogue", lines(5)),
+    ];
+    const refusal = await writePdf(
+      { titlePage: newTitlePage(), elements },
+      fonts,
+      noTitlePage,
+    ).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(/Page 2: the dual dialogue of MAYA and JO is longer than a page/);
+    // Just short enough, it prints.
+    const fits = [...elements.slice(0, 3), el("dialogue", lines(53)), ...elements.slice(4)];
+    const { pages } = await readBack(
+      await writePdf({ titlePage: newTitlePage(), elements: fits }, fonts, noTitlePage),
+    );
+    expectAt(lineAt(pages[1] ?? [], "Line 53."), 108, rowY(53));
+  });
+
+  it("makes no PDF when a title page line runs off the paper", async () => {
+    const titlePage = { ...newTitlePage(), title: "Salt Line", contact: "x".repeat(71) };
+    const refusal = await writePdf({ titlePage, elements: [] }, fonts, { titlePage: true }).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(/Title page, Contact: .*off the paper/);
+    // Seventy cells from the left margin reach the paper's edge exactly.
+    const edge = { ...titlePage, contact: "x".repeat(70) };
+    await expect(
+      writePdf({ titlePage: edge, elements: [] }, fonts, { titlePage: true }),
+    ).resolves.toBeInstanceOf(Uint8Array);
+  });
 });

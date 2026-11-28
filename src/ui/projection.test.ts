@@ -148,6 +148,20 @@ describe("capitals", () => {
   });
 });
 
+describe("tabs", () => {
+  it("gives each tab a span of its own, which the editor sets one cell wide", () => {
+    // A browser takes a tab to a tab stop; the engine gives it one cell.
+    const projection = new Projection(
+      toDocument([{ type: "action", text: "Name:\tMara\tAge:\t34" }]),
+    );
+    expect(drawn(projection)).toEqual([
+      [1 + 5, 1 + 6, { class: "tab" }],
+      [1 + 10, 1 + 11, { class: "tab" }],
+      [1 + 15, 1 + 16, { class: "tab" }],
+    ]);
+  });
+});
+
 describe("sheets", () => {
   it("numbers pages from 2 and places (MORE), repeated cues and the automatic (CONT'D)", () => {
     // 24 one-line actions take rows 0 to 46; the cue takes row 48. Rows 49

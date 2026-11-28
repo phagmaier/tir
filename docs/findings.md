@@ -330,6 +330,15 @@ fontTools on 2026-11-26.
   "final" measured four characters wide in WebKitGTK and in the PDF.
   Evidence: fontkit's feature lists for the four files; widths measured
   in the dev app and read back from a PDF, 2026-11-27.
+- Each face maps 384 code points: ASCII, Latin-1, Latin Extended-A
+  except "ĸ" and "ŉ", "Ș ș Ț ț", "ƒ", spacing accents, a few Greek
+  letters used as symbols (Δ Ω μ π), punctuation such as curly quotes,
+  dashes and "…", "€", "™" and the "fi"/"fl" ligatures. It has no combining
+  accents but the comma below (U+0326), no Cyrillic, Vietnamese letters,
+  "ẞ" or emoji. A letter pasted with a separate accent ("e" and U+0301)
+  composes (NFC) to one it holds; WebKitGTK's shaping shows it so.
+  Evidence: fontkit's `characterSet` of the four files, and the dev app's
+  `every` fixture, 2026-11-28.
 
 ## Title page conventions
 
@@ -572,6 +581,16 @@ connects a private repository for real.
   fontkit shaping each string into glyphs, so the export runs in a worker:
   the interface thread's longest pause while it ran was 8 ms. Evidence: a
   CPU profile in Node and timings in the dev app, 2026-11-27.
+- `drawText` cleans its text first: a tab, U+0085, U+2028 and U+2029
+  become four spaces, backspace and vertical tab vanish, and a line feed,
+  form feed or carriage return starts a new line (`cleanText` and
+  `lineSplit` in the library's `utils/strings`). A character the font
+  lacks prints as its missing glyph, and fontkit's own composing of a
+  letter and a separate accent is unreliable: "e" and U+0308 read back
+  as "é", and "e" and U+0301 split by a style change as "e" and the
+  missing glyph. Tir sets the text itself and refuses what it cannot set
+  (architecture, "PDF"). Evidence: the library's source, and 7.3d's tests
+  run against the earlier writer, 2026-11-28.
 
 ## Spell check
 
@@ -697,6 +716,16 @@ include the per-task results. Reproduce with
   skip a line or lose the column. ProseMirror can reuse the DOM of an
   equal paragraph at another position; recheck the projected paragraph
   styles after update rather than assuming equality implies placement.
+- **A tab needs its own span.** With `white-space: pre`, WebKitGTK 2.54
+  takes a tab to the next stop measured from the paragraph's content
+  edge (eight spaces by default), not the engine's one cell. At
+  `tab-size: 1` it is one cell only where the line sits on that edge's
+  grid: a centred line half a cell off gets one and a half. At
+  `tab-size: 0` a tab inside a longer text node has no width, but a tab
+  alone in its own span is one space wide wherever it sits. The
+  projection gives each tab a `.tab` span at tab size 0. Evidence: widths
+  measured in the dev app and `editor-placement` on the `every` fixture at
+  75–125%, 2026-11-28.
 - **Test decorations together.** The Stage 1 probe placed find
   highlights, spelling underlines, margin dots and a ghost completion
   without moving the script's lines. Overlapping inline decorations

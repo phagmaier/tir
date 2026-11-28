@@ -321,6 +321,9 @@ function decorate(node: Node, pos: number, { block, breaks }: Placement, out: De
   const text = node.textContent;
   const at = pos + 1;
   if (ELEMENT_FORMATS[node.attrs.type as ElementType].capitals) keepCase(text, at, out);
+  for (let i = text.indexOf("\t"); i >= 0; i = text.indexOf("\t", i + 1)) {
+    out.push(Decoration.inline(at + i, at + i + 1, TAB, TAB));
+  }
   for (let j = 0; j < breaks.length; j += 4) {
     const start = breaks[j] as number;
     const x = breaks[j + 1] as number;
@@ -351,6 +354,9 @@ function decorate(node: Node, pos: number, { block, breaks }: Placement, out: De
 const SKIPPED = { class: "skipped" };
 
 const KEEP_CASE = { class: "keep-case" };
+
+/** A tab, set one cell wide as the engine counts it and the PDF prints it (`app.css`). */
+const TAB = { class: "tab" };
 
 /**
  * Leaves each character whose capital is longer ("ß", whose capital is
