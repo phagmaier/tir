@@ -802,7 +802,12 @@ Not in git:
   `mise exec -- pnpm exec vitest run <test-files>` for the changed code
   and its callers. Example focused Rust check:
   `nix develop --command cargo test --manifest-path src-tauri/Cargo.toml --locked library::tests`.
-  Rerun only checks affected by review fixes.
+  Rerun only checks affected by review fixes. To show that a new test
+  fails on an older revision, run it in a `git worktree` with its own
+  `pnpm install --frozen-lockfile`. Do not link the main `node_modules`
+  into the worktree: pnpm rewrites the shared links to point at the
+  worktree, and they break when it is removed (`mise run install`
+  restores them).
 - **`mise run pagination-timing`** measures the median time to paginate a
   roughly 120-page draft against a 16 ms target. Run it on the same machine
   when pagination performance is in scope; it is not part of `check` and
