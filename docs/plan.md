@@ -9,15 +9,17 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
 
 ## Current status
 
-- In progress: the [V1 review](#task-7-3)'s final pass after 7.3d and
-  7.3e. [7.3b](#task-7-3b), [7.3d](#task-7-3d) and [7.3e](#task-7-3e) are
-  done; [7.3c](#task-7-3c)'s local work is done.
-- Not tested in Final Draft: the user has no copy and deferred
-  [7.3a](#task-7-3a) and 7.3c's [Final Draft check](#final-draft-evidence)
-  (2026-11-28). Both are under [Known gaps](#known-gaps).
-- Release gate: the [V1 review](#task-7-3) closes when the user agrees to
-  the [Known gaps](#known-gaps) deferrals. Then run the
-  [user writing check](#task-7-4).
+- Next, for the user: read [Known gaps](#known-gaps) and say whether you
+  agree to deferring each, including the Final Draft checks of
+  [7.3a](#task-7-3a) and [7.3c](#task-7-3c). Agreement closes the
+  [V1 review](#task-7-3); a disagreement becomes a follow-up task. Then
+  run the [user writing check](#task-7-4).
+- The review's final pass after [7.3d](#task-7-3d) and [7.3e](#task-7-3e)
+  is done (2026-11-28, `8a7337d`); [7.3b](#task-7-3b), 7.3d and 7.3e are
+  done, and [7.3c](#task-7-3c)'s local work is done.
+- Not tested in Final Draft: the user has no copy and deferred 7.3a and
+  7.3c's [Final Draft check](#final-draft-evidence) (2026-11-28). Both
+  are under Known gaps.
 
 ## How to work this plan
 
@@ -74,7 +76,8 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3"></a>
 
 - [ ] 7.3 — Review: V1
-  - Status: in progress (final pass after 7.3d and 7.3e)
+  - Status: verification pending (user agreement to the Known gaps
+    deferrals)
   - Depends on: [7.2](history.md#task-7-2), 7.3b, 7.3d and 7.3e. The
     user deferred the Final Draft checks of 7.3a and 7.3c (Known gaps).
     None of the follow-ups waits for this review to close.
@@ -162,6 +165,40 @@ V1 is done when [7.4](#task-7-4) passes.
     source SHA-256 unchanged, and created a mode-0600 draft. Pointing
     the release at a temporary file in place of its settings directory
     opened only the startup error dialog and exited with status 1.
+  - Final pass after 7.3d and 7.3e, 2026-11-28, reviewing
+    `8a7337d6c5103997640519879bfd53732793d18f` (this record then
+    committed on top, documents only), with the adopted review method.
+    The trace's changed items:
+    - Script rendering: body tabs take one cell and pasted accents one
+      composed letter in the editor (`editor-placement` per character,
+      [7.3d](#task-7-3d)) and the PDF (`pdf` tests).
+    - Title page and PDF: a character Courier Prime lacks, dual dialogue
+      longer than a page and a title-page line off the paper stop the
+      export with a message before any file is written ([7.3d](#task-7-3d)).
+    - Copy/paste and undo/redo: Backspace, Delete and typing over a
+      selection across elements follow Cut, with one-step undo
+      (`clipboard` tests and native keys, [7.3e](#task-7-3e)).
+    - Sidebar, Title page, draft menu, paper switch and zoom: reached
+      with F6, Tab and Enter and left with Esc (`desk` tests and native
+      keys, [7.3e](#task-7-3e)).
+    - Autocomplete and spell check: a screen reader is told the
+      highlighted option (Orca's log, [7.3e](#task-7-3e)).
+    Security: neither task adds a capability, command, file access or
+    parser; the PDF refusal travels in the existing error message. Data
+    safety: export still writes only after the Save dialog and never
+    replaces a file; selection edits change only the script on screen,
+    and Ctrl+Z restored each in tests and natively. Performance: writing
+    the 120-page feature PDF with curly quotes and accents took 484 ms
+    median in Node against 461 ms before; `editor-timing --pairs 8` on
+    the spike gave 12–14 ms layout and 18–20 ms frame medians for
+    ordinary typing and deleting, 13 and 19–20 with the autocomplete
+    popup open, in line with the [typing baseline](findings.md#typing-baseline).
+    Documents: brief, architecture and findings describe both tasks;
+    Known gaps holds the deferrals below, including the Final Draft
+    checks. `mise run check` passed (Biome, both TypeScript checks, 791
+    Vitest tests, rustfmt, clippy, 100 Rust tests). No new findings to
+    fix. Not done: the user's agreement to the deferrals, which closes
+    this review.
 
 <a id="task-7-3a"></a>
 
