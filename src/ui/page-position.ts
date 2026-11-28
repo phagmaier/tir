@@ -2,15 +2,14 @@ import { keydownHandler } from "prosemirror-keymap";
 import { Plugin } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import { jumpTo } from "./jump.ts";
-import type { Projection } from "./projection.ts";
+import { PITCH_PX, type Projection } from "./projection.ts";
 
 /**
  * The top bar's page position in `dom` (brief, "Page position"):
- * "Page N of M", N the page holding the caret and M the script's pages, from
- * the projection. Go to page (prototype piece 7, A): Ctrl+G or a click turns
- * N into a field; Enter puts the caret at the start of the page typed and
- * scrolls there, Esc goes back to the script. A view plugin in the typing
- * path, so it touches the page only when N or M changes.
+ * "Page N of M" follows the caret while editing and the view while scrolling.
+ * Go to page (prototype piece 7, A): Ctrl+G or a click turns N into a field;
+ * Enter puts the caret at the start of the page typed and scrolls there,
+ * Esc goes back to the script.
  */
 export function pagePosition(
   dom: HTMLElement,
@@ -38,8 +37,7 @@ export function pagePosition(
 
   let page = 0;
   let count = 0;
-  const show = (view: EditorView) => {
-    const n = projection.pageAt(view.state.selection.head);
+  const show = (n: number) => {
     const m = projection.map.pageCount;
     if (n === page && m === count) return;
     button.textContent = `Page ${n} of ${m}`;
@@ -105,8 +103,43 @@ export function pagePosition(
     },
     view(view) {
       editor = view;
-      show(view);
-      return { update: show };
+      show(projection.pageAt(view.state.selection.head));
+      let lastY = scrollY;
+      let caretFrame: number | undefined;
+      const onScroll = () => {
+        const y = scrollY;
+        if (y === lastY) return; // Horizontal scrolling does not change the page.
+        lastY = y;
+        if (caretFrame !== undefined) return;
+        if (y <= 0) {
+          show(1);
+        } else if (y + innerHeight >= document.documentElement.scrollHeight - 1) {
+          show(projection.map.pageCount);
+        } else {
+          const pitch = PITCH_PX * zoom();
+          // Read into the viewport, but not so far that a short sheet is skipped.
+          const offset = Math.min(innerHeight * 0.4, pitch / 2);
+          const page = 1 + Math.floor((offset - view.dom.getBoundingClientRect().top) / pitch);
+          show(Math.max(1, Math.min(page, projection.map.pageCount)));
+        }
+      };
+      window.addEventListener("scroll", onScroll, { passive: true });
+      return {
+        update(next, previous) {
+          if (next.state === previous) return;
+          show(projection.pageAt(next.state.selection.head));
+          // Let editing and jumps win over the scroll they trigger in this frame.
+          // Scroll events are delivered before animation frame callbacks.
+          caretFrame ??= requestAnimationFrame(() => {
+            caretFrame = undefined;
+          });
+        },
+        destroy() {
+          window.removeEventListener("scroll", onScroll);
+          if (caretFrame !== undefined) cancelAnimationFrame(caretFrame);
+          editor = undefined;
+        },
+      };
     },
   });
 }

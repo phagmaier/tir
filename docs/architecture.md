@@ -420,6 +420,32 @@ A draft date that is not shown goes under `Hidden draft date:`. Each
 paragraph is checked by reading it back. What a round trip cannot keep is
 listed at the top of `write.ts`.
 
+## Final Draft files
+
+The Projects screen uses the same native picker and copy flow for `.fdx`
+and `.fountain`. The shell reads FDX as UTF-8 or BOM-marked UTF-16, at most
+8 MiB, before sending the decoded text to the page. `src/core/fdx/read.ts`
+uses Saxes to validate XML without a DOM or a file or network resolver. It
+rejects DOCTYPE declarations and nesting beyond 64 levels and keeps only
+the branches needed for the script and import report.
+
+The reader puts typed paragraphs and emphasis into the model and uses
+the title page's alignment and conventional byline/source wording for
+its fixed fields. It reports notes, explicit scene numbers and revision
+sets used on the draft, not the unused defaults. Unknown paragraph types
+are reported; their text becomes Action. Document-level layout settings
+do not override Tir's layout engine.
+
+Export Final Draft… in the draft menu serializes the draft on screen with
+`src/core/fdx/write.ts` and opens the native Save dialog via `export_fdx`.
+The receiving app lays out the editable script with Final Draft's default
+element settings, page layout and mores and continueds. The title page
+uses centred paragraphs and bottom-aligned contact and draft/date lines.
+FDX has no named title fields; Tir labels the text runs for a lossless
+round trip. A hidden draft date is kept in an XML attribute, not printed
+on the title page. An unpaired cue marked dual retains its mark in an
+attribute until it is paired. Other apps may discard these attributes on save.
+
 ## PDF
 
 `src/core/pdf.ts` writes a draft's PDF (brief, "PDF export") from the
@@ -435,7 +461,8 @@ own advance is 7.195 pt, and ligatures are off, as in the editor. The
 baseline sits where CSS puts it in a 12 pt row, from the font's ascent and
 descent (findings, "Courier Prime"). The title page follows the preview's
 rules: the title always takes its line, empty fields close up, and a line
-break ending a field starts no line.
+break ending a field starts no line. Both expand tabs to eight-cell stops
+before aligning a field; the saved text is unchanged.
 Each face the script uses is embedded once as a subset; the outline (one
 bookmark per scene, from `ScriptMap`) and the page labels are written as
 PDF dictionaries, since the library has neither. Text is black on white
@@ -450,6 +477,9 @@ rules use. The page passes the PDF to `export_pdf` (`dialogs.rs`) as the
 request's raw body, with its suggested name, percent-encoded, in the
 `tir-name` header; the Rust side shows the Save dialog and publishes a new
 file as Export Fountain… does ([Writing files](#writing-files)).
+Draft exports sanitize and clip the project and draft name separately, so
+a long project name cannot hide the draft name or leave no room for the
+extension and the atomic write's temporary suffix.
 
 ## The editor
 
@@ -513,9 +543,12 @@ The sidebar's scene list and the top bar's page position are view plugins
 that `mountEditor` hands the projection, so they read its `ScriptMap`
 (`src/core/script-map.ts`: each scene's heading and starting page, the
 page of any place, each page's first line) as the engine computed it for
-the edit, never the screen. They are in the typing path, so each touches
-the page only where what it shows changed, and the scene list applies an
-edit's changes just after the edit's frame is drawn (findings, "Editor").
+the edit. The page indicator follows the caret on editor updates; on
+vertical scroll it uses the script's viewport position and scaled page
+pitch, not a scan of the sheets. An editor update takes precedence over
+scroll in the same frame. Both plugins touch the interface only when what
+they show changes; the scene list applies an edit's changes just after
+the edit's frame is drawn (findings, "Editor").
 The list scrolls on its own inside the fixed sidebar. A jump, from a scene
 or Go to page, sets the caret and scrolls to the engine's page and row,
 scaled by the zoom.

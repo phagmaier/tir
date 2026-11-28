@@ -269,10 +269,9 @@ view.
 
 ## Page position
 
-"Page N of M" sits at the right of the top bar: N is the page the caret is
-on, M the script's page count *(the user's choice, 2026-11-26: like the
-element buttons and the sidebar highlight, it follows the caret; scrolling
-leaves it until the caret moves)*.
+"Page N of M" sits at the right of the top bar. N follows the page in view
+as the writer scrolls without moving the caret. Editing or moving the
+caret in the script shows the caret's page. M is the script's page count.
 
 **Go to page**: Ctrl+G *(agent-selected: Final Draft's key,
 [findings](findings.md#final-drafts-keys))*, or a click on "Page N of M",

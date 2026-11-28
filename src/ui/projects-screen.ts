@@ -15,7 +15,7 @@
  * (zoom, focus mode) do nothing, and Esc closes the menu or dialog open,
  * else goes back.
  */
-import type { LeftOutKind } from "../core/fountain/read.ts";
+import type { LeftOutKind } from "../core/import-report.ts";
 import { paginate } from "../core/paginate.ts";
 import { usesOf } from "../core/suggestions.ts";
 import { deskKey } from "./desk.ts";
@@ -23,12 +23,12 @@ import type { Library, Project } from "./library.ts";
 import { FIRST_DRAFT } from "./opening.ts";
 import {
   draftsText,
-  type FountainImport,
   type PageCounter,
   type Projects,
   pagesText,
   type Row,
   rows,
+  type ScriptImport,
   whenEdited,
 } from "./projects.ts";
 import { savedIndicator } from "./saved-indicator.ts";
@@ -59,6 +59,9 @@ const LEFT_OUT: Record<LeftOutKind, string> = {
   synopsis: "Synopsis",
   sceneNumber: "Scene number",
   titlePageField: "Title page field",
+  scriptNote: "Script note",
+  revision: "Revision marks (text kept)",
+  elementType: "Element type (text kept as Action)",
 };
 
 const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -273,8 +276,8 @@ export class ProjectsScreen {
   /** Import… and New project, for the top of the list and the empty library. */
   private actions(): HTMLButtonElement[] {
     const imports = button("btn", "Import…", "import");
-    imports.title = "Import a Fountain file";
-    imports.addEventListener("click", () => void this.importFountain());
+    imports.title = "Import a Fountain or Final Draft file";
+    imports.addEventListener("click", () => void this.importScript());
     const create = button("btn primary", "New project", "plus");
     create.dataset.create = "";
     create.addEventListener("click", () => this.newProject());
@@ -354,7 +357,11 @@ export class ProjectsScreen {
       acts.append(...this.actions());
       box.append(
         el("h2", "", "No screenplays yet"),
-        el("p", "", `Start a new script, or bring one in from a Fountain file.${where}`),
+        el(
+          "p",
+          "",
+          `Start a new script, or bring one in from a Fountain or Final Draft file.${where}`,
+        ),
         acts,
       );
       this.body.replaceChildren(box);
@@ -482,8 +489,8 @@ export class ProjectsScreen {
     });
   }
 
-  private async importFountain(): Promise<void> {
-    const source = await this.act(() => this.side.projects.pickFountain(), false);
+  private async importScript(): Promise<void> {
+    const source = await this.act(() => this.side.projects.pickScript(), false);
     if (!source || !this.shownNow) return;
 
     const form = el("form", "import-dialog");
@@ -492,7 +499,9 @@ export class ProjectsScreen {
     const file = el("div", "import-file");
     file.innerHTML = svg("file", 18);
     const fileName = el("div", "", source.fileName);
-    fileName.append(el("small", "", "Fountain file"));
+    fileName.append(
+      el("small", "", source.format === "fdx" ? "Final Draft file" : "Fountain file"),
+    );
     file.append(fileName);
 
     const choices = el("div", "import-choices");
@@ -557,16 +566,12 @@ export class ProjectsScreen {
     create.radio.focus();
   }
 
-  private async finishImport(source: FountainImport, folder: string | null): Promise<void> {
+  private async finishImport(source: ScriptImport, folder: string | null): Promise<void> {
     const place = await this.act(() => this.side.projects.importFile(source, folder));
     if (place && this.shownNow) this.importReport(source, place, folder === null);
   }
 
-  private importReport(
-    source: FountainImport,
-    { project, file }: Place,
-    newProject: boolean,
-  ): void {
+  private importReport(source: ScriptImport, { project, file }: Place, newProject: boolean): void {
     const report = el("div", "import-dialog");
     const heading = el("h2", "", "Imported");
     heading.id = "dialog-title";

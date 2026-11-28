@@ -1,4 +1,5 @@
 import { FONT_SIZE_PT, LINES_PER_INCH, PAGE, TITLE_PAGE } from "../core/format.ts";
+import { expandTitleTabs } from "../core/layout.ts";
 import { newTitlePage, type TitlePage } from "../core/model.ts";
 
 const TEXT_FIELDS = ["title", "credit", "authors", "source", "contact", "draftDate"] as const;
@@ -52,7 +53,9 @@ export class TitlePageView {
       for (const [key, node] of print) {
         const text = this.page[key];
         const empty = !text.trim();
-        const printed = key === "title" && empty ? "TITLE" : text;
+        const printed = expandTitleTabs(
+          key === "title" ? (empty ? "TITLE" : text.toUpperCase()) : text,
+        );
         if (node.textContent !== printed) node.textContent = printed;
         node.hidden = key === "draftDate" ? !this.page.showDraftDate : key !== "title" && empty;
         if (key === "title") node.classList.toggle("title-placeholder", empty);

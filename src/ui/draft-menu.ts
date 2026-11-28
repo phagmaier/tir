@@ -166,6 +166,11 @@ export class DraftMenu {
       this.dismiss();
       this.side.run({ kind: "exportFountain" });
     });
+    const exportFdx = button("draft-action", "Export Final Draft…");
+    exportFdx.addEventListener("click", () => {
+      this.dismiss();
+      this.side.run({ kind: "exportFdx" });
+    });
     const remove = button("draft-action danger", "Delete…");
     remove.disabled = rows.length === 1;
     if (remove.disabled) remove.append(el("small", "", "A project needs at least one draft"));
@@ -179,6 +184,7 @@ export class DraftMenu {
       rename,
       exportPdf,
       exportFountain,
+      exportFdx,
       remove,
     );
     this.menu.hidden = false;

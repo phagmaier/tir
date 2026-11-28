@@ -439,14 +439,14 @@ describe("the screen's actions", () => {
     });
   });
 
-  describe("Fountain import", () => {
+  describe("screenplay import", () => {
     it("copies the script to a new project and preserves the omissions for the report", async () => {
       const picked = {
         name: "harbor.fountain",
         text: "Title: Harbor Lights\nRevision: Green\n\nEXT. QUAY - DAWN #14#\n\n[[Check tide table]]\n\nThe tide is out.\n",
       };
       const { did, shown, drafts, projects } = screen({ picked });
-      const source = await projects.pickFountain();
+      const source = await projects.pickScript();
       if (!source) throw new Error("Expected the picked Fountain file");
       expect(source.leftOut).toEqual([
         expect.objectContaining({ kind: "titlePageField", text: "Revision" }),
@@ -479,7 +479,7 @@ describe("the screen's actions", () => {
       const picked = { name: "night.shoot.FOUNTAIN", text: "INT. STATION - NIGHT\n" };
       const { drafts, shown, projects, saver, salt } = screen({ picked });
       const before = drafts["Salt Line/First Draft.tir"];
-      const source = await projects.pickFountain();
+      const source = await projects.pickScript();
       if (!source) throw new Error("Expected the picked Fountain file");
       expect(source.projectName).toBe("night.shoot");
       const place = await projects.importFile(source, salt.folder);
@@ -503,7 +503,7 @@ describe("the screen's actions", () => {
     it("does not copy the source when the current draft cannot be saved", async () => {
       const picked = { name: "q.fountain", text: "EXT. QUAY - DAWN\n" };
       const { did, shown, projects } = screen({ picked, saves: false });
-      const source = await projects.pickFountain();
+      const source = await projects.pickScript();
       if (!source) throw new Error("Expected the picked Fountain file");
       expect(await projects.importFile(source, null)).toBe(false);
       expect(did).toEqual(["saved “Salt Line”", cannotSave("“q.fountain” was not imported.")]);
@@ -512,8 +512,46 @@ describe("the screen's actions", () => {
 
     it("does nothing when the file chooser is cancelled", async () => {
       const { did, projects } = screen();
-      expect(await projects.pickFountain()).toBeNull();
+      expect(await projects.pickScript()).toBeNull();
       expect(did).toEqual([]);
+    });
+
+    it("opens a Final Draft file as a project, preserving the screenplay and reporting the old number", async () => {
+      const picked = {
+        name: "pump.house.FDX",
+        text: `<FinalDraft DocumentType="Script"><Content>
+          <Paragraph Type="Scene Heading" Number="7A"><Text>EXT. PUMP HOUSE - NIGHT</Text></Paragraph>
+          <Paragraph Type="General"><Text Style="Bold">Water rises.</Text></Paragraph>
+        </Content></FinalDraft>`,
+      };
+      const { drafts, projects, shown } = screen({ picked });
+      const source = await projects.pickScript();
+      if (!source) throw new Error("Expected the picked Final Draft file");
+      expect(source.leftOut).toEqual([{ kind: "sceneNumber", text: "7A", at: 0 }]);
+      const place = await projects.importFile(source, null);
+      if (!place) throw new Error("Expected a new project");
+      expect(readDraft(drafts["pump.house/First Draft.tir"] ?? "")).toEqual({
+        ok: true,
+        script: {
+          titlePage: { ...station.titlePage, credit: "" },
+          elements: [
+            { type: "sceneHeading", text: "EXT. PUMP HOUSE - NIGHT" },
+            { type: "general", text: "Water rises.", bold: [[0, 12]] },
+          ],
+        },
+      });
+      expect(await projects.open(place.project, place.file)).toBe(true);
+      expect(shown[0]?.place).toEqual(place);
+    });
+
+    it("explains an unreadable Final Draft source before creating anything", async () => {
+      const { did, projects } = screen({
+        picked: { name: "broken.fdx", text: "<FinalDraft><Content>" },
+      });
+      expect(await projects.pickScript()).toBeNull();
+      expect(did).toEqual([
+        expect.stringMatching(/^told Tir could not import “broken.fdx”: .*invalid XML/),
+      ]);
     });
   });
 });

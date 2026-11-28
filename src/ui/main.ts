@@ -134,6 +134,7 @@ const draftSide = {
   remove: deleteDraft,
   activate: setActiveDraft,
   exportFountain: (name: string, text: string) => invoke<void>("export_fountain", { name, text }),
+  exportFdx: (name: string, text: string) => invoke<void>("export_fdx", { name, text }),
   pdf: makePdf,
   // The PDF goes as the request's body; a header carries its suggested name.
   exportPdf: (name: string, bytes: Uint8Array) =>
@@ -216,7 +217,7 @@ const projects = new Projects(
     activate: setActiveDraft,
     rename: renameProject,
     remove: deleteProject,
-    pick: () => invoke("open_fountain"),
+    pick: () => invoke("open_script"),
     tell,
   },
   {

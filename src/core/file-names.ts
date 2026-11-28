@@ -16,6 +16,11 @@
  */
 const MAX_BYTES = 120;
 
+// Each export part has its own budget so neither can crowd the other out.
+// Allow for two device-name underscores, " - ", ".fountain", and the
+// atomic write's ".<pid>-<counter>.tmp" (up to 26 bytes) within 255 bytes.
+const MAX_EXPORT_PART_BYTES = 107;
+
 /** Names Windows keeps for devices, alone or followed by an extension (findings, "Library on disk"). */
 const RESERVED = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?=\.|$)/iu;
 
@@ -26,6 +31,15 @@ const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** `title` made a safe name; "Untitled" when nothing of it is left. */
 export function safeName(title: string): string {
+  return safePart(title, MAX_BYTES);
+}
+
+/** The suggested base name for an export, before appending its extension. */
+export function draftExportBase(project: string, draft: string): string {
+  return `${safePart(project, MAX_EXPORT_PART_BYTES)} - ${safePart(draft, MAX_EXPORT_PART_BYTES)}`;
+}
+
+function safePart(title: string, bytes: number): string {
   const name = title
     .normalize("NFC")
     // A lone surrogate cannot be written as UTF-8.
@@ -39,7 +53,7 @@ export function safeName(title: string): string {
     .replace(/\s+/gu, " ")
     // A leading dot hides a name, and "." and ".." are not names at all.
     .replace(/^[.\s]+/u, "");
-  return finish(name, MAX_BYTES);
+  return finish(name, bytes);
 }
 
 /**

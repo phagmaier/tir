@@ -340,6 +340,16 @@ describe("writePdf", () => {
     expectAt(lineAt(page, "mara@example.com"), 108, topY(10 - 1 / 6));
   });
 
+  it("aligns pasted title-page tabs on eight-character stops", async () => {
+    const titlePage = { ...newTitlePage(), title: "a\tB" };
+    const bytes = await writePdf({ titlePage, elements: [] }, fonts, { titlePage: true });
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    const items = (await (await pdf.getPage(1)).getTextContent()).items as TextItem[];
+    // Nine cells centred on 324 pt: A starts at 291.6 pt and B is eight cells later.
+    expect(items.find((item) => item.str === "A")?.transform[4]).toBeCloseTo(291.6, 3);
+    expect(items.find((item) => item.str === "B")?.transform[4]).toBeCloseTo(349.2, 3);
+  });
+
   it("marks each scene with a bookmark opening at its heading", async () => {
     const elements = [
       el("sceneHeading", "int. lamp room - night"),

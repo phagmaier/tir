@@ -9,7 +9,9 @@
  * library and let the writer open it from the report.
  */
 import { type ReadResult, readDraft } from "../core/draft-file.ts";
-import { type FountainRead, readFountain } from "../core/fountain/read.ts";
+import { readFdx } from "../core/fdx/read.ts";
+import { readFountain } from "../core/fountain/read.ts";
+import type { ScriptRead } from "../core/import-report.ts";
 import type { Script } from "../core/model.ts";
 import { paginate } from "../core/paginate.ts";
 import type { DraftTexts } from "./draft-texts.ts";
@@ -141,13 +143,14 @@ const message = (error: unknown) => (error instanceof Error ? error.message : St
 /** `text` ending as a sentence: the Rust side's messages for system errors end without a full stop. */
 const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
 
-/** A Fountain source picked in the native dialog, without its path. */
+/** A source picked in the native dialog, without its path. */
 export interface Opened {
   readonly name: string;
   readonly text: string;
 }
 
-export interface FountainImport extends FountainRead {
+export interface ScriptImport extends ScriptRead {
+  readonly format: "fdx" | "fountain";
   readonly fileName: string;
   readonly projectName: string;
   readonly draftName: string;
@@ -164,7 +167,7 @@ export interface ProjectsSide {
   activate(project: Project, file: string): Promise<Project>;
   rename(library: Library, project: Project, name: string): Promise<Project>;
   remove(project: { readonly folder: string }): Promise<void>;
-  /** Picks and reads a Fountain source; null when the dialog is cancelled. */
+  /** Picks and reads a screenplay source; null when the dialog is cancelled. */
   pick(): Promise<Opened | null>;
   tell(title: string, message: string): Promise<void>;
 }
@@ -307,27 +310,38 @@ export class Projects {
   }
 
   /** Picks and reads the source before asking where to put it. No files are written. */
-  async pickFountain(): Promise<FountainImport | null> {
+  async pickScript(): Promise<ScriptImport | null> {
+    let name: string | undefined;
     try {
       const picked = await this.side.pick();
       if (!picked) return null;
-      const read = readFountain(picked.text);
-      const stem = picked.name.slice(0, -".fountain".length).trim() || UNTITLED;
+      name = picked.name;
+      const dot = name.lastIndexOf(".");
+      const format = name.slice(dot + 1).toLowerCase();
+      if (dot < 0 || (format !== "fdx" && format !== "fountain")) {
+        throw new Error("Choose a Fountain (.fountain) or Final Draft (.fdx) file.");
+      }
+      const read = format === "fdx" ? readFdx(picked.text) : readFountain(picked.text);
+      const stem = name.slice(0, dot).trim() || UNTITLED;
       return {
         ...read,
+        format,
         fileName: picked.name,
         projectName: projectName(read.script.titlePage, stem),
         draftName: stem,
         targets: (await this.side.list()).projects,
       };
     } catch (error) {
-      await this.side.tell("Tir could not import Fountain", message(error));
+      await this.side.tell(
+        name ? `Tir could not import “${name}”` : "Tir could not import the script",
+        message(error),
+      );
       return null;
     }
   }
 
   /** Copies the source into the library, without switching away from the draft on screen. */
-  importFile(source: FountainImport, folder: string | null): Promise<Place | false> {
+  importFile(source: ScriptImport, folder: string | null): Promise<Place | false> {
     return this.queue<Place>(async () => {
       const { fileName, script } = source;
       if (!(await this.saved(`“${fileName}” was not imported.`))) return false;

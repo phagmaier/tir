@@ -178,6 +178,17 @@ export function graphemeCount(text: string): number {
   return starts ? starts.length - 1 : text.length;
 }
 
+/** Expand pasted title-page tabs to eight-cell stops before aligning a field. */
+export function expandTitleTabs(text: string): string {
+  if (!text.includes("\t")) return text;
+  return text.replace(/[^\t\n]*\t|[^\t\n]+/g, (part) => {
+    if (!part.endsWith("\t")) return part;
+    const before = part.slice(0, -1);
+    // The preceding tab, or the start of the line, was on a tab stop.
+    return before + " ".repeat(8 - (graphemeCount(before) % 8));
+  });
+}
+
 function place(
   text: string,
   start: number,

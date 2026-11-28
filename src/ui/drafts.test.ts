@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readDraft, writeDraft } from "../core/draft-file.ts";
+import { readFdx } from "../core/fdx/read.ts";
 import { readFountain } from "../core/fountain/read.ts";
 import { newTitlePage, type ProjectInfo, type Script } from "../core/model.ts";
 import type { PdfOptions } from "../core/pdf.ts";
@@ -29,7 +30,7 @@ const titlePage = {
 const scene = (text: string): Script["elements"] => [{ type: "sceneHeading", text }];
 const original = { titlePage, elements: scene("EXT. HARBOUR - DAY") };
 
-function desk() {
+function desk(projectName = "Salt Line") {
   const files = new Map([[FIRST, writeDraft(original)]]);
   let shelf: Project;
   function publish(info: ProjectInfo): Project {
@@ -42,7 +43,7 @@ function desk() {
     };
     return shelf;
   }
-  const project = publish(newProject("Salt Line", "First Draft"));
+  const project = publish(newProject(projectName, "First Draft"));
   const doc = (script: Script) => scriptState(script.elements).doc;
   const fail = { save: false };
   const saver = new Saver(
@@ -76,6 +77,9 @@ function desk() {
     },
     activate: async (from, file) => publish(withActiveDraft(from.info, file)),
     exportFountain: async (name, text) => {
+      exports.push({ name, text });
+    },
+    exportFdx: async (name, text) => {
       exports.push({ name, text });
     },
     // The PDF's bytes stand for the script and options it was made from.
@@ -178,23 +182,29 @@ describe("draft actions", () => {
     expect(messages[0]).toContain("Disk full");
   });
 
-  it("exports the draft on screen with its latest text and title page even if saving fails", async () => {
-    const { act, edit, exports, fail, files, saver } = desk();
-    const revised = { ...titlePage, contact: "Ada Shaw\nada@example.test" };
-    const elements = scene("EXT. FLOODED HARBOUR - NIGHT");
-    fail.save = true;
-    edit("EXT. FLOODED HARBOUR - NIGHT");
-    saver.editTitlePage(revised);
-    await act({ kind: "exportFountain" });
-    const [exported] = exports;
-    if (!exported) throw new Error("Expected a Fountain export");
-    expect(exported.name).toBe("Salt Line - First Draft.fountain");
-    expect(readFountain(exported.text)).toEqual({
-      script: { titlePage: revised, elements },
-      leftOut: [],
-    });
-    expect(contents(files, FIRST)).toEqual({ ok: true, script: original });
-  });
+  it.each([
+    { format: "Fountain", kind: "exportFountain", extension: "fountain", read: readFountain },
+    { format: "Final Draft", kind: "exportFdx", extension: "fdx", read: readFdx },
+  ] as const)(
+    "exports $format from the draft on screen even if saving fails",
+    async ({ kind, extension, read }) => {
+      const { act, edit, exports, fail, files, saver } = desk();
+      const revised = { ...titlePage, contact: "Ada Shaw\nada@example.test" };
+      const elements = scene("EXT. FLOODED HARBOUR - NIGHT");
+      fail.save = true;
+      edit("EXT. FLOODED HARBOUR - NIGHT");
+      saver.editTitlePage(revised);
+      await act({ kind });
+      const [exported] = exports;
+      if (!exported) throw new Error("Expected an export");
+      expect(exported.name).toBe(`Salt Line - First Draft.${extension}`);
+      expect(read(exported.text)).toEqual({
+        script: { titlePage: revised, elements },
+        leftOut: [],
+      });
+      expect(contents(files, FIRST)).toEqual({ ok: true, script: original });
+    },
+  );
 
   it("exports a PDF of the draft on screen, with the title page as chosen, even if saving fails", async () => {
     const { act, edit, fail, pdfs, saver } = desk();
@@ -216,6 +226,13 @@ describe("draft actions", () => {
         options: { titlePage: false },
       },
     ]);
+  });
+
+  it("keeps the draft's name in the PDF suggestion even for a long project name", async () => {
+    const { act, pdfs } = desk(`${"É".repeat(61)}/Film`);
+    await act({ kind: "exportPdf", titlePage: false });
+    // The clipped UTF-8 project name must still be followed by the draft name.
+    expect(pdfs[0]?.name).toBe(`${"É".repeat(53)} - First Draft.pdf`);
   });
 
   it("neither switches nor deletes when the other draft cannot be read", async () => {

@@ -11,11 +11,11 @@
  * blank line that is not an element; and emphasis on the title page is
  * dropped, because Tir sets the title page in its own fixed style.
  */
+import type { LeftOut, LeftOutKind, ScriptRead } from "../import-report.ts";
 import {
   type Element,
   type ElementType,
   normaliseSpans,
-  type Script,
   type Span,
   STYLES,
   type Style,
@@ -38,26 +38,6 @@ import {
   TITLE_CONTINUATION,
   TITLE_KEY,
 } from "./syntax.ts";
-
-export type LeftOutKind =
-  | "note"
-  | "boneyard"
-  | "section"
-  | "synopsis"
-  | "sceneNumber"
-  | "titlePageField";
-
-export interface LeftOut {
-  readonly kind: LeftOutKind;
-  readonly text: string;
-  /** The index of the element it sat beside, or 0 on the title page. */
-  readonly at: number;
-}
-
-export interface FountainRead {
-  readonly script: Script;
-  readonly leftOut: readonly LeftOut[];
-}
 
 interface Removed {
   readonly kind: LeftOutKind;
@@ -95,7 +75,7 @@ export interface ReadOptions {
   readonly titlePage?: boolean;
 }
 
-export function readFountain(source: string, options: ReadOptions = {}): FountainRead {
+export function readFountain(source: string, options: ReadOptions = {}): ScriptRead {
   const lines = splitLines(source);
   const start = lines.findIndex((line) => !isBlank(line));
   let titleEnd = start < 0 ? lines.length : start;

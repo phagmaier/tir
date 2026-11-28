@@ -1,5 +1,6 @@
 import { readDraft } from "../core/draft-file.ts";
-import { safeName } from "../core/file-names.ts";
+import { writeFdx } from "../core/fdx/write.ts";
+import { draftExportBase } from "../core/file-names.ts";
 import { writeFountain } from "../core/fountain/write.ts";
 import type { Script } from "../core/model.ts";
 import type { PdfOptions } from "../core/pdf.ts";
@@ -14,6 +15,7 @@ export type DraftAction =
   | { readonly kind: "fork" | "rename"; readonly name: string }
   | { readonly kind: "delete" }
   | { readonly kind: "exportFountain" }
+  | { readonly kind: "exportFdx" }
   | ({ readonly kind: "exportPdf" } & PdfOptions);
 
 interface DraftSide {
@@ -25,6 +27,7 @@ interface DraftSide {
   remove(project: Project, file: string): Promise<Project>;
   activate(project: Project, file: string): Promise<Project>;
   exportFountain(name: string, text: string): Promise<void>;
+  exportFdx(name: string, text: string): Promise<void>;
   /** Makes the PDF of `script` (`src/core/pdf.ts`). */
   pdf(script: Script, options: PdfOptions): Promise<Uint8Array>;
   exportPdf(name: string, bytes: Uint8Array): Promise<void>;
@@ -47,13 +50,19 @@ export async function changeDraft(
   if (action.kind === "delete" && info.drafts.length === 1) return null;
 
   const name = info.drafts.find((draft) => draft.file === file)?.name ?? file;
-  if (action.kind === "exportFountain" || action.kind === "exportPdf") {
+  if (
+    action.kind === "exportFountain" ||
+    action.kind === "exportFdx" ||
+    action.kind === "exportPdf"
+  ) {
     // Export the draft on screen even if the library cannot save it.
-    const base = safeName(`${info.name} - ${name}`);
+    const base = draftExportBase(info.name, name);
     const script = saver.snapshot();
     try {
       if (action.kind === "exportFountain") {
         await side.exportFountain(`${base}.fountain`, writeFountain(script));
+      } else if (action.kind === "exportFdx") {
+        await side.exportFdx(`${base}.fdx`, writeFdx(script));
       } else {
         const pdf = await side.pdf(script, { titlePage: action.titlePage });
         await side.exportPdf(`${base}.pdf`, pdf);

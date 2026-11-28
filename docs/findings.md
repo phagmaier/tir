@@ -52,6 +52,27 @@ Scene Heading bold, which look like user edits. `LaPingvino/lexington/fdx/exampl
 3.38 in) because a non-Final Draft tool wrote it, so it is excluded. Page
 numbers and apostrophes: the calibration PDFs (see "Calibration").
 
+### FDX import structure
+
+Final Draft writes the script in the root `Content`, as `Paragraph`
+elements with a `Type` and styled `Text` runs. Both speakers in dual
+dialogue are in a `DualDialogue` inside a wrapper `Paragraph`. Scene
+numbers are `Number` on the heading. `ScriptNote` elements can sit among
+the runs or in `UnanchoredScriptNotes`. `RevisionID="0"` is unrevised text;
+used sets refer to `Revisions/Revision`, and deletions can carry the same ID.
+
+`TitlePage/Content` is positioned text, not named fields. The usual title,
+byline, authors and source sit in centred paragraphs separated by blank
+paragraphs; contact and draft/date can be distinguished by alignment.
+Story Architect's exporter also uses this structure but writes title
+paragraphs as `Type="General"`. The title page has its own header and
+footer, separate from the title fields.
+
+Evidence: `Maginvox.fdx` and `sample-01.fdx`; [ScriptCraft's comparison
+of 51 Final Draft files](https://github.com/NoJuanNobody/scriptcraft/blob/fce1d3c57a1964742d989d6488df638fc97f089d/docs/fdx-format.md);
+[Story Architect's FDX exporter](https://github.com/story-apps/starc/blob/1caa60f03b2f907ceaf3a9772b9f1596151eae10/src/corelib/business_layer/export/screenplay/screenplay_fdx_exporter.cpp).
+No script text was copied into Tir's fixtures.
+
 ## Final Draft's keys
 
 - **Return** at the end of a paragraph starts a new one by the table's

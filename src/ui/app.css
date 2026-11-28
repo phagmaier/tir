@@ -583,9 +583,6 @@ body.focus #title-page {
 .title-preview-centre > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--row-height);
 }
-.title-preview [data-print="title"] {
-  text-transform: uppercase;
-}
 .title-preview .title-placeholder {
   color: var(--faint);
 }

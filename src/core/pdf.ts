@@ -17,7 +17,7 @@ import {
   rgb,
 } from "@cantoo/pdf-lib";
 import { CHARS_PER_INCH, FONT_SIZE_PT, LINES_PER_INCH, PAGE, TITLE_PAGE } from "./format.ts";
-import { graphemeCount } from "./layout.ts";
+import { expandTitleTabs, graphemeCount } from "./layout.ts";
 import type { Element, Script, Span, TitlePage } from "./model.ts";
 import { type Page, type PageLine, pageLabel, paginate } from "./paginate.ts";
 import { ScriptMap } from "./script-map.ts";
@@ -294,7 +294,7 @@ function titlePageLines(page: TitlePage): TitleLine[] {
 
 /** A field's lines: a line break ending the text starts no line of its own, as in the preview. */
 function fieldLines(text: string): string[] {
-  const lines = text.split("\n");
+  const lines = expandTitleTabs(text).split("\n");
   if (lines.length > 1 && lines.at(-1) === "") lines.pop();
   return lines;
 }

@@ -9,11 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. [3.1 PDF export](#task-3-1) is done.
-- Next: [3.2 PDF verified against the engine](#task-3-2). Stage 3 ends
-  with [review 3.3](#task-3-3) and [user check 3.4](#task-3-4).
-- Blockers: none. The four [open questions from 1.10](#known-gaps) do not
-  block Stage 3.
+- Active: none. 4.3, Stage 4 review, is complete.
+- Next: 4.4, deferred until the user has desktop access.
+- Blockers: Stage 5 waits for 4.4.
 
 ## How to work this plan
 
@@ -112,32 +110,41 @@ anything else. V1 is done when 7.4 is checked.
     `vite build` built the worker with the font files the CSS uses.
     Dependencies: `percent-encoding` added to `Cargo.toml` for the name
     header (already in the build through Tauri); `@cantoo/pdf-lib` and
-    `@cantoo/fontkit` moved from development to runtime dependencies. Not
-    checked: a release build, Firefox and a desktop viewer (3.2), the
-    laptop.
+    `@cantoo/fontkit` moved from development to runtime dependencies.
+    Not checked: a release build or the laptop. Viewer checks are in 3.2.
 
 <a id="task-3-2"></a>
 
-- [ ] 3.2 — PDF verified against the engine
-  - Status: todo
+- [x] 3.2 — PDF verified against the engine
+  - Status: done
   - Depends on: 3.1
   - Spec: brief "Page parity"
   - Do: Run the parity tool on Tir's own PDFs of the calibration scripts
     and fixtures.
     The [calibration PDFs](architecture.md#setting-up-a-machine) are
     machine-local and not in git.
-  - Note (from 3.1): `writePdf` runs in Node given the font files, as
-    `src/core/pdf.test.ts` reads them, so a tool can write Tir's PDF of
-    each rebuilt calibration script. pdf.js reads Tir's PDFs word by word
-    (findings, "PDF libraries").
   - Done when: every page of Tir's PDF starts on the same line as the
     editor's, the text can be selected and searched, and the PDF opens
     correctly in Firefox and in a desktop PDF viewer.
+  - Evidence: 2026-11-27. A one-off Node check used the parity tool's
+    PDF reader and script rebuilder, wrote the seven calibration scripts
+    with `writePdf`, and compared each exported page's first body row
+    (text and baseline, excluding any repeated cue) with `paginate`, which
+    the editor also uses. All 716 calibration page starts matched Tir,
+    as did both script pages of the original Salt Line fixture (with a
+    title page) and all 121 of the seeded feature fixture (without one):
+    839 of 839 script pages. This compares Tir's PDF with Tir's editor,
+    not the reconstructed script with the original Final Draft pages.
+    In Firefox 160.0.1 and Papers 51.1, Salt Line rendered with its
+    script formatting and page labels; text selected and copied
+    (`boats` and `Tomás`, respectively), and "No boats after dark" found
+    one match on script page 2 in each. Reviewed the comparison against
+    the editor projection and the existing PDF tests; no code changes.
 
 <a id="task-3-3"></a>
 
-- [ ] 3.3 — Review: Stage 3
-  - Status: todo
+- [x] 3.3 — Review: Stage 3
+  - Status: done
   - Depends on: 3.2
   - Scope: everything changed since [2.7's recorded state](history.md#stage-2-library-projects-and-drafts).
   - Check:
@@ -150,19 +157,38 @@ anything else. V1 is done when 7.4 is checked.
     - Exporting a 120-page script is fast enough not to stall the window.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-27. Reviewed with user-code-review at
+    `1425e2df9f41de6237291a0079d19512309f2b40` plus uncommitted changes,
+    using `da76a1f` as the committed snapshot of the 2.7 work. Confirmed
+    that the export uses the engine's rows and points, and reviewed
+    title-page placement, subset embedding and the OFL, metadata, scene
+    destinations, page labels and the native new-file write. Fixed two
+    findings: a long project name could clip off the draft name in both
+    export suggestions; tabs in title fields shifted text between the
+    preview and the PDF. Reproduced both on the original code and added
+    regression cases. In isolated WebKitGTK the long accented suggestion
+    kept "First Draft", the preview retained the raw tab in the field
+    and placed both letters within 1 pt of the exported title, and native
+    Save wrote a PDF with three pages, the expected labels and two
+    bookmarks. `mise run check` passed (607 Vitest and 39 Rust tests,
+    both type checks, Biome, rustfmt and clippy). Used 3.1's 121-page
+    timing (8 ms longest interface-thread pause); the worker path did
+    not change. Release checks remain in 7.1; see Known gaps.
 
 <a id="task-3-4"></a>
 
-- [ ] 3.4 — User check: Stage 3
-  - Status: todo
+- [x] 3.4 — User check: Stage 3
+  - Status: done
   - Depends on: 3.3
   - Check: the user exports a script, opens the PDF, and compares it with
     the editor page by page.
+  - Evidence: 2026-11-27, the user reported that “everything worked as
+    intended and looks good”. No issues reported.
 
 ## Stage 4: Final Draft files
 
-- [ ] 4.1 — FDX import
-  - Status: todo
+- [x] 4.1 — FDX import
+  - Status: done
   - Depends on: 3.4
   - Spec: brief "Scope" (FDX import and export, Import report); findings
     "Final Draft's default screenplay format"
@@ -173,13 +199,17 @@ anything else. V1 is done when 7.4 is checked.
     and a size limit. Wire it into the import dialog.
   - Done when: tests on original fixtures cover each mapping and each
     left-out kind, and a malicious XML fixture is refused.
-  - Note (from 2.3): the Projects screen's empty library says "bring one
-    in from a Fountain file" (`render` in `src/ui/projects-screen.ts`);
-    with FDX import it says prototype piece 6's "from a Fountain or Final
-    Draft file".
+  - Evidence: 2026-11-27. Reviewed the XML boundary, model mapping,
+    omission report and read-only copy flow. Both type checks, focused
+    Biome, rustfmt and clippy passed; 144 Vitest cases (FDX, Fountain and
+    Projects) and four Rust dialog tests passed. In an isolated WebKitGTK
+    trial, the native chooser imported an original FDX as a project. The
+    report listed all four omission kinds; the opened draft showed
+    emphasis and dual dialogue, and the source hash was unchanged. The
+    native flow refused a DOCTYPE-bearing fixture without a library write.
 
-- [ ] 4.2 — FDX export
-  - Status: todo
+- [x] 4.2 — FDX export
+  - Status: done
   - Depends on: 4.1
   - Spec: brief "Scope" (FDX); findings "Final Draft's default screenplay
     format"
@@ -188,9 +218,18 @@ anything else. V1 is done when 7.4 is checked.
     emphasis, escaping text correctly.
   - Done when: export then import gives the same script for every fixture,
     and the written settings match findings.md's table.
+  - Evidence: 2026-11-27. Reviewed escaping, title field mapping, dual
+    dialogue and the native new-file boundary. 54 focused Vitest cases
+    passed, including both original FDX fixtures and the default settings;
+    both TypeScript checks, focused Biome, rustfmt and four Rust dialog
+    tests passed. In an isolated WebKitGTK trial, Export Final Draft…
+    suggested the project and draft name, saved to a new `.fdx`, and
+    returned focus to the editor. The exported file decoded to the exact
+    on-screen draft, including literal XML punctuation. Final Draft itself
+    was not run.
 
-- [ ] 4.3 — Review: Stage 4
-  - Status: todo
+- [x] 4.3 — Review: Stage 4
+  - Status: done
   - Depends on: 4.2
   - Scope: everything changed since 3.3's recorded state.
   - Check:
@@ -201,9 +240,23 @@ anything else. V1 is done when 7.4 is checked.
     - Fixtures are original: no other people's FDX files are committed.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-27. Reviewed with user-code-review at
+    `1425e2df9f41de6237291a0079d19512309f2b40` plus uncommitted changes,
+    distinguishing the work already covered by 3.3. Checked DOCTYPE
+    refusal, file and nesting limits, the XML fields and defaults, and
+    original inline fixtures; no `.fdx` files are tracked or proposed for
+    tracking. Reproduced and fixed missed notes and revisions on dual
+    dialogue wrappers and missed title paragraph revisions. Added a
+    regression case and exercised XML punctuation in every title field.
+    `mise run check` passed (631 Vitest and 40 Rust tests, both type checks,
+    Biome, rustfmt and clippy). In isolated WebKitGTK, native import
+    reported both revisions, the note and the scene number without
+    altering the source. Scrolling changed the page indicator without
+    moving the caret. Native export wrote a new `.fdx` that read back as
+    the open draft and returned focus to the editor.
 
 - [ ] 4.4 — User check: Stage 4
-  - Status: todo
+  - Status: deferred (the user is away from their desktop)
   - Depends on: 4.3
   - Check: the user exports a Story Architect script as FDX, imports it,
     and compares it with the Fountain import of the same script.
@@ -513,3 +566,16 @@ that will close it.
   combining accents, "ẞ" or emoji. The screen draws those in a fallback
   font; the PDF embeds only Courier Prime, so they print as its missing
   glyph (3.1). Embedding a fallback font for them would close it.
+- A literal tab in script text from a hand-edited `.tir` draft or FDX
+  import occupies one engine cell but renders as a tab stop in the
+  editor and expands to four spaces in the PDF (3.3, 4.3). Fountain body
+  import already expands tabs before building elements.
+- Courier Prime's OFL notice is in `src/ui/fonts/OFL-courierprime.txt`.
+  The distributable app does not exist yet; the installed package must
+  include that notice alongside the bundled fonts (3.3; 7.1).
+- FDX export's default settings are verified in the XML, not in Final
+  Draft itself (4.3). The Stage 4 user check covers Story Architect's
+  exports, not how Final Draft opens Tir's files.
+- FDX export refuses an emphasis span that splits the two UTF-16 code
+  units of one character, which can occur in a hand-edited `.tir` draft
+  (4.3). XML cannot carry either half in a separate text run.
