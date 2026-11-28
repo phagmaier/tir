@@ -145,6 +145,8 @@ describe("SCOWL's US English dictionary", () => {
       { start: 11, end: 17, text: "offise" },
     ]);
     expect(misspelled(dictionary, "character", "Mara (CONT’D)")).toEqual([]);
+    expect(misspelled(dictionary, "transition", "PRE-LAP:")).toEqual([]);
+    expect(misspelled(dictionary, "action", "SFX: a walkie-talkie squawks offscreen.")).toEqual([]);
     expect(misspelled(dictionary, "action", "The 21st and 3th floors")).toEqual([]);
   });
 
@@ -161,9 +163,12 @@ describe("SCOWL's US English dictionary", () => {
     expect(dictionary.suggest("occured")[0]).toBe("occurred");
   });
 
-  it("offers an accented word without its accents first, as the dictionary has none", () => {
-    expect(dictionary.suggest("naïve")[0]).toBe("naive");
-    expect(dictionary.suggest("Café")[0]).toBe("Cafe");
+  it("takes an accented word for the one the dictionary holds without accents", () => {
+    for (const word of ["café", "Café", "CAFÉ", "naïve", "résumé"]) {
+      expect(dictionary.has(word), word).toBe(true);
+    }
+    expect(dictionary.has("cafëe")).toBe(false);
+    expect(dictionary.suggest("cafëe")[0]).toBe("cafe");
   });
 
   it("keeps the writer's curly apostrophe", () => {

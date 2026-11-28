@@ -43,9 +43,26 @@ export function wordsOf(text: string): Word[] {
 
 /**
  * Words a screenplay uses that the dictionary lacks: the (CONT'D) Tir adds
- * itself, which scripts from other applications hold as typed, and POV.
+ * itself, which scripts from other applications hold as typed, and the
+ * terms of the trade: POV, PRE-LAP and PRELAP, SFX, VFX, FX, MOS, MCU, OTS,
+ * OFFSCREEN, VOICEOVER, SLO-MO and WALKIE-TALKIE.
  */
-export const SCREENPLAY_WORDS: readonly string[] = ["cont'd", "pov"];
+export const SCREENPLAY_WORDS: readonly string[] = [
+  "cont'd",
+  "pov",
+  "pre",
+  "prelap",
+  "sfx",
+  "vfx",
+  "fx",
+  "mos",
+  "mcu",
+  "ots",
+  "offscreen",
+  "voiceover",
+  "slo",
+  "walkie",
+];
 
 interface Affix {
   readonly strip: string;
@@ -245,8 +262,16 @@ export class Dictionary {
    * Whether `word` is spelled as the dictionary has it, by Hunspell's rules
    * for capitals: a word in small letters may start with a capital or be
    * all capitals, and a name ("Paris") may be all capitals, but not small.
+   * The dictionary has no accents, so a word is spelled right when it is
+   * without them: "café" is its "cafe".
    */
   has(word: string): boolean {
+    if (this.holds(word)) return true;
+    const plain = bare(word);
+    return plain !== word && this.holds(plain);
+  }
+
+  private holds(word: string): boolean {
     const converted = this.convert(word);
     if (this.forms.has(converted)) return true;
     const lower = converted.toLowerCase();

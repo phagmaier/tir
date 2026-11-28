@@ -491,9 +491,10 @@ StudioBinder guides, read 2026-11-26.
   distribute and sell with the notice kept), its affix file under Geoff
   Kuenning's BSD licence from Ispell; both are in
   `src/ui/dictionary/README_en_US.txt`, which must ship with the files.
-  It flags British spellings ("harbour", "grey") and has no "POV" or
-  "CONT'D", which Tir adds. Evidence: the release's README and files,
-  read 2026-11-27.
+  It flags British spellings ("harbour", "grey") and lacks screenplay
+  terms such as POV, CONT'D and SFX, which Tir adds (`SCREENPLAY_WORDS`);
+  Tir takes an accented word for the dictionary's word without accents.
+  Evidence: the release's README and files, read 2026-11-27.
 - **The checker is Tir's own** (`src/core/spelling.ts`), as the brief's
   "Stack" asks: it reads the directives that dictionary uses (`SET UTF-8`,
   `TRY`, `ICONV`, `NOSUGGEST`, `ONLYINCOMPOUND`, `REP`, one-character

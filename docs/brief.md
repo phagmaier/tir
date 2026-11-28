@@ -219,12 +219,14 @@ paper, never printed or exported.
   possessive is added as its word ("Okafor"). *(agent-selected: the file
   is `dictionary.txt`, one word a line, which the writer may edit.)*
 - *(agent-selected)* A word is checked as the page shows it, in capitals
-  where its element shows capitals. CONT'D and POV, which screenplays use
-  and the dictionary lacks, are words. A word holding a digit ("21st") is
-  not checked. A word the caret ends is not marked until the caret leaves
-  it, since it may still be being typed. The dictionary has no accents
-  ("cafe"), so an accented word is marked unless the script or the
-  writer's dictionary knows it.
+  where its element shows capitals. CONT'D, POV, PRE-LAP, SFX, VFX, FX,
+  MOS, MCU, OTS, OFFSCREEN, VOICEOVER, SLO-MO and WALKIE-TALKIE, which
+  screenplays use and the dictionary lacks, are words. A word holding a
+  digit ("21st") is not checked. A word the caret ends is not marked until
+  the caret leaves it, since it may still be being typed. The dictionary
+  is US English and has no accents, so British spellings ("harbour") are
+  marked and an accented word is right when the dictionary has it without
+  its accents ("café").
 
 ## Title page
 

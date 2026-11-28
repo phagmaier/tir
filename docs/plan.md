@@ -10,8 +10,7 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 ## Current status
 
 - Active: none. 5.3, spell check, is complete.
-- Next: 5.4, review of Stage 5. 4.4 stays open until the user has desktop
-  access; its notes become 4.4a… tasks done before 5.4.
+- Next: 5.4, review of Stage 5.
 - Blockers: none.
 
 ## How to work this plan
@@ -256,13 +255,13 @@ anything else. V1 is done when 7.4 is checked.
     moving the caret. Native export wrote a new `.fdx` that read back as
     the open draft and returned focus to the editor.
 
-- [ ] 4.4 — User check: Stage 4
-  - Status: deferred (the user is away from their desktop). On 2026-11-27
-    the user chose to start Stage 5 meanwhile; notes from this check
-    become tasks 4.4a… done before 5.4.
+- [x] 4.4 — User check: Stage 4
+  - Status: done
   - Depends on: 4.3
   - Check: the user exports a Story Architect script as FDX, imports it,
     and compares it with the Fountain import of the same script.
+  - Evidence: 2026-11-27, the user reported "I did the final draft check
+    it's fine". No notes, so no 4.4a… tasks.
 
 ## Stage 5: find, formatting check, spell check
 
@@ -384,6 +383,12 @@ anything else. V1 is done when 7.4 is checked.
     Vitest and 42 Rust tests, both type checks, Biome, rustfmt, clippy);
     `vite build` emitted the worker and both dictionary files. No
     dependency added. Not checked: a release build (7.1) and the laptop.
+  - Follow-up, 2026-11-27: the user left the dictionary's open choices to
+    the agent. Screenplay terms the dictionary lacks (PRE-LAP, SFX, VFX,
+    MOS, OFFSCREEN and the like) became words, and an accented word is
+    right when the dictionary has it without accents; British spellings
+    stay marked, as the brief asks for US English. Core spelling tests
+    cover both.
 
 - [ ] 5.4 — Review: Stage 5
   - Status: todo
