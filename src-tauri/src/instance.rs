@@ -6,11 +6,25 @@
 use std::fs::{self, File, TryLockError};
 use std::io;
 use std::path::Path;
+use std::sync::Mutex;
 
 /// Held while Tir runs: a lock on Tir's config directory, which the system
-/// lets go when the process ends, however it ends.
+/// lets go when the process ends, however it ends, or when Tir lets it go
+/// at closing, once its window has gone and its last backup is recorded.
 pub struct Instance {
-    _lock: File,
+    lock: Mutex<Option<File>>,
+}
+
+impl Instance {
+    /// Lets another Tir start, while this one finishes pushing.
+    pub fn release(&self) {
+        drop(
+            self.lock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take(),
+        );
+    }
 }
 
 /// Locks `dir`, made if need be; `None` when another Tir holds it.
@@ -18,7 +32,9 @@ pub fn claim(dir: &Path) -> io::Result<Option<Instance>> {
     fs::create_dir_all(dir)?;
     let lock = File::open(dir)?;
     match lock.try_lock() {
-        Ok(()) => Ok(Some(Instance { _lock: lock })),
+        Ok(()) => Ok(Some(Instance {
+            lock: Mutex::new(Some(lock)),
+        })),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(error)) => Err(error),
     }
@@ -38,6 +54,10 @@ mod tests {
         // A trial run's directory is its own.
         assert!(claim(&dir.0.join("trial")).unwrap().is_some());
         drop(first);
+        assert!(claim(&config).unwrap().is_some());
+        // Let go at closing, while the process runs on.
+        let second = claim(&config).unwrap().unwrap();
+        second.release();
         assert!(claim(&config).unwrap().is_some());
     }
 }

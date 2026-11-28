@@ -9,9 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: 6.2, push, offline and pause (the user asked for 6.1 to 6.4,
-  stopping at 6.5).
-- Next: 6.3, connect dialog and backup panel.
+- Active: 6.3, connect dialog and backup panel (the user asked for 6.1
+  to 6.4, stopping at 6.5).
+- Next: 6.4, review of Stage 6.
 - Blockers: none.
 
 ## How to work this plan
@@ -514,8 +514,8 @@ anything else. V1 is done when 7.4 is checked.
     draft and its copy. The 2.3 note on last-edit times went to Known
     gaps.
 
-- [ ] 6.2 — Push, offline and pause
-  - Status: in progress
+- [x] 6.2 — Push, offline and pause
+  - Status: done
   - Depends on: 6.1
   - Spec: brief "Saving and backup"
   - Do: Push after each commit and on Back up now. While offline, keep
@@ -524,17 +524,33 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: tests against a local bare repository cover a normal push,
     an unreachable remote and later recovery, and a remote that is ahead
     (paused, nothing merged); no test touches the network.
-  - Note (from 2.7): a save does not check whether its draft changed on
-    disk since Tir read it (`write_draft` takes no `was`; only project
-    file changes do), so a draft or project file another program changes
-    while Tir shows it, such as a `git pull` the writer runs to bring in
-    the other machine's work, is written over at the next save without a
-    word. Since 2.7 a second Tir cannot (`instance.rs`). Decide with the
-    pause how the other machine's work arrives: with Tir closed, or with
-    saves checking what they replace.
+  - Decision (the 2.7 note's question, the user's choice, 2026-11-27): the
+    other machine's work arrives with Tir closed, and a save refuses to
+    write over a draft that changed on disk since Tir opened it (brief,
+    "Saving and backup").
+  - Evidence: 2026-11-27, `cargo test` passed (75), with clippy and
+    `cargo fmt --check` clean; the sandboxed git the tests use allows only
+    the file transport, so no test touches the network. Against local bare
+    repositories, `git.rs`'s tests push and count the commits waiting, see
+    a push refused when GitHub is ahead with the branch, the draft and
+    GitHub unchanged, and see pushes fail while the repository is gone and
+    work once it is back. `backup.rs`'s tests push what waits at launch and
+    each commit after; Back up now pushes without waiting for quiet; a
+    push past its time limit reads offline, a missing repository failing,
+    and the commit arrives by itself once it is back; GitHub holding the
+    laptop's commit pauses backup, recording goes on and nothing is pushed
+    or merged until the writer's `git pull` and Resume, then it all
+    arrives; a pause is found at launch; closing commits, then pushes.
+    `library.rs`'s tests show a save refused over a draft changed since
+    Tir saw it, the draft and copy untouched. In an isolated trial
+    connected to a local bare repository, launch pushed the waiting
+    commit; the open draft changed on disk, typing then made the save fail
+    with a message naming the change and nothing written over it; closing
+    asked whether to close without saving, and Tir then committed and
+    pushed before it exited.
 
 - [ ] 6.3 — Connect dialog and backup panel
-  - Status: todo
+  - Status: in progress
   - Depends on: 6.2
   - Spec: brief "Saving and backup"; prototype piece 5 (backup panel and
     connect dialog)

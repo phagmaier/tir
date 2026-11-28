@@ -118,7 +118,8 @@ library or ambient types, so `document`, `window` or `process` fail.
   draft by its file. A draft's text always goes with its Fountain copy's
   (`DraftTexts`): making a project or a draft writes both, and so does a
   save (`write_draft`, which only replaces a draft that is there, never
-  makes one). The Rust side refuses any name that is not one entry of its
+  makes one, nor replaces one that has changed since Tir saw it:
+  [Backup](#backup), "Paused"). The Rust side refuses any name that is not one entry of its
   folder or that starts with a dot, and any link where it expects a
   project or `drafts` folder, a project file or a draft, or a link or
   folder where a copy goes, so nothing it reads, writes, moves or deletes
@@ -361,17 +362,51 @@ in `src/core/format.ts`, which the PDF uses too.
 ## Backup
 
 Backup (brief, "Saving and backup") is `src-tauri/src/backup.rs`'s, on a
-thread of its own, so git never holds up the interface; `git.rs` runs git.
+thread of its own, so neither git nor GitHub ever holds up the interface;
+`git.rs` runs git. Its times are `backup::TIMING`.
 
 - **When.** Each library command that may change the library tells
   backup (`change` in `library.rs`'s commands), and backup records the
-  changes as one commit once the library has had no change for `QUIET`
-  (three minutes). It also records at closing: on `RunEvent::Exit`, after
-  the library's command under way has finished (`Backup::finish` follows
-  `finish_commands`). At launch, a library holding changes git has not
-  recorded, made while Tir was closed or left by a Tir that stopped, is
-  recorded after the quiet spell too. Backup holds the library's command
-  lock (`Library::busy`) while it records, so no save writes mid-commit.
+  changes as one commit once the library has had no change for three
+  minutes (`quiet`), then pushes. Back up now (`back_up_now`) records and
+  pushes at once. At closing, on `RunEvent::Exit` after the library's
+  command under way has finished (`finish_commands`), backup records what
+  is left, lets the instance lock go (`Instance::release`) so a new Tir
+  may start, and pushes for at most a minute before Tir exits. At launch,
+  changes git has not recorded, made while Tir was closed or left by a
+  Tir that stopped, are recorded after the quiet spell, and backup asks
+  GitHub at once. Backup holds the library's command lock
+  (`Library::busy`) while it records, never while it talks to GitHub, so
+  no save writes mid-commit and none waits for the network.
+- **GitHub.** The connected repository is the remote `origin`, which a
+  clone names too; with none, the state is `off` and the library is
+  recorded here only. A push sends the current branch to GitHub's branch
+  of that name, never forced (`git push --porcelain`), and moves Tir's
+  record of it (`refs/remotes/origin/BRANCH`); how many commits wait, and
+  when the newest on GitHub was made, come from that record
+  (`git::Standing`). Every five minutes while all is well (`check`), and
+  at launch, backup fetches GitHub's branch into that record, never into
+  the branch or the work tree, so it hears of the other machine's work
+  before the writer starts on an older draft.
+- **Offline and failures.** A push or check that fails is tried again
+  after 30 seconds, doubling to five minutes. The failure is `offline`
+  when git's words say GitHub could not be reached or git ran past its
+  two-minute limit (`git::unreachable`), and `failing` otherwise, with
+  git's words as the `reason`; offline with nothing waiting reads as
+  backed up. Git's ssh runs in batch mode, `ssh -o BatchMode=yes -o
+  ConnectTimeout=20`, unless the writer's environment or configuration
+  names another command, so it never waits for a passphrase or a host
+  question.
+- **Paused.** When GitHub refuses a push because it has commits this
+  branch lacks, or a check finds them, backup is `paused`: it keeps
+  recording here and pushes nothing until Resume (`resume_backup`), which
+  checks again. Tir never merges, rebases, resets or forces. The writer
+  brings the other machine's work in with Tir closed, by `git pull` in
+  the library (the user's choice, 2026-11-27); should they pull with Tir
+  open, a save refuses to write over a draft that has changed on disk
+  since Tir read it to show or last wrote it (`Library::holds`, by each
+  draft's fingerprint; `read_draft`'s `shown` marks the reads that count),
+  and says to close Tir and open it again.
 - **The repository.** A library with no `.git` is made a repository on
   the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`
   unless one is there: git records only each project's `project.json`,

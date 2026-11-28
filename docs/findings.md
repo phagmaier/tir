@@ -452,6 +452,19 @@ Observed with git 2.56.0 on the desktop, in temporary directories with
   folder is left out, so each level's folders come back first. Evidence:
   `gitignore(5)` of git 2.56.0 ("It is not possible to re-include a file
   if a parent directory of that file is excluded"), and `git.rs`'s tests.
+- `git push --porcelain` marks a refused ref with `!` and its reason in
+  brackets on standard output: "(fetch first)" when the remote has
+  commits this repository never fetched, "(non-fast-forward)" once it
+  has; git exits 1 and leaves the branch and work tree as they were.
+  Fetching a branch a remote with no commits lacks fails with "couldn't
+  find remote ref refs/heads/main". `GIT_ALLOW_PROTOCOL=file` refuses
+  any other transport ("transport 'https' not allowed").
+- In a network namespace with nothing but a loopback that is down
+  (`unshare -rn`), git over HTTPS said "unable to access '…': Failed to
+  connect to github.com … Could not connect to server". ssh's words for
+  the same ("Could not resolve hostname", "Network is unreachable",
+  "Connection timed out") were not observed here; `git::unreachable`
+  matches them as ssh writes them.
 
 ## Fountain
 

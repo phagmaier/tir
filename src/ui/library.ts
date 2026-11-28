@@ -162,9 +162,21 @@ export async function createDraft(
   };
 }
 
-/** The text of the draft in `file`. */
+/**
+ * The text of the draft in `file`, to show and edit: the Rust side then
+ * refuses a save over the draft once it has changed on disk, as a
+ * `git pull` changes it (architecture, "Backup").
+ */
 export function readDraftText(project: { readonly folder: string }, file: string): Promise<string> {
-  return invoke("read_draft", { folder: project.folder, draft: file });
+  return invoke("read_draft", { folder: project.folder, draft: file, shown: true });
+}
+
+/** The text of the draft in `file`, only to read, as the Projects screen counts its pages. */
+export function readDraftToCount(
+  project: { readonly folder: string },
+  file: string,
+): Promise<string> {
+  return invoke("read_draft", { folder: project.folder, draft: file, shown: false });
 }
 
 /** Saves the draft in `file`: its file and its Fountain copy. */

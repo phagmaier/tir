@@ -11,11 +11,12 @@
 
 use crate::files;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, OpenOptions};
+use std::hash::{DefaultHasher, Hasher};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
 
 const PROJECT: &str = "project.json";
@@ -37,6 +38,10 @@ pub struct Library {
     /// that no other change is writing; backup holds it too while it
     /// records the library's changes in git.
     busy: Arc<Mutex<()>>,
+    /// For each draft, by project folder and file, the fingerprint of the
+    /// text Tir last wrote there or read to show: a save refuses to replace
+    /// a draft that has changed since, as a `git pull` changes it.
+    known: Mutex<HashMap<(String, String), u64>>,
 }
 
 impl Library {
@@ -46,6 +51,7 @@ impl Library {
                 .ok_or_else(|| "Tir could not find the home folder, where the library is.".into()),
             configured,
             busy: Arc::default(),
+            known: Mutex::default(),
         }
     }
 
@@ -70,6 +76,66 @@ impl Library {
     pub fn finish_commands(&self) {
         drop(self.busy.lock());
     }
+
+    fn known(&self) -> MutexGuard<'_, HashMap<(String, String), u64>> {
+        self.known
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// What the draft `draft` of the project `folder` held when Tir last
+    /// wrote it or read it to show, if Tir has.
+    fn holds(&self, folder: &str, draft: &str) -> Option<u64> {
+        self.known()
+            .get(&(folder.to_owned(), draft.to_owned()))
+            .copied()
+    }
+
+    /// Tir wrote `text` to the draft, or read it there to show it.
+    fn saw(&self, folder: &str, draft: &str, text: &str) {
+        self.known().insert(
+            (folder.to_owned(), draft.to_owned()),
+            fingerprint(text.as_bytes()),
+        );
+    }
+
+    /// The draft has moved to the file `to` of its project.
+    fn moved(&self, folder: &str, draft: &str, to: &str) {
+        let mut known = self.known();
+        if let Some(text) = known.remove(&(folder.to_owned(), draft.to_owned())) {
+            known.insert((folder.to_owned(), to.to_owned()), text);
+        }
+    }
+
+    /// The draft has gone.
+    fn forget(&self, folder: &str, draft: &str) {
+        self.known().remove(&(folder.to_owned(), draft.to_owned()));
+    }
+
+    /// The project `folder` has moved to the folder `to`, or gone if `None`.
+    fn moved_project(&self, folder: &str, to: Option<&str>) {
+        let mut known = self.known();
+        let drafts: Vec<_> = known
+            .keys()
+            .filter(|(project, _)| project == folder)
+            .cloned()
+            .collect();
+        for key in drafts {
+            if let Some(text) = known.remove(&key)
+                && let Some(to) = to
+            {
+                known.insert((to.to_owned(), key.1), text);
+            }
+        }
+    }
+}
+
+/// A fingerprint of a draft's text, enough to tell whether a file still
+/// holds what Tir last saw there.
+pub fn fingerprint(text: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(text);
+    hasher.finish()
 }
 
 /// The library's folder: the one the settings file names, `configured`,
@@ -383,17 +449,29 @@ pub fn read_draft(root: &Path, folder: &str, draft: &str) -> io::Result<String> 
 /// file, then `copy` its Fountain copy, so the copy is never newer than
 /// the draft. A save never makes a draft: the draft must be there, a file
 /// of its own. A link or a folder where the copy goes is refused, as no
-/// copy Tir writes is one.
+/// copy Tir writes is one. With `was`, the fingerprint of what Tir last
+/// saw in the draft, a draft that has changed since is refused, so that
+/// work brought in by a `git pull` is never saved over unseen.
 pub fn write_draft(
     root: &Path,
     folder: &str,
     draft: &str,
     text: &str,
     copy: &str,
+    was: Option<u64>,
 ) -> io::Result<()> {
     let dir = project_dir(root, folder)?;
     let file = drafts_dir(&dir)?.join(draft_entry(draft)?);
     existing_draft(&file)?;
+    if let Some(was) = was
+        && fingerprint(&fs::read(&file)?) != was
+    {
+        return Err(io::Error::other(format!(
+            "“{}” has changed on disk since Tir opened it, perhaps by a git pull, so Tir \
+             saved nothing over it. Close Tir and open it again to see the draft as it is now.",
+            draft.strip_suffix(DRAFT).unwrap_or(draft)
+        )));
+    }
     let copy_file = copy_of(&file);
     match fs::symlink_metadata(&copy_file) {
         Ok(metadata) if !metadata.is_file() => {
@@ -764,7 +842,9 @@ pub mod commands {
         copy: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::create_project(root, &folder, &project, &draft, &text, &copy)
+            super::create_project(root, &folder, &project, &draft, &text, &copy)?;
+            library.saw(&folder, &draft, &text);
+            Ok(())
         })
     }
 
@@ -791,7 +871,9 @@ pub mod commands {
         project: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::rename_project(root, &folder, &to, &was, &project)
+            super::rename_project(root, &folder, &to, &was, &project)?;
+            library.moved_project(&folder, Some(&to));
+            Ok(())
         })
     }
 
@@ -802,7 +884,9 @@ pub mod commands {
         folder: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::delete_project(root, &folder)
+            super::delete_project(root, &folder)?;
+            library.moved_project(&folder, None);
+            Ok(())
         })
     }
 
@@ -820,17 +904,28 @@ pub mod commands {
         project: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::create_draft(root, &folder, &draft, &text, &copy, &was, &project)
+            super::create_draft(root, &folder, &draft, &text, &copy, &was, &project)?;
+            library.saw(&folder, &draft, &text);
+            Ok(())
         })
     }
 
+    /// The draft's text; with `shown`, the text the page shows and edits,
+    /// which saves may then replace.
     #[tauri::command(async)]
     pub fn read_draft(
         library: State<'_, Library>,
         folder: String,
         draft: String,
+        shown: bool,
     ) -> Result<String, String> {
-        run(&library, |root| super::read_draft(root, &folder, &draft))
+        run(&library, |root| {
+            let text = super::read_draft(root, &folder, &draft)?;
+            if shown {
+                library.saw(&folder, &draft, &text);
+            }
+            Ok(text)
+        })
     }
 
     #[tauri::command(async)]
@@ -843,7 +938,10 @@ pub mod commands {
         copy: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::write_draft(root, &folder, &draft, &text, &copy)
+            let was = library.holds(&folder, &draft);
+            super::write_draft(root, &folder, &draft, &text, &copy, was)?;
+            library.saw(&folder, &draft, &text);
+            Ok(())
         })
     }
 
@@ -858,7 +956,9 @@ pub mod commands {
         project: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::rename_draft(root, &folder, &draft, &to, &was, &project)
+            super::rename_draft(root, &folder, &draft, &to, &was, &project)?;
+            library.moved(&folder, &draft, &to);
+            Ok(())
         })
     }
 
@@ -872,7 +972,9 @@ pub mod commands {
         project: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            super::delete_draft(root, &folder, &draft, &was, &project)
+            super::delete_draft(root, &folder, &draft, &was, &project)?;
+            library.forget(&folder, &draft);
+            Ok(())
         })
     }
 
@@ -1153,6 +1255,7 @@ mod tests {
             "First Draft.tir",
             REWRITE,
             REWRITE_COPY,
+            None,
         )
         .unwrap();
         let saved = edited(&trial.root)["First Draft.tir"];
@@ -1467,6 +1570,7 @@ mod tests {
             "First Draft.tir",
             REWRITE,
             REWRITE_COPY,
+            None,
         )
         .unwrap();
         assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), REWRITE);
@@ -1482,6 +1586,7 @@ mod tests {
             "First Draft.tir",
             FIRST,
             FIRST_COPY,
+            None,
         )
         .unwrap();
         // Nothing else changed, and no temporary file is left.
@@ -1490,18 +1595,98 @@ mod tests {
     }
 
     #[test]
+    fn a_save_never_writes_over_a_draft_changed_since_tir_saw_it() {
+        let trial = Trial::new();
+        let saw = Some(fingerprint(FIRST.as_bytes()));
+        // What Tir saw is still there: the save writes.
+        write_draft(
+            &trial.root,
+            "Salt Line",
+            "First Draft.tir",
+            REWRITE,
+            REWRITE_COPY,
+            saw,
+        )
+        .unwrap();
+        assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), REWRITE);
+        // A pull brings the other machine's draft.
+        let pulled = "{\"format\": \"tir-draft\", \"elements\": [\"laptop\"]}\n";
+        fs::write(trial.root.join("Salt Line/drafts/First Draft.tir"), pulled).unwrap();
+        let saw = Some(fingerprint(REWRITE.as_bytes()));
+        let error = write_draft(
+            &trial.root,
+            "Salt Line",
+            "First Draft.tir",
+            FIRST,
+            FIRST_COPY,
+            saw,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "“First Draft” has changed on disk since Tir opened it, perhaps by a git pull, so \
+             Tir saved nothing over it. Close Tir and open it again to see the draft as it is now."
+        );
+        // Neither the draft nor its copy was written.
+        assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), pulled);
+        assert_eq!(
+            trial.read("Salt Line/drafts/First Draft.fountain"),
+            REWRITE_COPY
+        );
+    }
+
+    #[test]
+    fn remembers_what_each_draft_held_as_drafts_and_projects_move() {
+        let library = Library::new(None, None);
+        library.saw("Salt Line", "First Draft.tir", FIRST);
+        library.saw("Salt Line", "Rewrite.tir", REWRITE);
+        library.saw("Low Tide", "First Draft.tir", REWRITE);
+        let first = Some(fingerprint(FIRST.as_bytes()));
+        let rewrite = Some(fingerprint(REWRITE.as_bytes()));
+        assert_eq!(library.holds("Salt Line", "First Draft.tir"), first);
+        assert_eq!(library.holds("Salt Line", "Gone.tir"), None);
+        library.moved("Salt Line", "Rewrite.tir", "Second.tir");
+        assert_eq!(library.holds("Salt Line", "Rewrite.tir"), None);
+        assert_eq!(library.holds("Salt Line", "Second.tir"), rewrite);
+        library.moved_project("Salt Line", Some("Salt"));
+        assert_eq!(library.holds("Salt Line", "First Draft.tir"), None);
+        assert_eq!(library.holds("Salt", "First Draft.tir"), first);
+        assert_eq!(library.holds("Salt", "Second.tir"), rewrite);
+        assert_eq!(library.holds("Low Tide", "First Draft.tir"), rewrite);
+        library.forget("Salt", "Second.tir");
+        assert_eq!(library.holds("Salt", "Second.tir"), None);
+        library.moved_project("Salt", None);
+        assert_eq!(library.holds("Salt", "First Draft.tir"), None);
+        assert_eq!(library.holds("Low Tide", "First Draft.tir"), rewrite);
+    }
+
+    #[test]
     fn a_save_never_makes_a_draft() {
         let trial = Trial::new();
-        let error =
-            write_draft(&trial.root, "Salt Line", "Gone.tir", REWRITE, REWRITE_COPY).unwrap_err();
+        let error = write_draft(
+            &trial.root,
+            "Salt Line",
+            "Gone.tir",
+            REWRITE,
+            REWRITE_COPY,
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         assert_eq!(error.to_string(), "The draft file “Gone.tir” is missing.");
         let error = read_draft(&trial.root, "Salt Line", "Gone.tir").unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
         assert_eq!(
-            write_draft(&trial.root, "Tide Line", "First Draft.tir", REWRITE, "")
-                .unwrap_err()
-                .kind(),
+            write_draft(
+                &trial.root,
+                "Tide Line",
+                "First Draft.tir",
+                REWRITE,
+                "",
+                None
+            )
+            .unwrap_err()
+            .kind(),
             io::ErrorKind::NotFound
         );
         assert_eq!(trial.names(""), ["Salt Line"]);
@@ -1514,14 +1699,28 @@ mod tests {
         let copy = trial.root.join("Salt Line/drafts/First Draft.fountain");
         fs::remove_file(&copy).unwrap();
         symlink(trial.outside.join(PROJECT), &copy).unwrap();
-        let error =
-            write_draft(&trial.root, "Salt Line", "First Draft.tir", REWRITE, "").unwrap_err();
+        let error = write_draft(
+            &trial.root,
+            "Salt Line",
+            "First Draft.tir",
+            REWRITE,
+            "",
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert!(copy.is_symlink());
         fs::remove_file(&copy).unwrap();
         fs::create_dir(&copy).unwrap();
-        let error =
-            write_draft(&trial.root, "Salt Line", "First Draft.tir", REWRITE, "").unwrap_err();
+        let error = write_draft(
+            &trial.root,
+            "Salt Line",
+            "First Draft.tir",
+            REWRITE,
+            "",
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
         assert!(copy.is_dir());
         // Refused before anything was written.
@@ -1547,7 +1746,7 @@ mod tests {
         // A save writes the draft first: when its copy fails, the draft
         // holds the new text, the copy is not newer, and the save fails.
         fs::write(trial.root.join("Salt Line/drafts").join(&long), FIRST).unwrap();
-        assert!(write_draft(&trial.root, "Salt Line", &long, REWRITE, REWRITE_COPY).is_err());
+        assert!(write_draft(&trial.root, "Salt Line", &long, REWRITE, REWRITE_COPY, None).is_err());
         assert_eq!(trial.read(&format!("Salt Line/drafts/{long}")), REWRITE);
         assert_eq!(
             trial.names("Salt Line/drafts"),
@@ -1725,6 +1924,7 @@ mod tests {
                 "First Draft.tir",
                 REWRITE,
                 REWRITE_COPY,
+                None,
             ));
         }
         let drafts = [
@@ -1767,6 +1967,7 @@ mod tests {
                 draft,
                 REWRITE,
                 REWRITE_COPY,
+                None,
             ));
             refused(rename_draft(
                 &trial.root,
@@ -1850,6 +2051,7 @@ mod tests {
                 draft,
                 REWRITE,
                 REWRITE_COPY,
+                None,
             ));
         }
         refused(delete_draft(

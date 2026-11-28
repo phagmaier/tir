@@ -17,6 +17,7 @@ import {
   listLibrary,
   readDictionary,
   readDraftText,
+  readDraftToCount,
   renameDraft,
   renameProject,
   saveDraft,
@@ -267,7 +268,7 @@ const projects = new Projects(
 );
 screen = new ProjectsScreen({
   projects,
-  pages: new PageCounter(readDraftText),
+  pages: new PageCounter(readDraftToCount),
   list: listLibrary,
   place: libraryPlace,
   // A failure here is told once, as a save after a pause is.

@@ -548,6 +548,14 @@ three.
   work is saved, and whether it is backed up to GitHub or waiting to be.
 - If GitHub has changes this machine lacks, for example from a second
   computer, Tir does not merge. It pauses backup and tells the user.
+  *(agent-selected: Tir asks GitHub at launch and every few minutes, so
+  it pauses before the user writes on an older draft, and while paused it
+  keeps committing here.)*
+- **The other machine's work arrives with Tir closed**: the user closes
+  Tir, runs `git pull` in the library, and opens Tir again. A save never
+  writes over a draft that changed on disk since Tir opened it; it says
+  to close Tir and open it again, so a pull made with Tir open loses only
+  what was typed after it *(the user's choice, 2026-11-27)*.
 
 ## Stack
 

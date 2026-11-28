@@ -1,11 +1,16 @@
 //! Backup (brief, "Saving and backup"; architecture, "Backup"). The library
 //! is a git repository, made one if it is not, and Tir records its changes
 //! there as a commit once it has been quiet for a few minutes, and when Tir
-//! closes. All of it runs on a thread of its own, so git never holds up the
-//! interface; the page hears how backup stands as `tir://backup`. A missing
-//! git or a repository Tir cannot use is reported there, never crashed on.
+//! closes, then pushes them to the connected repository on GitHub. Offline
+//! is normal: commits wait, and Tir tries again by itself, waiting longer
+//! each time. When GitHub has commits this machine lacks, Tir pauses: it
+//! keeps recording here but pushes nothing until it is resumed, and it
+//! never merges, rebases or forces. All of it runs on a thread of its own,
+//! so neither git nor GitHub ever holds up the interface; the page hears
+//! how backup stands as `tir://backup`. A missing git or a repository Tir
+//! cannot use is reported there, never crashed on.
 
-use crate::git::{Git, Repository};
+use crate::git::{self, Git, Pushed, Repository};
 use crate::library;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -14,13 +19,70 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// How long the library stays unchanged before Tir records its changes.
-pub const QUIET: Duration = Duration::from_secs(3 * 60);
+/// When backup acts.
+#[derive(Clone, Copy, Debug)]
+pub struct Timing {
+    /// How long the library stays unchanged before Tir records its changes.
+    pub quiet: Duration,
+    /// How often Tir asks GitHub whether the other machine has pushed,
+    /// while all is well.
+    pub check: Duration,
+    /// The first pause before trying again when a push or a check failed;
+    /// each failure after doubles it, up to `most`.
+    pub retry: Duration,
+    pub most: Duration,
+    /// How long a push or a check may take.
+    pub network: Duration,
+    /// How long the push at closing may take: the window has gone by then,
+    /// and Tir exits once it is done.
+    pub closing: Duration,
+}
+
+pub const TIMING: Timing = Timing {
+    quiet: Duration::from_secs(3 * 60),
+    check: Duration::from_secs(5 * 60),
+    retry: Duration::from_secs(30),
+    most: Duration::from_secs(5 * 60),
+    network: git::NETWORK,
+    closing: Duration::from_secs(60),
+};
+
+/// Where backup stands with GitHub.
+#[derive(Serialize, Clone, Copy, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum State {
+    /// No repository is connected: the library is recorded on this machine
+    /// only.
+    #[default]
+    Off,
+    /// GitHub has every commit, as Tir last heard.
+    BackedUp,
+    /// A push is under way.
+    Pushing,
+    /// GitHub could not be reached; Tir tries again by itself.
+    Offline,
+    /// GitHub refused or failed the push (`reason`); Tir tries again by
+    /// itself.
+    Failing,
+    /// GitHub has commits this machine lacks: Tir pushes nothing until it
+    /// is resumed.
+    Paused,
+}
 
 /// How backup stands, for the page.
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
+    pub state: State,
+    /// The connected repository's address.
+    pub remote: Option<String>,
+    /// Commits GitHub does not have yet.
+    pub waiting: u32,
+    /// When the newest commit GitHub has was made, in milliseconds since
+    /// 1970, as Tir last heard.
+    pub backed_up: Option<f64>,
+    /// Why the last push or check failed, while Tir tries again.
+    pub reason: Option<String>,
     /// Why Tir cannot record the library's changes in git, if it cannot.
     pub problem: Option<String>,
 }
@@ -33,15 +95,26 @@ pub struct Setup {
     /// The library's command lock (`Library::busy`): a commit waits for a
     /// change under way, and a change for the commit.
     pub busy: Arc<Mutex<()>>,
-    /// How long the library stays unchanged before Tir records its changes.
-    pub quiet: Duration,
+    pub timing: Timing,
 }
 
 enum Event {
     /// The library may have changed.
     Changed,
-    /// Tir is closing: record what is left, then stop, and say so.
-    Close(Sender<()>),
+    /// Back up now: record what changed, and push.
+    Now,
+    /// The writer has brought the library up to date: ask GitHub again,
+    /// and push if it has nothing this machine lacks.
+    Resume,
+    /// Tir is closing: record what is left, say so, push, and stop.
+    Close(Sender<Closing>),
+}
+
+/// How far closing has gone.
+#[derive(Debug, PartialEq)]
+enum Closing {
+    Recorded,
+    Pushed,
 }
 
 /// Backup's thread, and how it stands.
@@ -60,6 +133,8 @@ impl Backup {
             status: status.clone(),
             publish: Box::new(publish),
             due: None,
+            next: None,
+            failures: 0,
         };
         thread::Builder::new()
             .name("backup".into())
@@ -74,15 +149,36 @@ impl Backup {
         let _ = self.events.send(Event::Changed);
     }
 
+    /// Records what changed and pushes it, without waiting for quiet.
+    pub fn now(&self) {
+        let _ = self.events.send(Event::Now);
+    }
+
+    /// Asks GitHub again after a pause, and pushes if it may.
+    pub fn resume(&self) {
+        let _ = self.events.send(Event::Resume);
+    }
+
     pub fn status(&self) -> Status {
         lock(&self.status).clone()
     }
 
-    /// Records what is left, then stops backup; returns once it has.
-    pub fn finish(&self) {
-        let (done, finished) = mpsc::channel();
+    /// Records what is left, calls `recorded`, pushes, and stops backup;
+    /// returns once it has.
+    pub fn finish(&self, recorded: impl FnOnce()) {
+        let (done, progress) = mpsc::channel();
+        let mut recorded = Some(recorded);
         if self.events.send(Event::Close(done)).is_ok() {
-            let _ = finished.recv();
+            while let Ok(step) = progress.recv() {
+                if step == Closing::Recorded
+                    && let Some(recorded) = recorded.take()
+                {
+                    recorded();
+                }
+            }
+        }
+        if let Some(recorded) = recorded {
+            recorded();
         }
     }
 }
@@ -99,37 +195,80 @@ struct Worker {
     publish: Box<dyn Fn(&Status) + Send>,
     /// When to record the library's changes, if it may have changed.
     due: Option<Instant>,
+    /// When to ask GitHub again, and push what waits.
+    next: Option<Instant>,
+    /// Pushes and checks that failed since the last that worked.
+    failures: u32,
 }
 
 impl Worker {
     fn run(mut self, events: Receiver<Event>) {
         self.look();
         loop {
-            let event = match self.due {
-                Some(due) => events.recv_timeout(due.saturating_duration_since(Instant::now())),
+            let wake = [self.due, self.next].into_iter().flatten().min();
+            let event = match wake {
+                Some(at) => events.recv_timeout(at.saturating_duration_since(Instant::now())),
                 None => events.recv().map_err(|_| RecvTimeoutError::Disconnected),
             };
             match event {
-                Ok(Event::Changed) => self.due = Some(Instant::now() + self.setup.quiet),
+                Ok(Event::Changed) => self.due = Some(Instant::now() + self.setup.timing.quiet),
+                Ok(Event::Now) => {
+                    self.record();
+                    self.push(self.setup.timing.network);
+                }
+                Ok(Event::Resume) => {
+                    self.record();
+                    self.check(true);
+                }
                 Ok(Event::Close(done)) => {
                     self.record();
-                    let _ = done.send(());
+                    let _ = done.send(Closing::Recorded);
+                    if self.status().waiting > 0 {
+                        self.push(self.setup.timing.closing);
+                    }
+                    let _ = done.send(Closing::Pushed);
                     return;
                 }
-                Err(RecvTimeoutError::Timeout) => self.record(),
+                Err(RecvTimeoutError::Timeout) => {
+                    let now = Instant::now();
+                    if self.due.is_some_and(|due| due <= now) && self.record() {
+                        self.push(self.setup.timing.network);
+                    }
+                    if self.next.is_some_and(|next| next <= now) {
+                        self.check(false);
+                    }
+                }
                 Err(RecvTimeoutError::Disconnected) => return,
             }
         }
     }
 
+    fn status(&self) -> Status {
+        lock(&self.status).clone()
+    }
+
+    /// The library's folder, when there is a library.
+    fn root(&self) -> Option<PathBuf> {
+        self.setup
+            .root
+            .as_ref()
+            .ok()
+            .filter(|root| root.is_dir())
+            .cloned()
+    }
+
     /// At launch: whether the library holds changes to record, made while
-    /// Tir was closed or left by one that stopped, and whether Tir can.
+    /// Tir was closed or left by one that stopped, and whether Tir can; and
+    /// a first check with GitHub, which pushes what waits.
     fn look(&mut self) {
         let root = match &self.setup.root {
             Ok(root) if root.is_dir() => root.clone(),
             // No library yet: its first project or word is a change.
             Ok(_) => return,
-            Err(problem) => return self.report(Some(problem.clone())),
+            Err(problem) => {
+                let problem = problem.clone();
+                return self.update(|status| status.problem = Some(problem));
+            }
         };
         let looked = match self.repository(&root) {
             // Making the repository is the first change to record.
@@ -141,40 +280,52 @@ impl Worker {
                 .map_err(|error| unreadable(&error)),
             Err(problem) => Err(problem),
         };
-        match looked {
-            Ok(changed) => {
-                if changed {
-                    self.due = Some(Instant::now() + self.setup.quiet);
-                }
-                self.report(None);
-            }
-            Err(problem) => self.report(Some(problem)),
+        if let Ok(true) = looked {
+            self.due = Some(Instant::now() + self.setup.timing.quiet);
+        }
+        let problem = looked.err();
+        self.update(|status| status.problem = problem);
+        self.refresh(&root);
+        if self.status().state != State::Off {
+            self.next = Some(Instant::now());
         }
     }
 
     /// Records the library's changes as a commit, making the library a
-    /// repository first if need be, while no library command runs.
-    fn record(&mut self) {
+    /// repository first if need be, while no library command runs; whether
+    /// a commit was made.
+    fn record(&mut self) -> bool {
         self.due = None;
         let root = match &self.setup.root {
             Ok(root) => root.clone(),
-            Err(problem) => return self.report(Some(problem.clone())),
+            Err(problem) => {
+                let problem = problem.clone();
+                self.update(|status| status.problem = Some(problem));
+                return false;
+            }
         };
         let busy = self.setup.busy.clone();
-        let _library = lock(&busy);
-        if !root.is_dir() {
-            return;
-        }
-        let recorded = self.commit(&root);
+        let recorded = {
+            let _library = lock(&busy);
+            if !root.is_dir() {
+                return false;
+            }
+            self.commit(&root)
+        };
         if recorded.is_err() {
             // Whatever stopped it, such as a lock a git of the writer's
             // held, may be gone by then.
-            self.due = Some(Instant::now() + self.setup.quiet);
+            self.due = Some(Instant::now() + self.setup.timing.quiet);
         }
-        self.report(recorded.err());
+        let made = recorded == Ok(true);
+        let problem = recorded.err();
+        self.update(|status| status.problem = problem);
+        self.refresh(&root);
+        made
     }
 
-    fn commit(&self, root: &Path) -> Result<(), String> {
+    /// Commits the library's changes; whether there were any.
+    fn commit(&self, root: &Path) -> Result<bool, String> {
         let git = &self.setup.git;
         if let Repository::None = self.repository(root)? {
             // Never a repository of a folder holding more than Tir's files.
@@ -194,7 +345,7 @@ impl Worker {
             })?;
         }
         git.commit(root)
-            .map(drop)
+            .map(|message| message.is_some())
             .map_err(|error| failure("Tir could not record the library's changes in git.", &error))
     }
 
@@ -215,16 +366,138 @@ impl Worker {
         }
     }
 
-    fn report(&mut self, problem: Option<String>) {
-        let status = {
+    /// The library's folder and branch, when a repository is connected and
+    /// Tir can record.
+    fn connected(&self) -> Option<(PathBuf, String)> {
+        let root = self.root()?;
+        let Ok(Repository::Branch(branch)) = self.repository(&root) else {
+            return None;
+        };
+        let status = self.status();
+        (status.remote.is_some() && status.problem.is_none()).then_some((root, branch))
+    }
+
+    /// Pushes what waits, unless backup is paused, taking at most `limit`.
+    fn push(&mut self, limit: Duration) {
+        let Some((root, branch)) = self.connected() else {
+            return;
+        };
+        if self.status().state == State::Paused {
+            return;
+        }
+        self.update(|status| status.state = State::Pushing);
+        let pushed = self.setup.git.push(&root, &branch, limit);
+        self.heard(&root, pushed);
+    }
+
+    /// Asks GitHub what its branch holds: pauses when it has commits this
+    /// machine lacks, and pushes what waits otherwise. While paused, only
+    /// a resumption asks.
+    fn check(&mut self, resuming: bool) {
+        self.next = None;
+        let Some((root, branch)) = self.connected() else {
+            return;
+        };
+        if self.status().state == State::Paused && !resuming {
+            return;
+        }
+        let limit = self.setup.timing.network;
+        if let Err(error) = self.setup.git.fetch(&root, &branch, limit) {
+            return self.heard(&root, Err(error));
+        }
+        match self.setup.git.standing(&root, &branch) {
+            Ok(standing) if standing.behind > 0 => self.heard(&root, Ok(Pushed::Behind)),
+            Ok(standing) if standing.waiting > 0 => {
+                self.update(|status| status.state = State::Pushing);
+                let pushed = self.setup.git.push(&root, &branch, limit);
+                self.heard(&root, pushed);
+            }
+            Ok(_) => self.heard(&root, Ok(Pushed::Done)),
+            Err(error) => self.heard(&root, Err(error)),
+        }
+    }
+
+    /// Takes in what GitHub answered, and when to ask it next.
+    fn heard(&mut self, root: &Path, answer: Result<Pushed, git::Error>) {
+        let waiting = self.refresh(root);
+        let now = Instant::now();
+        match answer {
+            Ok(Pushed::Done) => {
+                self.failures = 0;
+                self.next = Some(now + self.setup.timing.check);
+                self.update(|status| {
+                    status.state = State::BackedUp;
+                    status.reason = None;
+                });
+            }
+            Ok(Pushed::Behind) => {
+                self.failures = 0;
+                self.next = None;
+                self.update(|status| {
+                    status.state = State::Paused;
+                    status.reason = None;
+                });
+            }
+            Err(error) => {
+                let timing = self.setup.timing;
+                let pause = timing
+                    .retry
+                    .saturating_mul(2u32.saturating_pow(self.failures))
+                    .min(timing.most);
+                self.failures = self.failures.saturating_add(1);
+                self.next = Some(now + pause);
+                let offline = git::unreachable(&error);
+                let reason = sentence(&error);
+                self.update(|status| {
+                    status.state = match (offline, waiting) {
+                        // Nothing waits: all is on GitHub, offline or not.
+                        (true, 0) => State::BackedUp,
+                        (true, _) => State::Offline,
+                        (false, _) => State::Failing,
+                    };
+                    status.reason = Some(reason);
+                });
+            }
+        }
+    }
+
+    /// Reads the connected repository and how the branch stands against
+    /// it; how many commits wait.
+    fn refresh(&mut self, root: &Path) -> u32 {
+        let git = &self.setup.git;
+        let remote = git.remote(root).ok().flatten();
+        let standing = match self.repository(root) {
+            Ok(Repository::Branch(branch)) if remote.is_some() => git.standing(root, &branch).ok(),
+            _ => None,
+        };
+        let waiting = standing.as_ref().map_or(0, |standing| standing.waiting);
+        self.update(|status| {
+            if remote.is_none() {
+                status.state = State::Off;
+                status.reason = None;
+            } else if status.state == State::Off {
+                status.state = State::BackedUp;
+            }
+            status.remote = remote;
+            status.waiting = waiting;
+            status.backed_up = standing.and_then(|standing| standing.backed_up);
+        });
+        waiting
+    }
+
+    /// Changes the status, and publishes it if it changed.
+    fn update(&mut self, change: impl FnOnce(&mut Status)) {
+        let (status, problem) = {
             let mut status = lock(&self.status);
-            if status.problem == problem {
+            let was = status.clone();
+            change(&mut status);
+            if *status == was {
                 return;
             }
-            status.problem = problem;
-            status.clone()
+            let problem = status.problem != was.problem;
+            (status.clone(), problem)
         };
-        if let Some(problem) = &status.problem {
+        if problem && let Some(problem) = &status.problem {
             eprintln!("Tir's backup: {problem}");
         }
         (self.publish)(&status);
@@ -264,15 +537,31 @@ fn sentence(error: &crate::git::Error) -> String {
 mod tests {
     use super::*;
     use crate::files::tests::TempDir;
-    use crate::git::tests::{committed, library_in, missing, sandboxed, subjects};
+    use crate::git::tests::{
+        committed, elsewhere, github, library_in, missing, sandboxed, subjects,
+    };
+    use crate::git::{BRANCH, NETWORK, REMOTE};
     use std::fs;
+
+    /// Timing for tests: `quiet` as given, quick retries, and no check
+    /// with GitHub but the one at launch.
+    fn timing(quiet: Duration) -> Timing {
+        Timing {
+            quiet,
+            check: Duration::from_secs(3600),
+            retry: Duration::from_millis(100),
+            most: Duration::from_millis(200),
+            network: Duration::from_secs(20),
+            closing: Duration::from_secs(20),
+        }
+    }
 
     /// Backup of the library in `dir`, made holding "Salt Line" unless it
     /// is there, and every status it published.
     fn start(
         dir: &TempDir,
         git: Git,
-        quiet: Duration,
+        timing: Timing,
     ) -> (PathBuf, Backup, Arc<Mutex<Vec<Status>>>) {
         let root = dir.0.join("Screenplays");
         if !root.exists() {
@@ -285,7 +574,7 @@ mod tests {
                 git,
                 root: Ok(root.clone()),
                 busy: Arc::default(),
-                quiet,
+                timing,
             },
             move |status| lock(&published).push(status.clone()),
         );
@@ -301,18 +590,34 @@ mod tests {
         (git, root)
     }
 
+    /// `recorded`, connected to `github`'s empty bare repository.
+    fn connected(dir: &TempDir) -> (Git, PathBuf, PathBuf) {
+        let (git, root) = recorded(dir);
+        let bare = github(dir);
+        git.run(&root, &["remote", "add", REMOTE, bare.to_str().unwrap()])
+            .unwrap();
+        (git, root, bare)
+    }
+
     fn edit(root: &Path, text: &str) {
         fs::write(root.join("Salt Line/drafts/First Draft.tir"), text).unwrap();
     }
 
-    /// Waits up to ten seconds for `root` to hold `count` commits.
-    fn wait_for_commits(git: &Git, root: &Path, count: usize) -> Instant {
+    /// How many commits GitHub's repository holds.
+    fn on_github(dir: &TempDir, bare: &Path) -> usize {
+        elsewhere(dir, bare, &["rev-list", "--count", "--all"])
+            .parse()
+            .unwrap()
+    }
+
+    /// Waits up to ten seconds for `ready`; when it came.
+    fn wait_until(what: &str, mut ready: impl FnMut() -> bool) -> Instant {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            if subjects(git, root).len() >= count {
+            if ready() {
                 return Instant::now();
             }
-            assert!(Instant::now() < deadline, "no commit came");
+            assert!(Instant::now() < deadline, "{what} never came");
             thread::sleep(Duration::from_millis(20));
         }
     }
@@ -322,7 +627,7 @@ mod tests {
         let dir = TempDir::new();
         let (git, _) = recorded(&dir);
         let quiet = Duration::from_millis(1500);
-        let (root, backup, _) = start(&dir, git.clone(), quiet);
+        let (root, backup, _) = start(&dir, git.clone(), timing(quiet));
         edit(&root, "{\"one\":1}\n");
         backup.changed();
         thread::sleep(Duration::from_millis(500));
@@ -332,51 +637,51 @@ mod tests {
         // Less than the quiet spell after the last change, nothing yet.
         thread::sleep(Duration::from_millis(500));
         assert_eq!(subjects(&git, &root).len(), 1);
-        let came = wait_for_commits(&git, &root, 2);
+        let came = wait_until("the commit", || subjects(&git, &root).len() == 2);
         assert!(came - last >= quiet);
-        assert_eq!(
-            subjects(&git, &root),
-            ["Back up Salt Line", "Back up Salt Line"]
-        );
         assert!(!git.changed(&root).unwrap());
-        backup.finish();
+        // No repository is connected: recorded here only.
+        assert_eq!(backup.status().state, State::Off);
+        assert_eq!(backup.status().remote, None);
+        backup.finish(|| {});
     }
 
     #[test]
     fn records_what_is_left_on_closing() {
         let dir = TempDir::new();
         let (git, _) = recorded(&dir);
-        let (root, backup, heard) = start(&dir, git.clone(), QUIET);
+        let (root, backup, heard) = start(&dir, git.clone(), TIMING);
         edit(&root, "{\"closing\":1}\n");
         backup.changed();
-        backup.finish();
+        backup.finish(|| {});
         assert_eq!(subjects(&git, &root).len(), 2);
         assert!(!git.changed(&root).unwrap());
         // Nothing went wrong, so nothing was published.
         assert!(lock(&heard).is_empty());
         // Backup has stopped; the library may still be told of a change.
         backup.changed();
-        backup.finish();
+        let mut called = false;
+        backup.finish(|| called = true);
+        assert!(called);
     }
 
     #[test]
     fn records_at_launch_what_changed_while_tir_was_closed() {
         let dir = TempDir::new();
-        let (git, _) = recorded(&dir);
-        let root = dir.0.join("Screenplays");
+        let (git, root) = recorded(&dir);
         edit(&root, "{\"while closed\":1}\n");
-        let (_, backup, _) = start(&dir, git.clone(), Duration::from_millis(100));
-        wait_for_commits(&git, &root, 2);
-        backup.finish();
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_millis(100)));
+        wait_until("the commit", || subjects(&git, &root).len() == 2);
+        backup.finish(|| {});
     }
 
     #[test]
     fn makes_the_library_a_repository() {
         let dir = TempDir::new();
         let git = sandboxed(&dir);
-        let (root, backup, _) = start(&dir, git.clone(), QUIET);
+        let (root, backup, _) = start(&dir, git.clone(), TIMING);
         assert!(!root.join(".git").exists());
-        backup.finish();
+        backup.finish(|| {});
         assert_eq!(subjects(&git, &root), ["Back up Salt Line"]);
         assert!(committed(&git, &root).contains(&".gitignore".to_string()));
     }
@@ -387,8 +692,8 @@ mod tests {
         let git = sandboxed(&dir);
         let root = library_in(&dir.0);
         fs::write(root.join("taxes.ods"), "").unwrap();
-        let (_, backup, heard) = start(&dir, git, QUIET);
-        backup.finish();
+        let (_, backup, heard) = start(&dir, git, TIMING);
+        backup.finish(|| {});
         assert!(!root.join(".git").exists());
         let problem = backup.status().problem.unwrap();
         assert!(problem.starts_with("Tir backs up only a library of its own, and “taxes.ods”"));
@@ -398,9 +703,11 @@ mod tests {
     #[test]
     fn reports_a_missing_git_and_carries_on() {
         let dir = TempDir::new();
-        let (_, backup, heard) = start(&dir, missing(&dir), QUIET);
+        let (_, backup, heard) = start(&dir, missing(&dir), TIMING);
         backup.changed();
-        backup.finish();
+        backup.now();
+        backup.resume();
+        backup.finish(|| {});
         assert_eq!(
             backup.status().problem.as_deref(),
             Some("Tir could not find git on this machine, so it cannot back up the library.")
@@ -413,8 +720,8 @@ mod tests {
         let dir = TempDir::new();
         let (git, root) = recorded(&dir);
         fs::remove_file(root.join(".git/HEAD")).unwrap();
-        let (_, backup, heard) = start(&dir, git, QUIET);
-        backup.finish();
+        let (_, backup, heard) = start(&dir, git, TIMING);
+        backup.finish(|| {});
         let problem = backup.status().problem.unwrap();
         assert!(
             problem.starts_with(
@@ -431,11 +738,10 @@ mod tests {
         let (git, root) = recorded(&dir);
         git.run(&root, &["checkout", "-q", "--detach"]).unwrap();
         edit(&root, "{\"detached\":1}\n");
-        let (_, backup, heard) = start(&dir, git.clone(), Duration::from_millis(100));
+        let (_, backup, heard) = start(&dir, git.clone(), timing(Duration::from_millis(100)));
         thread::sleep(Duration::from_millis(400));
         assert!(backup.status().problem.unwrap().contains("not on a branch"));
-        git.run(&root, &["checkout", "-q", crate::git::BRANCH])
-            .unwrap();
+        git.run(&root, &["checkout", "-q", BRANCH]).unwrap();
         let head = String::from_utf8(git.run(&root, &["rev-parse", "HEAD"]).unwrap()).unwrap();
         fs::write(root.join(".git/MERGE_HEAD"), head).unwrap();
         backup.changed();
@@ -450,11 +756,10 @@ mod tests {
         assert_eq!(subjects(&git, &root).len(), 1);
         fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
         backup.changed();
-        wait_for_commits(&git, &root, 2);
-        backup.finish();
+        wait_until("the commit", || subjects(&git, &root).len() == 2);
+        backup.finish(|| {});
         assert_eq!(backup.status(), Status::default());
-        let heard = lock(&heard);
-        assert_eq!(heard.last(), Some(&Status::default()));
+        assert_eq!(lock(&heard).last(), Some(&Status::default()));
     }
 
     #[test]
@@ -465,11 +770,12 @@ mod tests {
                 git: sandboxed(&dir),
                 root: Err("Tir could not find the home folder, where the library is.".into()),
                 busy: Arc::default(),
-                quiet: QUIET,
+                timing: TIMING,
             },
             |_| {},
         );
-        backup.finish();
+        backup.now();
+        backup.finish(|| {});
         assert_eq!(
             backup.status().problem.as_deref(),
             Some("Tir could not find the home folder, where the library is.")
@@ -486,17 +792,205 @@ mod tests {
                 git: git.clone(),
                 root: Ok(root.clone()),
                 busy: busy.clone(),
-                quiet: QUIET,
+                timing: TIMING,
             },
             |_| {},
         );
         let command = lock(&busy);
         edit(&root, "{\"saving\":1}\n");
-        let closing = thread::spawn(move || backup.finish());
+        let closing = thread::spawn(move || backup.finish(|| {}));
         thread::sleep(Duration::from_millis(300));
         assert_eq!(subjects(&git, &root).len(), 1);
         drop(command);
         closing.join().unwrap();
         assert_eq!(subjects(&git, &root).len(), 2);
+    }
+
+    #[test]
+    fn pushes_what_waits_at_launch_and_each_commit_after() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        let (_, backup, heard) = start(&dir, git.clone(), timing(Duration::from_millis(200)));
+        wait_until("the first push", || on_github(&dir, &bare) == 1);
+        wait_until("the status", || backup.status().state == State::BackedUp);
+        let status = backup.status();
+        assert_eq!(status.remote, Some(bare.display().to_string()));
+        assert_eq!(status.waiting, 0);
+        assert!(status.backed_up.is_some());
+        edit(&root, "{\"two\":2}\n");
+        backup.changed();
+        wait_until("the second push", || on_github(&dir, &bare) == 2);
+        wait_until("the status", || {
+            backup.status().state == State::BackedUp && backup.status().waiting == 0
+        });
+        assert!(
+            lock(&heard)
+                .iter()
+                .any(|status| status.state == State::Pushing)
+        );
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn backs_up_now_without_waiting_for_quiet() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_secs(3600)));
+        wait_until("the first push", || on_github(&dir, &bare) == 1);
+        edit(&root, "{\"now\":1}\n");
+        backup.changed();
+        backup.now();
+        wait_until("the push", || on_github(&dir, &bare) == 2);
+        assert_eq!(subjects(&git, &root).len(), 2);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn keeps_commits_while_github_cannot_be_reached_and_pushes_them_once_it_can() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        let timing = Timing {
+            network: Duration::from_secs(1),
+            ..timing(Duration::from_secs(3600))
+        };
+        let (_, backup, _) = start(&dir, git.clone(), timing);
+        wait_until("the first push", || on_github(&dir, &bare) == 1);
+        // GitHub does not answer in time, as when the line has gone.
+        git.run(
+            &root,
+            &[
+                "config",
+                "remote.origin.receivepack",
+                "sleep 5; git-receive-pack",
+            ],
+        )
+        .unwrap();
+        edit(&root, "{\"offline\":1}\n");
+        backup.now();
+        wait_until("offline", || backup.status().state == State::Offline);
+        let status = backup.status();
+        assert_eq!(status.waiting, 1);
+        assert_eq!(
+            status.reason.as_deref(),
+            Some("Git took too long to answer, so Tir stopped it.")
+        );
+        assert_eq!(subjects(&git, &root).len(), 2);
+        // GitHub's answer is now a refusal: the repository is not there.
+        let away = dir.0.join("away.git");
+        fs::rename(&bare, &away).unwrap();
+        git.run(&root, &["config", "--unset", "remote.origin.receivepack"])
+            .unwrap();
+        wait_until("the refusal", || backup.status().state == State::Failing);
+        assert!(
+            backup
+                .status()
+                .reason
+                .unwrap()
+                .contains("does not appear to be a git repository")
+        );
+        // Tir tries again by itself, and the commit arrives.
+        fs::rename(&away, &bare).unwrap();
+        wait_until("the push", || on_github(&dir, &bare) == 2);
+        wait_until("the status", || backup.status().state == State::BackedUp);
+        assert_eq!(backup.status().waiting, 0);
+        assert_eq!(backup.status().reason, None);
+        backup.finish(|| {});
+    }
+
+    /// Another machine's clone of GitHub's repository adds the dictionary
+    /// and pushes it.
+    fn push_from_the_laptop(dir: &TempDir, bare: &Path) {
+        let laptop = dir.0.join("laptop");
+        elsewhere(
+            dir,
+            &dir.0,
+            &["clone", "-q", bare.to_str().unwrap(), "laptop"],
+        );
+        fs::write(laptop.join("dictionary.txt"), "Tomás\n").unwrap();
+        elsewhere(dir, &laptop, &["add", "dictionary.txt"]);
+        elsewhere(dir, &laptop, &["commit", "-q", "-m", "On the laptop"]);
+        elsewhere(dir, &laptop, &["push", "-q", REMOTE, BRANCH]);
+    }
+
+    fn head(git: &Git, root: &Path) -> String {
+        String::from_utf8(git.run(root, &["rev-parse", "HEAD"]).unwrap())
+            .unwrap()
+            .trim()
+            .to_owned()
+    }
+
+    #[test]
+    fn pauses_when_github_has_commits_this_machine_lacks_and_merges_nothing() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_millis(200)));
+        wait_until("the first push", || on_github(&dir, &bare) == 1);
+        push_from_the_laptop(&dir, &bare);
+        edit(&root, "{\"desktop\":1}\n");
+        backup.now();
+        wait_until("the pause", || backup.status().state == State::Paused);
+        let paused_at = head(&git, &root);
+        // Paused, Tir still records here, and pushes nothing.
+        edit(&root, "{\"desktop\":2}\n");
+        backup.changed();
+        wait_until("the commit", || subjects(&git, &root).len() == 3);
+        thread::sleep(Duration::from_millis(400));
+        assert_eq!(on_github(&dir, &bare), 2);
+        assert_eq!(backup.status().state, State::Paused);
+        // Nothing merged: no dictionary here, the draft as written here,
+        // and the branch only grew by Tir's own commit.
+        assert!(!root.join("dictionary.txt").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("Salt Line/drafts/First Draft.tir")).unwrap(),
+            "{\"desktop\":2}\n"
+        );
+        assert_eq!(elsewhere(&dir, &root, &["rev-parse", "HEAD~1"]), paused_at);
+        assert_eq!(subjects(&git, &root).len(), 3);
+        // The writer brings the library up to date, then resumes.
+        elsewhere(
+            &dir,
+            &root,
+            &["pull", "-q", "--no-rebase", "--no-edit", REMOTE, BRANCH],
+        );
+        backup.resume();
+        wait_until("the push", || {
+            elsewhere(&dir, &bare, &["rev-parse", BRANCH]) == head(&git, &root)
+        });
+        wait_until("the status", || backup.status().state == State::BackedUp);
+        assert_eq!(backup.status().waiting, 0);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn pauses_at_launch_when_github_has_moved_on() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        git.push(&root, BRANCH, NETWORK).unwrap();
+        push_from_the_laptop(&dir, &bare);
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_secs(3600)));
+        wait_until("the pause", || backup.status().state == State::Paused);
+        assert_eq!(subjects(&git, &root).len(), 1);
+        assert!(!root.join("dictionary.txt").exists());
+        // Resuming before the library is brought up to date changes nothing.
+        backup.resume();
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(backup.status().state, State::Paused);
+        assert_eq!(on_github(&dir, &bare), 2);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn pushes_on_closing_after_recording() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        wait_until("the first push", || on_github(&dir, &bare) == 1);
+        edit(&root, "{\"closing\":1}\n");
+        backup.changed();
+        let mut recorded = None;
+        backup.finish(|| recorded = Some(subjects(&git, &root).len()));
+        // Recorded before the callback, pushed before `finish` returned.
+        assert_eq!(recorded, Some(2));
+        assert_eq!(on_github(&dir, &bare), 2);
     }
 }

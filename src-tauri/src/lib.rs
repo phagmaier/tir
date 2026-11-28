@@ -88,6 +88,20 @@ fn backup_status(backup: State<'_, backup::Backup>) -> backup::Status {
     backup.status()
 }
 
+/// Records the library's changes and pushes them now; how it went comes as
+/// `tir://backup`.
+#[tauri::command]
+fn back_up_now(backup: State<'_, backup::Backup>) {
+    backup.now();
+}
+
+/// Asks GitHub again after a pause, and pushes if it has nothing this
+/// machine lacks.
+#[tauri::command]
+fn resume_backup(backup: State<'_, backup::Backup>) {
+    backup.resume();
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         // Its dialogs are shown from this side only: the page is given none
@@ -120,7 +134,7 @@ pub fn run() {
                     git: find_git(),
                     root: library.root().map(Path::to_path_buf).map_err(str::to_owned),
                     busy: library.busy(),
-                    quiet: backup::QUIET,
+                    timing: backup::TIMING,
                 },
                 move |status| {
                     let _ = emitter.emit("tir://backup", status);
@@ -160,6 +174,8 @@ pub fn run() {
             library::commands::read_dictionary,
             library::commands::add_to_dictionary,
             backup_status,
+            back_up_now,
+            resume_backup,
             dialogs::open_script,
             dialogs::export_fountain,
             dialogs::export_fdx,
@@ -174,10 +190,17 @@ pub fn run() {
     app.run(|app, event| {
         if let RunEvent::Exit = event {
             // A save or change under way when the window went finishes
-            // first; then backup records what is left.
+            // first; then backup records what is left and pushes it. Once
+            // it is recorded, another Tir may start: this one only pushes.
             app.state::<library::Library>().finish_commands();
-            if let Some(backup) = app.try_state::<backup::Backup>() {
-                backup.finish();
+            let release = || {
+                if let Some(instance) = app.try_state::<instance::Instance>() {
+                    instance.release();
+                }
+            };
+            match app.try_state::<backup::Backup>() {
+                Some(backup) => backup.finish(release),
+                None => release(),
             }
         }
     });

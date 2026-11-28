@@ -19,6 +19,19 @@ use std::time::{Duration, Instant};
 /// How long a command that stays on this machine may take.
 const LOCAL: Duration = Duration::from_secs(60);
 
+/// How long a command that talks to GitHub may take, a first backup of a
+/// large library over a slow line included.
+pub const NETWORK: Duration = Duration::from_secs(120);
+
+/// The remote Tir pushes to, which a clone of the library names too.
+pub const REMOTE: &str = "origin";
+
+/// How ssh runs for Tir unless the writer's environment or configuration
+/// names another command: never asking for a passphrase or whether to
+/// trust a host, which only a terminal could answer, and giving up on a
+/// connection that does not open.
+const SSH: &str = "ssh -o BatchMode=yes -o ConnectTimeout=20";
+
 /// The branch Tir makes when it makes the library a repository.
 pub const BRANCH: &str = "main";
 
@@ -167,13 +180,30 @@ impl Git {
 
     /// Runs git with `args` in `root`; what it printed.
     pub fn run(&self, root: &Path, args: &[&str]) -> Result<Vec<u8>, Error> {
-        // Git would start nowhere else, and the failure would read as no git.
+        let mut command = self.command_in(root)?;
+        command.args(args);
+        output(command, LOCAL)
+    }
+
+    /// `command`, refusing a `root` that is no folder: git would start
+    /// nowhere else, and the failure would read as no git.
+    fn command_in(&self, root: &Path) -> Result<Command, Error> {
         if !root.is_dir() {
             return Err(Error::Io(format!("{} is not a folder", root.display())));
         }
-        let mut command = self.command(root);
-        command.args(args);
-        output(command, LOCAL)
+        Ok(self.command(root))
+    }
+
+    /// A command that talks to the remote, its ssh never asking anything.
+    fn network(&self, root: &Path) -> Result<Command, Error> {
+        let mut command = self.command_in(root)?;
+        let named = ["GIT_SSH_COMMAND", "GIT_SSH"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()));
+        if self.sandbox.is_none() && !named && self.config(root, "core.sshCommand")?.is_none() {
+            command.env("GIT_SSH_COMMAND", SSH);
+        }
+        Ok(command)
     }
 
     /// `run`, as text.
@@ -273,6 +303,116 @@ impl Git {
             Err(error) => Err(error),
         }
     }
+
+    /// The address of the repository Tir pushes to, if one is connected.
+    pub fn remote(&self, root: &Path) -> Result<Option<String>, Error> {
+        self.config(root, &format!("remote.{REMOTE}.url"))
+    }
+
+    /// The commit `name` names, if it names one.
+    fn commit_id(&self, root: &Path, name: &str) -> Result<Option<String>, Error> {
+        match self.text(
+            root,
+            &["rev-parse", "-q", "--verify", &format!("{name}^{{commit}}")],
+        ) {
+            Ok(id) => Ok(Some(id)),
+            Err(Error::Failed { code: Some(1), .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn count(&self, root: &Path, range: &str) -> Result<u32, Error> {
+        let count = self.text(root, &["rev-list", "--count", range])?;
+        count
+            .parse()
+            .map_err(|_| Error::Io(format!("git counted “{count}”")))
+    }
+
+    /// How `branch` stands against what Tir last heard GitHub has.
+    pub fn standing(&self, root: &Path, branch: &str) -> Result<Standing, Error> {
+        let tracking = tracking(branch);
+        let head = self.commit_id(root, "HEAD")?;
+        let heard = self.commit_id(root, &tracking)?;
+        let (waiting, behind) = match (&head, &heard) {
+            (None, None) => (0, 0),
+            (None, Some(_)) => (0, self.count(root, &tracking)?),
+            (Some(_), None) => (self.count(root, "HEAD")?, 0),
+            (Some(_), Some(_)) => (
+                self.count(root, &format!("{tracking}..HEAD"))?,
+                self.count(root, &format!("HEAD..{tracking}"))?,
+            ),
+        };
+        let backed_up = match heard {
+            Some(_) => {
+                let seconds = self.text(root, &["log", "-1", "--format=%ct", &tracking])?;
+                seconds.parse::<f64>().ok().map(|seconds| seconds * 1000.0)
+            }
+            None => None,
+        };
+        Ok(Standing {
+            waiting,
+            behind,
+            backed_up,
+        })
+    }
+
+    /// Hears what GitHub's `branch` holds now, taking at most `limit`,
+    /// without changing the work tree or the branch: only Tir's record of
+    /// GitHub's branch moves.
+    pub fn fetch(&self, root: &Path, branch: &str, limit: Duration) -> Result<(), Error> {
+        let mut command = self.network(root)?;
+        let refspec = format!("+refs/heads/{branch}:{}", tracking(branch));
+        command.args([
+            "fetch",
+            "-q",
+            "--no-tags",
+            "--no-recurse-submodules",
+            REMOTE,
+            &refspec,
+        ]);
+        match output(command, limit) {
+            Ok(_) => Ok(()),
+            // A repository with no commits yet has no branch to fetch.
+            Err(Error::Failed { message, .. })
+                if message
+                    .starts_with(&format!("couldn't find remote ref refs/heads/{branch}")) =>
+            {
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Pushes `branch` to GitHub's branch of that name, only ever adding
+    /// commits to it: never forced.
+    pub fn push(&self, root: &Path, branch: &str, limit: Duration) -> Result<Pushed, Error> {
+        let Some(head) = self.commit_id(root, "HEAD")? else {
+            return Ok(Pushed::Done);
+        };
+        let mut command = self.network(root)?;
+        let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
+        command.args(["push", "--porcelain", "--no-verify", REMOTE, &refspec]);
+        let ran = exec(command, limit)?;
+        let stdout = String::from_utf8_lossy(&ran.stdout);
+        // `!` marks a refused ref, its reason last, in brackets.
+        if let Some(refused) = stdout.lines().find(|line| line.starts_with('!')) {
+            if refused.contains("(fetch first)") || refused.contains("(non-fast-forward)") {
+                return Ok(Pushed::Behind);
+            }
+            let reason = refused.rsplit('\t').next().unwrap_or(refused).trim();
+            return Err(Error::Failed {
+                code: ran.status.code(),
+                message: format!("GitHub refused the backup: {reason}"),
+            });
+        }
+        if !ran.status.success() {
+            return Err(failed(&ran));
+        }
+        // Tir's record of GitHub's branch, which a push moves only when the
+        // remote's configuration says to.
+        self.run(root, &["update-ref", &tracking(branch), &head])?;
+        Ok(Pushed::Done)
+    }
 }
 
 /// A commit's message from the paths it changes: "Back up" and what they
@@ -318,8 +458,87 @@ fn message<'a>(paths: impl Iterator<Item = &'a str>) -> String {
     }
 }
 
+/// Tir's record of GitHub's `branch`.
+fn tracking(branch: &str) -> String {
+    format!("refs/remotes/{REMOTE}/{branch}")
+}
+
+/// How the branch stands against Tir's record of GitHub's.
+#[derive(Debug, PartialEq)]
+pub struct Standing {
+    /// Commits GitHub has not had.
+    pub waiting: u32,
+    /// Commits GitHub has that the branch lacks.
+    pub behind: u32,
+    /// When the newest commit GitHub has was made, in milliseconds since 1970.
+    pub backed_up: Option<f64>,
+}
+
+/// What a push did.
+#[derive(Debug, PartialEq)]
+pub enum Pushed {
+    /// GitHub has every commit.
+    Done,
+    /// GitHub has commits the branch lacks, so it refused the push.
+    Behind,
+}
+
+/// Whether `error` says GitHub could not be reached, as when this machine
+/// is offline, rather than that it refused.
+pub fn unreachable(error: &Error) -> bool {
+    const SIGNS: &[&str] = &[
+        "could not resolve",
+        "temporary failure in name resolution",
+        "name or service not known",
+        "failed to connect",
+        "could not connect",
+        "couldn't connect",
+        "network is unreachable",
+        "no route to host",
+        "connection timed out",
+        "operation timed out",
+        "timeout was reached",
+        "connection refused",
+        "connection reset",
+        "connection closed",
+        "recv failure",
+    ];
+    match error {
+        Error::TimedOut => true,
+        Error::Failed { message, .. } => {
+            let message = message.to_lowercase();
+            SIGNS.iter().any(|sign| message.contains(sign))
+        }
+        _ => false,
+    }
+}
+
+/// A command that ran to its end.
+struct Ran {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn failed(ran: &Ran) -> Error {
+    Error::Failed {
+        code: ran.status.code(),
+        message: said(&String::from_utf8_lossy(&ran.stderr)),
+    }
+}
+
 /// Runs `command` for at most `limit`; what it printed, or why it failed.
-fn output(mut command: Command, limit: Duration) -> Result<Vec<u8>, Error> {
+fn output(command: Command, limit: Duration) -> Result<Vec<u8>, Error> {
+    let ran = exec(command, limit)?;
+    if ran.status.success() {
+        Ok(ran.stdout)
+    } else {
+        Err(failed(&ran))
+    }
+}
+
+/// Runs `command` for at most `limit`, whether it succeeds or not.
+fn exec(mut command: Command, limit: Duration) -> Result<Ran, Error> {
     let mut child = command.spawn().map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => Error::Missing,
         _ => Error::Io(error.to_string()),
@@ -331,16 +550,11 @@ fn output(mut command: Command, limit: Duration) -> Result<Vec<u8>, Error> {
         // hold it open for a while yet.
         return Err(Error::TimedOut);
     };
-    let stdout = stdout.join().unwrap_or_default();
-    let stderr = stderr.join().unwrap_or_default();
-    if status.success() {
-        Ok(stdout)
-    } else {
-        Err(Error::Failed {
-            code: status.code(),
-            message: said(&String::from_utf8_lossy(&stderr)),
-        })
-    }
+    Ok(Ran {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    })
 }
 
 fn read_in_thread(pipe: Option<impl Read + Send + 'static>) -> thread::JoinHandle<Vec<u8>> {
@@ -713,5 +927,202 @@ pub mod tests {
             ),
             "'/r.git' does not appear to be a git repository Could not read from remote repository. Please make sure you have the correct access rights and the repository exists."
         );
+    }
+
+    /// Runs git as on another machine, or to make a bare repository: in
+    /// `cwd`, reading only `dir/gitconfig`, outside any library.
+    pub fn elsewhere(dir: &TempDir, cwd: &Path, args: &[&str]) -> String {
+        let mut command = Command::new("git");
+        for name in ELSEWHERE {
+            command.env_remove(name);
+        }
+        let output = command
+            .current_dir(cwd)
+            .env("GIT_CONFIG_GLOBAL", dir.0.join("gitconfig"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_ALLOW_PROTOCOL", "file")
+            .env("LC_ALL", "C")
+            .args([
+                "-c",
+                "user.name=Other",
+                "-c",
+                "user.email=other@example.com",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .trim_end()
+            .to_owned()
+    }
+
+    /// A bare repository standing for GitHub's, `dir/github.git`, empty.
+    pub fn github(dir: &TempDir) -> PathBuf {
+        let bare = dir.0.join("github.git");
+        elsewhere(
+            dir,
+            &dir.0,
+            &[
+                "init",
+                "-q",
+                "--bare",
+                "--initial-branch",
+                BRANCH,
+                "github.git",
+            ],
+        );
+        bare
+    }
+
+    /// The library with one commit, connected to `remote`.
+    fn connected(dir: &TempDir, git: &Git, remote: &Path) -> PathBuf {
+        let root = library(dir);
+        git.init(&root).unwrap();
+        git.commit(&root).unwrap();
+        git.run(&root, &["remote", "add", REMOTE, remote.to_str().unwrap()])
+            .unwrap();
+        root
+    }
+
+    fn edit(root: &Path, text: &str) {
+        fs::write(root.join("Salt Line/drafts/First Draft.tir"), text).unwrap();
+    }
+
+    #[test]
+    fn pushes_to_github_and_counts_what_waits() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let bare = github(&dir);
+        let root = connected(&dir, &git, &bare);
+        assert_eq!(git.remote(&root).unwrap(), Some(bare.display().to_string()));
+        // Never pushed: every commit waits.
+        let standing = git.standing(&root, BRANCH).unwrap();
+        assert_eq!(
+            (standing.waiting, standing.behind, standing.backed_up),
+            (1, 0, None)
+        );
+        // GitHub's repository is empty: there is nothing to hear yet.
+        git.fetch(&root, BRANCH, NETWORK).unwrap();
+        assert_eq!(git.push(&root, BRANCH, NETWORK), Ok(Pushed::Done));
+        let head = git.text(&root, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(elsewhere(&dir, &bare, &["rev-parse", BRANCH]), head);
+        let standing = git.standing(&root, BRANCH).unwrap();
+        assert_eq!((standing.waiting, standing.behind), (0, 0));
+        let committed = git.text(&root, &["log", "-1", "--format=%ct"]).unwrap();
+        assert_eq!(
+            standing.backed_up,
+            Some(committed.parse::<f64>().unwrap() * 1000.0)
+        );
+        edit(&root, "{\"two\":2}\n");
+        git.commit(&root).unwrap();
+        edit(&root, "{\"three\":3}\n");
+        git.commit(&root).unwrap();
+        assert_eq!(git.standing(&root, BRANCH).unwrap().waiting, 2);
+        assert_eq!(git.push(&root, BRANCH, NETWORK), Ok(Pushed::Done));
+        assert_eq!(git.standing(&root, BRANCH).unwrap().waiting, 0);
+        assert_eq!(
+            elsewhere(&dir, &bare, &["rev-list", "--count", BRANCH]),
+            "3"
+        );
+    }
+
+    #[test]
+    fn a_github_ahead_refuses_the_push_and_nothing_is_merged() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let bare = github(&dir);
+        let root = connected(&dir, &git, &bare);
+        git.push(&root, BRANCH, NETWORK).unwrap();
+        // The other machine pushes a change to the same draft.
+        elsewhere(
+            &dir,
+            &dir.0,
+            &["clone", "-q", bare.to_str().unwrap(), "laptop"],
+        );
+        let laptop = dir.0.join("laptop");
+        edit(&laptop, "{\"laptop\":1}\n");
+        elsewhere(&dir, &laptop, &["commit", "-q", "-am", "On the laptop"]);
+        elsewhere(&dir, &laptop, &["push", "-q", "origin", BRANCH]);
+        // This machine records its own change.
+        edit(&root, "{\"desktop\":1}\n");
+        git.commit(&root).unwrap();
+        let head = git.text(&root, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(git.push(&root, BRANCH, NETWORK), Ok(Pushed::Behind));
+        // Once Tir has heard, it says so too.
+        git.fetch(&root, BRANCH, NETWORK).unwrap();
+        assert_eq!(git.push(&root, BRANCH, NETWORK), Ok(Pushed::Behind));
+        let standing = git.standing(&root, BRANCH).unwrap();
+        assert_eq!((standing.waiting, standing.behind), (1, 1));
+        // Nothing merged: the branch, the draft and GitHub are as they were.
+        assert_eq!(git.text(&root, &["rev-parse", "HEAD"]).unwrap(), head);
+        assert_eq!(
+            fs::read_to_string(root.join("Salt Line/drafts/First Draft.tir")).unwrap(),
+            "{\"desktop\":1}\n"
+        );
+        assert_eq!(
+            elsewhere(&dir, &bare, &["log", "-1", "--format=%s", BRANCH]),
+            "On the laptop"
+        );
+        assert!(!git.changed(&root).unwrap());
+    }
+
+    #[test]
+    fn an_unreachable_github_fails_until_it_is_back() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let bare = github(&dir);
+        let root = connected(&dir, &git, &bare);
+        let away = dir.0.join("away.git");
+        fs::rename(&bare, &away).unwrap();
+        let error = git.push(&root, BRANCH, NETWORK).unwrap_err();
+        assert!(
+            matches!(&error, Error::Failed { message, .. } if message.contains("does not appear to be a git repository")),
+            "{error:?}"
+        );
+        assert!(git.fetch(&root, BRANCH, NETWORK).is_err());
+        assert_eq!(git.standing(&root, BRANCH).unwrap().waiting, 1);
+        fs::rename(&away, &bare).unwrap();
+        assert_eq!(git.push(&root, BRANCH, NETWORK), Ok(Pushed::Done));
+        assert_eq!(git.standing(&root, BRANCH).unwrap().waiting, 0);
+    }
+
+    #[test]
+    fn tells_an_unreachable_github_from_a_refusal() {
+        // What git says, with curl's and ssh's words, offline.
+        let offline = [
+            "unable to access 'https://github.com/you/screenplays.git/': Could not resolve host: github.com",
+            "unable to access 'https://github.com/you/screenplays.git/': Failed to connect to github.com port 443 after 35 ms: Could not connect to server",
+            "ssh: Could not resolve hostname github.com: Temporary failure in name resolution Could not read from remote repository.",
+            "ssh: connect to host github.com port 22: Network is unreachable Could not read from remote repository.",
+            "ssh: connect to host github.com port 22: Connection timed out Could not read from remote repository.",
+        ];
+        for message in offline {
+            let error = Error::Failed {
+                code: Some(128),
+                message: message.into(),
+            };
+            assert!(unreachable(&error), "{message}");
+        }
+        assert!(unreachable(&Error::TimedOut));
+        let refused = [
+            "git@github.com: Permission denied (publickey). Could not read from remote repository.",
+            "remote: Repository not found. repository 'https://github.com/you/screenplays.git/' not found",
+            "could not read Username for 'https://github.com': terminal prompts disabled",
+            "Host key verification failed. Could not read from remote repository.",
+        ];
+        for message in refused {
+            let error = Error::Failed {
+                code: Some(128),
+                message: message.into(),
+            };
+            assert!(!unreachable(&error), "{message}");
+        }
+        assert!(!unreachable(&Error::Missing));
     }
 }
