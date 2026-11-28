@@ -197,6 +197,11 @@ describe("SCOWL's US English dictionary", () => {
     expect(dictionary.suggest("McDonnel", ["mcdonnell"])[0]).toBe("McDonnell");
     expect(dictionary.suggest("McOkafro", ["mcokafor"])[0]).toBe("McOkafor");
     expect(dictionary.suggest("okafro", ["okafor"])[0]).toBe("Okafor");
+    // The writer's own words come as written, in the typed word's capitals:
+    // "glimmerjack" added in small letters is no name.
+    expect(dictionary.suggest("glimerjack", [], ["glimmerjack"])[0]).toBe("glimmerjack");
+    expect(dictionary.suggest("Glimerjack", [], ["glimmerjack"])[0]).toBe("Glimmerjack");
+    expect(dictionary.suggest("glimerjack", ["glimmerjack"])[0]).toBe("Glimmerjack");
   });
 });
 

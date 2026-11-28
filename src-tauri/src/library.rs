@@ -112,6 +112,25 @@ impl Library {
         self.known().remove(&(folder.to_owned(), draft.to_owned()));
     }
 
+    /// Saves the draft (`write_draft`), refusing to replace it once it has
+    /// changed since Tir saw it, and remembers what it then holds: also
+    /// after a save whose draft was written but whose copy failed, so the
+    /// next save is not taken for one over another program's change.
+    fn save(
+        &self,
+        root: &Path,
+        folder: &str,
+        draft: &str,
+        text: &str,
+        copy: &str,
+    ) -> io::Result<()> {
+        let saved = write_draft(root, folder, draft, text, copy, self.holds(folder, draft));
+        if saved.is_ok() || read_draft(root, folder, draft).is_ok_and(|held| held == text) {
+            self.saw(folder, draft, text);
+        }
+        saved
+    }
+
     /// The project `folder` has moved to the folder `to`, or gone if `None`.
     fn moved_project(&self, folder: &str, to: Option<&str>) {
         let mut known = self.known();
@@ -938,10 +957,7 @@ pub mod commands {
         copy: String,
     ) -> Result<(), String> {
         change(&library, &backup, |root| {
-            let was = library.holds(&folder, &draft);
-            super::write_draft(root, &folder, &draft, &text, &copy, was)?;
-            library.saw(&folder, &draft, &text);
-            Ok(())
+            library.save(root, &folder, &draft, &text, &copy)
         })
     }
 
@@ -1752,6 +1768,45 @@ mod tests {
             trial.names("Salt Line/drafts"),
             ["First Draft.fountain", "First Draft.tir", long.as_str()]
         );
+    }
+
+    #[test]
+    fn saves_again_after_a_copy_failed_and_never_over_a_pull() {
+        let trial = Trial::new();
+        let library = Library::new(Some(trial.root.clone()), None);
+        let suffix = format!(".{}-0.tmp", std::process::id()).len();
+        let long = format!("{}.tir", "x".repeat(255 - DRAFT.len() - suffix));
+        fs::write(trial.root.join("Salt Line/drafts").join(&long), FIRST).unwrap();
+        library.saw("Salt Line", &long, FIRST);
+        // The draft is written and its copy fails: the next save is no
+        // save over another program's change.
+        assert!(
+            library
+                .save(&trial.root, "Salt Line", &long, REWRITE, "")
+                .is_err()
+        );
+        let error = library
+            .save(&trial.root, "Salt Line", &long, FIRST, "")
+            .unwrap_err();
+        assert!(!error.to_string().contains("changed on disk"), "{error}");
+        assert_eq!(trial.read(&format!("Salt Line/drafts/{long}")), FIRST);
+        // A pull changes the draft: nothing is saved over it, until the
+        // draft is read again to be shown.
+        library.saw("Salt Line", "First Draft.tir", FIRST);
+        let pulled = "{\"format\": \"tir-draft\", \"elements\": [\"laptop\"]}\n";
+        fs::write(trial.root.join("Salt Line/drafts/First Draft.tir"), pulled).unwrap();
+        let save = |text| library.save(&trial.root, "Salt Line", "First Draft.tir", text, "");
+        assert!(
+            save(REWRITE)
+                .unwrap_err()
+                .to_string()
+                .contains("changed on disk")
+        );
+        assert!(save(REWRITE).is_err());
+        assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), pulled);
+        library.saw("Salt Line", "First Draft.tir", pulled);
+        save(REWRITE).unwrap();
+        assert_eq!(trial.read("Salt Line/drafts/First Draft.tir"), REWRITE);
     }
 
     #[test]

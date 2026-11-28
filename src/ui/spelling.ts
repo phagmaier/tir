@@ -435,7 +435,8 @@ export function spellCheck(
               toast("Spell check is off: it could not check the script");
             },
           );
-          answered = Promise.all([answered, check]);
+          // Resolving to nothing, so each check holds no array of those before.
+          answered = Promise.all([answered, check]).then(() => {});
         }
         redraw();
       };
@@ -448,7 +449,7 @@ export function spellCheck(
         view.dispatch(
           view.state.tr.setSelection(TextSelection.create(doc, from, to)).scrollIntoView(),
         );
-        checker.suggest(doc.textBetween(from, to), [...learnedWords(view.state), ...writers]).then(
+        checker.suggest(doc.textBetween(from, to), [...learnedWords(view.state)], writers).then(
           (options) => {
             const { selection } = view.state;
             // Opened only on the word as it was asked about, still selected.

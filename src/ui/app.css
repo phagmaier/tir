@@ -351,8 +351,14 @@ body.focus #canvas {
 .status .dot {
   opacity: 0.5;
 }
+/* One box for every icon, the spinner's 15 px among the clouds' 16, so a
+   save starting moves nothing in the bar. */
 .status .backup-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 .spin {
   animation: spin 0.9s linear infinite;
@@ -1233,6 +1239,10 @@ html.title-page-shown .find-bar {
   width: 360px;
   padding: 16px;
   font-size: 13px;
+}
+/* The panel holds focus only while the button that had it waits. */
+.backup-panel:focus {
+  outline: none;
 }
 .bp-h {
   display: flex;

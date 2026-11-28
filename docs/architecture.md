@@ -372,12 +372,18 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   pushes at once. At closing, on `RunEvent::Exit` after the library's
   command under way has finished (`finish_commands`), backup records what
   is left, lets the instance lock go (`Instance::release`) so a new Tir
-  may start, and pushes for at most a minute before Tir exits. At launch,
+  may start, and pushes for at most a minute before Tir exits. A push or
+  check already under way when Tir closes finishes first, within git's
+  two-minute limit, so the window gone, Tir may take three minutes to
+  exit and a new Tir be refused for the first two. At launch,
   changes git has not recorded, made while Tir was closed or left by a
   Tir that stopped, are recorded after the quiet spell, and backup asks
   GitHub at once. Backup holds the library's command lock
   (`Library::busy`) while it records, never while it talks to GitHub, so
-  no save writes mid-commit and none waits for the network.
+  no save writes mid-commit and none waits for the network. The commands
+  that wait for backup (`back_up_now`, `resume_backup`,
+  `connect_repository`) run on a blocking thread (`blocking` in `lib.rs`),
+  never on one the async runtime shares.
 - **GitHub.** The connected repository is the remote `origin`, which a
   clone names too; with none, the state is `off` and the library is
   recorded here only. A push sends the current branch to GitHub's branch
@@ -392,11 +398,16 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   after 30 seconds, doubling to five minutes. The failure is `offline`
   when git's words say GitHub could not be reached or git ran past its
   two-minute limit (`git::unreachable`), and `failing` otherwise, with
-  git's words as the `reason`; offline with nothing waiting reads as
-  backed up. Git's ssh runs in batch mode, `ssh -o BatchMode=yes -o
+  git's words as the `reason`, less any login an address in them carries
+  (`git::redact`, also on the repository's address in the status);
+  offline with nothing waiting reads as backed up. Nothing asks the
+  writer anything: git's ssh runs in batch mode, `ssh -o BatchMode=yes -o
   ConnectTimeout=20`, unless the writer's environment or configuration
   names another command, so it never waits for a passphrase or a host
-  question.
+  question, and an empty `GIT_ASKPASS` (git then skips `core.askPass`
+  and `SSH_ASKPASS` too; findings, "Git"), `SSH_ASKPASS_REQUIRE=never`
+  and `GCM_INTERACTIVE=never` keep any program from opening a window for
+  a login.
 - **Paused.** When GitHub refuses a push because it has commits this
   branch lacks, or a check finds them, backup is `paused`: it keeps
   recording here and pushes nothing until Resume (`resume_backup`), which
@@ -408,16 +419,20 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   draft's fingerprint; `read_draft`'s `shown` marks the reads that count),
   and says to close Tir and open it again.
 - **The repository.** A library with no `.git` is made a repository on
-  the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`
-  unless one is there: git records only each project's `project.json`,
-  its drafts and their Fountain copies, the dictionary and the
-  `.gitignore`, never a file the writer put there or a `*.tmp` left by a
-  crash ([Writing files](#writing-files)). Tir makes no repository of a
-  folder holding anything but its projects, the dictionary, hidden
-  entries and temporary files (`library::foreign_entry`), so a `library`
-  set to a folder such as the home folder is never made one; backup
-  reports the first such entry instead. A folder with a `project.json` or
-  a `drafts` folder counts as a project.
+  the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`,
+  written first, unless one is there; a repository the writer made gets
+  it too, before Tir records anything. Git records only each project's
+  `project.json`, its drafts and their Fountain copies, the dictionary
+  and the `.gitignore`, never a file the writer put there or a `*.tmp`
+  left by a crash ([Writing files](#writing-files)). Tir makes no
+  repository of a folder holding anything but its projects, the
+  dictionary, hidden entries and temporary files
+  (`library::foreign_entry`), and records nothing in one, checking before
+  every commit (`backup::owned`), so a `library` set to a folder such as
+  the home folder is never backed up, even when it is already a
+  repository of the writer's; backup reports the first such entry
+  instead. A folder with a `project.json` or a `drafts` folder counts as
+  a project.
 - **Running git.** `git.rs` runs the system's `git` from an argument
   list, never a shell, in the library, with `GIT_DIR` and
   `GIT_WORK_TREE` naming the library's `.git` and the library, and the
@@ -431,14 +446,16 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   `git add --all` and `git commit`, its message naming the projects it
   backs up ("Back up Salt Line and the dictionary").
 - **What stops it.** Nothing is recorded while the repository's HEAD is
-  detached or a merge, rebase, cherry-pick or revert is under way in it
-  (`git::Repository`), since a commit would finish the writer's operation.
-  A missing git, a repository git cannot read, a folder backup will not
-  make a repository, and a failed commit become the status's `problem`
-  (`backup::Status`), tried again after the quiet spell. The page reads
-  the status with `backup_status` and hears each change as
-  `tir://backup`.
-- **Connecting** (`Backup::connect`, the `connect_repository` command)
+  detached, a merge, squash merge, rebase, cherry-pick or revert is under
+  way in it, or files are left in conflict, as a popped stash leaves them
+  (`git::Repository`), since a commit would finish or bury the writer's
+  operation. A missing git, a repository git cannot read, a folder backup
+  will not record, and a failed commit become the status's `problem`
+  (`backup::Status`), tried again after the quiet spell; once one is
+  mended, backup asks GitHub and pushes what waited. The page reads the
+  status with `backup_status` and hears each change as `tir://backup`.
+- **Connecting** (`Backup::connect`, the `connect_repository` command,
+  one at a time)
   takes only a GitHub address (`github::parse`: `git@github.com:`,
   `ssh://git@github.com/` or `https://github.com/`, then owner and name),
   and gives git that address rebuilt from the names. It makes the library
@@ -464,10 +481,12 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   older version).
 - **In a sandbox** (`TIR_CONFIG_DIR` set; tests use the same), git reads
   only `$TIR_CONFIG_DIR/gitconfig` (`GIT_CONFIG_GLOBAL`, with
-  `GIT_CONFIG_NOSYSTEM`) and may use only the `file` transport
-  (`GIT_ALLOW_PROTOCOL`), so a trial never reads the writer's git
-  configuration or login, nor reaches GitHub. What anyone can read is
-  what git reaches reading only `$TIR_CONFIG_DIR/gitconfig-anonymous`.
+  `GIT_CONFIG_NOSYSTEM`, `XDG_CONFIG_HOME` set to `$TIR_CONFIG_DIR`, and
+  no configuration passed down in `GIT_CONFIG_PARAMETERS`) and may use
+  only the `file` transport (`GIT_ALLOW_PROTOCOL`), so a trial never
+  reads the writer's git configuration, ignore files or login, nor
+  reaches GitHub. What anyone can read is what git reaches reading only
+  `$TIR_CONFIG_DIR/gitconfig-anonymous`.
   A trial stands local bare repositories in for GitHub with `insteadOf`
   rules ([Running and checking](#running-and-checking)).
 

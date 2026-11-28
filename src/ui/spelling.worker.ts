@@ -25,7 +25,8 @@ scope.onmessage = async ({ data: request }) => {
       const words = request.check.map(({ type, text }) => misspelled(loaded, type, text));
       scope.postMessage({ id, words });
     } else {
-      scope.postMessage({ id, suggestions: loaded.suggest(request.suggest, request.extra) });
+      const suggestions = loaded.suggest(request.suggest, request.names, request.words);
+      scope.postMessage({ id, suggestions });
     }
   } catch (error) {
     scope.postMessage({ id, error: error instanceof Error ? error.message : String(error) });

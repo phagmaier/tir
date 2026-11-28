@@ -101,24 +101,35 @@ fn backup_status(backup: State<'_, backup::Backup>) -> backup::Status {
     backup.status()
 }
 
+/// Runs `work` with backup on a thread of its own: it may wait minutes for
+/// GitHub, and an async command's own thread is one the runtime shares.
+async fn blocking<T: Send + 'static>(
+    app: AppHandle,
+    work: impl FnOnce(&backup::Backup) -> T + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || work(&app.state::<backup::Backup>()))
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// Records the library's changes and pushes them now; how backup stands
 /// once it has.
-#[tauri::command(async)]
-fn back_up_now(backup: State<'_, backup::Backup>) -> Option<backup::Status> {
-    backup.now()
+#[tauri::command]
+async fn back_up_now(app: AppHandle) -> Result<Option<backup::Status>, String> {
+    blocking(app, backup::Backup::now).await
 }
 
 /// Asks GitHub again after a pause, and pushes if it has nothing this
 /// machine lacks; how backup stands once it has.
-#[tauri::command(async)]
-fn resume_backup(backup: State<'_, backup::Backup>) -> Option<backup::Status> {
-    backup.resume()
+#[tauri::command]
+async fn resume_backup(app: AppHandle) -> Result<Option<backup::Status>, String> {
+    blocking(app, backup::Backup::resume).await
 }
 
 /// Connects the repository at `address`, once it is checked; what came of it.
-#[tauri::command(async)]
-fn connect_repository(backup: State<'_, backup::Backup>, address: String) -> backup::Checked {
-    backup.connect(&address)
+#[tauri::command]
+async fn connect_repository(app: AppHandle, address: String) -> Result<backup::Checked, String> {
+    blocking(app, move |backup| backup.connect(&address)).await
 }
 
 /// How much of the project `folder`, or its draft `draft`, GitHub holds:

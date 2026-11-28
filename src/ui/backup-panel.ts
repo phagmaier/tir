@@ -88,8 +88,12 @@ export class BackupPanel {
   private place = "~/Screenplays";
   /** A Back up now or a Resume waits for its answer. */
   private asking = false;
+  /** A check waits for its answer: no other may start until it comes. */
+  private checking = false;
   /** The address is connected: the dialog's button closes it. */
   private connected = false;
+  /** The action whose button had focus when it was disabled, to have it back. */
+  private refocus: string | null = null;
 
   constructor(side: BackupSide) {
     this.side = side;
@@ -97,6 +101,8 @@ export class BackupPanel {
     this.pop.hidden = true;
     this.pop.setAttribute("role", "dialog");
     this.pop.setAttribute("aria-label", "Backup");
+    // The panel takes focus while the button that had it waits.
+    this.pop.tabIndex = -1;
     document.body.append(this.pop);
     void side.place().then((place) => {
       this.place = place;
@@ -160,6 +166,11 @@ export class BackupPanel {
 
   get open(): boolean {
     return !this.pop.hidden || this.dialog.open;
+  }
+
+  /** The connect dialog is open: like any dialog, it keeps the window's keys. */
+  get dialogOpen(): boolean {
+    return this.dialog.open;
   }
 
   /** Opens the panel under `anchor`, or closes it when it is open. */
@@ -238,16 +249,26 @@ export class BackupPanel {
       actions.append(dom);
     }
     parts.push(rows, actions);
-    // Focus stays on the button it was on, as the panel redraws.
-    const focused = this.pop.contains(document.activeElement)
-      ? (document.activeElement as HTMLElement).textContent
-      : null;
+    // Focus stays on the button it was on as the panel redraws, or on the
+    // panel while that button waits, and goes back to it once it may.
+    const active = document.activeElement;
+    const focused =
+      active === this.pop
+        ? this.refocus
+        : this.pop.contains(active)
+          ? (active as HTMLElement).textContent
+          : null;
     this.pop.replaceChildren(...parts);
+    this.refocus = null;
     if (focused !== null) {
       const again = [...actions.querySelectorAll("button")].find(
-        (dom) => dom.textContent === focused && !dom.disabled,
+        (dom) => dom.textContent === focused,
       );
-      (again ?? actions.querySelector<HTMLButtonElement>("button:enabled"))?.focus();
+      if (again && !again.disabled) again.focus();
+      else if (again) {
+        this.refocus = focused;
+        this.pop.focus();
+      } else actions.querySelector<HTMLButtonElement>("button:enabled")?.focus();
     }
     if (!this.pop.hidden) this.position();
   }
@@ -300,7 +321,7 @@ export class BackupPanel {
     this.connected = false;
     this.result.replaceChildren();
     this.go.textContent = "Check and connect";
-    this.go.disabled = false;
+    this.go.disabled = this.checking;
   }
 
   private async check(): Promise<void> {
@@ -309,7 +330,7 @@ export class BackupPanel {
       this.side.toast("Connected. Backups now go to GitHub.");
       return;
     }
-    if (this.go.disabled) return;
+    if (this.checking) return;
     const address = this.address.value.trim();
     if (!address) {
       this.result.replaceChildren(
@@ -318,7 +339,10 @@ export class BackupPanel {
       this.address.focus();
       return;
     }
+    // One check at a time: two could connect two repositories in turn.
+    this.checking = true;
     this.go.disabled = true;
+    this.address.readOnly = true;
     this.result.replaceChildren(
       note({
         tone: "",
@@ -329,22 +353,24 @@ export class BackupPanel {
     const checked = await this.side
       .connect(address)
       .catch((error: unknown): Checked => ({ result: "problem", reason: String(error) }));
-    // The writer changed the address or closed the dialog meanwhile.
-    if (!this.dialog.open || this.address.value.trim() !== address) {
-      if (checked.result === "connected") this.side.toast("Connected. Backups now go to GitHub.");
-      return;
-    }
     const library =
       checked.result === "connected"
         ? await this.side.library().catch(() => ({ projects: 0, drafts: 0 }))
         : { projects: 0, drafts: 0 };
+    this.checking = false;
     this.go.disabled = false;
+    this.address.readOnly = false;
+    // The dialog was closed, or opened afresh, meanwhile.
+    if (!this.dialog.open || this.address.value.trim() !== address) {
+      if (checked.result === "connected") this.side.toast("Connected. Backups now go to GitHub.");
+      return;
+    }
     this.result.replaceChildren(note(checkedNote(checked, library)));
     if (checked.result === "connected") {
       this.connected = true;
       this.go.textContent = "Done";
       this.go.focus();
-    }
+    } else this.address.focus();
   }
 
   private readonly away = (event: Event) => {

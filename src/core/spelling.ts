@@ -289,13 +289,14 @@ export class Dictionary {
    * Up to six spellings for `word`, in its capitals and with its shape of
    * apostrophe, the fewest edits away first: the dictionary's own capitals
    * for it, and the word without its accents; then, one edit away,
-   * Hunspell's replacement table, two letters swapped, any of `extra`, such
-   * as the script's names, or their possessives for a possessive, and a
-   * letter extra, missing or wrong; then, two edits away, `extra`, a space
+   * Hunspell's replacement table, two letters swapped, any of `names`, the
+   * script's names in small letters, or `words`, the writer's own as
+   * written, or their possessives for a possessive, and a letter extra,
+   * missing or wrong; then, two edits away, those names and words, a space
    * missing, and other words. Among equals, the most alike first, and one
    * keeping the word's first letter.
    */
-  suggest(word: string, extra: Iterable<string> = []): string[] {
+  suggest(word: string, names: Iterable<string> = [], words: Iterable<string> = []): string[] {
     const typed = this.convert(word);
     const lower = typed.toLowerCase();
     // An apostrophe parts the letter pairs `likeness` counts, so "dont" would
@@ -332,8 +333,12 @@ export class Dictionary {
     }
     // Names come after swapped letters, the commonest slip: "teh" is "the"
     // before the script's TEO.
-    for (const known of extra) {
-      const converted = this.convert(known);
+    const known = [
+      ...[...names].map((text) => ({ text, name: true })),
+      ...[...words].map((text) => ({ text, name: false })),
+    ];
+    for (const { text, name: isName } of known) {
+      const converted = this.convert(text);
       const folded = converted.toLowerCase();
       const name = bare(folded);
       // An accent the writer left out or added is no edit: "Tomas" for "Tomás".
@@ -341,9 +346,12 @@ export class Dictionary {
       const owned = owner === null ? 3 : editDistance(owner, name, 2);
       if (edits > 2 && owned > 2) continue;
       // The script's names come folded: a name takes the dictionary's capitals
-      // ("McDonnell"), else a name's, with any the typed word has.
+      // ("McDonnell"), else a name's, with any the typed word has. The
+      // writer's words come as written.
       const spelling =
-        converted === folded ? (this.spelled(folded) ?? asName(typed, folded)) : converted;
+        isName && converted === folded
+          ? (this.spelled(folded) ?? asName(typed, folded))
+          : converted;
       if (edits <= 2) offer(spelling, edits, 3);
       if (owned <= 2) offer(`${spelling}'s`, owned, 3);
     }

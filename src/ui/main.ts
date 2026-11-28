@@ -105,8 +105,11 @@ const saver = new Saver(
     },
   },
 );
+// A dialog of the draft menu's or the backup panel's keeps the window's
+// keys, as a dialog does.
+const dialogOpen = () => !!draftMenu?.dialogOpen || backupPanel.dialogOpen;
 // Whether F7 and F8 may take the caret to a misspelling or finding.
-const canNavigate = () => !draftAction && !closing && !screen?.shown && !draftMenu?.dialogOpen;
+const canNavigate = () => !draftAction && !closing && !screen?.shown && !dialogOpen();
 // With nothing to open, the editor holds an empty script, unseen behind the
 // Projects screen.
 const editor = mountEditor(byId("pages"), (opening?.script ?? emptyScript()).elements, {
@@ -159,19 +162,22 @@ const backupPanel = new BackupPanel({
   },
   toast: (text) => desk?.toast(text),
 });
-const indicator = statusIndicator(byId("bar-right"), (anchor) => backupPanel.toggle(anchor));
+// Not while Tir closes: closing has closed the panel.
+const indicator = statusIndicator(byId("bar-right"), (anchor) => {
+  if (!closing) backupPanel.toggle(anchor);
+});
 showSaved = (state, problem) => {
   indicator.saved(state, problem);
   backupPanel.update();
 };
+// Once backup has published, its first answer may be older than that.
+let published = false;
 const heardBackup = (status: BackupStatus) => {
   backup = status;
   indicator.backup(status);
   screen?.backup(status);
   backupPanel.update();
 };
-await listen<BackupStatus>("tir://backup", ({ payload }) => heardBackup(payload));
-void invoke<BackupStatus>("backup_status").then(heardBackup, console.error);
 /** How much of the project `folder`, or its draft `file`, GitHub holds. */
 const backupOf = (folder: string, file?: string): Promise<Coverage> =>
   invoke<Coverage>("backup_of", { folder, draft: file ?? null }).catch(() => "none" as const);
@@ -232,7 +238,8 @@ function runDraftAction(action: DraftAction): void {
 }
 
 draftMenu = new DraftMenu(draftTrigger, {
-  place: () => (closing ? null : saver.where),
+  // No draft dialog while another action, the Projects screen or closing has the window.
+  place: () => (closing || draftAction || screen?.shown ? null : saver.where),
   list: listLibrary,
   run: runDraftAction,
   backupOf,
@@ -318,7 +325,7 @@ screen = new ProjectsScreen({
 });
 screen.backup(backup);
 const showProjects = () => {
-  if (draftAction || closing || draftMenu?.dialogOpen) return;
+  if (draftAction || closing || dialogOpen()) return;
   draftMenu?.dismiss();
   backupPanel.close(false);
   titlePage.close();
@@ -334,7 +341,7 @@ else showProjects();
 
 listenForFileKeys((action) => {
   if (action === "open") showProjects();
-  else if (draftAction || closing || draftMenu?.dialogOpen) return;
+  else if (draftAction || closing || dialogOpen()) return;
   else
     void saver.settle().then(async (saved) => {
       if (!saved) await tell(`Tir could not save “${projectShown()}”`, saver.failure ?? "");
@@ -366,6 +373,13 @@ const close = closer(
   },
   projectShown,
 );
+await listen<BackupStatus>("tir://backup", ({ payload }) => {
+  published = true;
+  heardBackup(payload);
+});
+void invoke<BackupStatus>("backup_status").then((status) => {
+  if (!published) heardBackup(status);
+}, console.error);
 await listen("tir://close", () => {
   // A draft action can change the saver target; close settles that target,
   // even when showing the action's result failed.

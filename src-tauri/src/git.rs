@@ -129,6 +129,9 @@ pub enum Repository {
     /// A repository in the middle of the operation named, such as a merge
     /// the writer started in a terminal.
     Busy(&'static str),
+    /// A repository holding conflicts no operation marks, such as those
+    /// `git stash pop` leaves.
+    Conflicted,
 }
 
 impl Git {
@@ -170,9 +173,15 @@ impl Git {
             .stderr(Stdio::piped())
             .args(QUIET);
         if let Some(config) = &self.sandbox {
+            // Nothing of the writer's configuration either: neither their
+            // ignore and attributes files nor settings passed down.
+            let home = config.parent().unwrap_or(config);
             command
                 .env("GIT_CONFIG_GLOBAL", config)
                 .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("XDG_CONFIG_HOME", home)
+                .env_remove("GIT_CONFIG_PARAMETERS")
+                .env_remove("GIT_CONFIG_COUNT")
                 .env("GIT_ALLOW_PROTOCOL", "file");
         }
         command
@@ -194,9 +203,16 @@ impl Git {
         Ok(self.command(root))
     }
 
-    /// A command that talks to the remote, its ssh never asking anything.
+    /// A command that talks to the remote, never asking anyone anything:
+    /// no password window (an empty `GIT_ASKPASS` makes git skip
+    /// `core.askPass` and `SSH_ASKPASS` too), no ssh passphrase or host
+    /// question, and ssh in batch mode unless the writer names their own.
     fn network(&self, root: &Path) -> Result<Command, Error> {
         let mut command = self.command_in(root)?;
+        command
+            .env("GIT_ASKPASS", "")
+            .env("SSH_ASKPASS_REQUIRE", "never")
+            .env("GCM_INTERACTIVE", "never");
         let named = ["GIT_SSH_COMMAND", "GIT_SSH"]
             .iter()
             .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()));
@@ -229,8 +245,9 @@ impl Git {
         };
         // Each operation leaves its file or folder in the repository while
         // it is under way.
-        const UNDER_WAY: [(&str, &str); 5] = [
+        const UNDER_WAY: [(&str, &str); 6] = [
             ("MERGE_HEAD", "merge"),
+            ("SQUASH_MSG", "squash merge"),
             ("rebase-merge", "rebase"),
             ("rebase-apply", "rebase"),
             ("CHERRY_PICK_HEAD", "cherry-pick"),
@@ -246,13 +263,25 @@ impl Git {
                 return Ok(Repository::Busy(operation));
             }
         }
+        // A conflict left by `git stash pop` and the like marks no
+        // operation; `git add` would take its markers as resolved.
+        if !self.run(root, &["ls-files", "--unmerged"])?.is_empty() {
+            return Ok(Repository::Conflicted);
+        }
         Ok(Repository::Branch(branch))
     }
 
-    /// Makes `root` a repository on `BRANCH`, ignoring what `IGNORE` says
-    /// unless it already has a `.gitignore`.
+    /// Makes `root` a repository on `BRANCH`, with Tir's `.gitignore`
+    /// first, so no commit is ever made without it.
     pub fn init(&self, root: &Path) -> Result<(), Error> {
-        self.run(root, &["init", "-q", "--initial-branch", BRANCH])?;
+        self.ignore(root)?;
+        self.run(root, &["init", "-q", "--initial-branch", BRANCH])
+            .map(drop)
+    }
+
+    /// Gives `root` Tir's `.gitignore` (`IGNORE`) unless it has one: the
+    /// writer may have changed it.
+    pub fn ignore(&self, root: &Path) -> Result<(), Error> {
         let ignore = root.join(".gitignore");
         if fs::symlink_metadata(&ignore).is_err() {
             crate::files::replace(&ignore, IGNORE.as_bytes())
@@ -710,7 +739,7 @@ fn said(stderr: &str) -> String {
         })
         .collect();
     let mut message = String::new();
-    for line in lines {
+    for line in lines.into_iter().map(redact) {
         if !message.is_empty() {
             let ended = message.ends_with(['.', '!', '?', ':', '…']);
             if !ended && line.starts_with(|c: char| c.is_uppercase()) {
@@ -718,7 +747,7 @@ fn said(stderr: &str) -> String {
             }
             message.push(' ');
         }
-        message.push_str(line);
+        message.push_str(&line);
     }
     const LONGEST: usize = 400;
     if message.len() > LONGEST {
@@ -730,6 +759,37 @@ fn said(stderr: &str) -> String {
         message.push('…');
     }
     message
+}
+
+/// `text` without the login any address in it carries, such as a token in
+/// `https://TOKEN@github.com/…` from a clone made with one: Tir shows and
+/// logs git's words and the repository's address, never a credential. The
+/// user of an ssh address, such as `ssh://git@…`, is no secret and stays.
+pub fn redact(text: &str) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("://") {
+        let (head, tail) = rest.split_at(at + 3);
+        kept.push_str(head);
+        let scheme = head[..at]
+            .rsplit(|c: char| !c.is_ascii_alphabetic())
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let end = tail
+            .find(|c: char| c == '/' || c.is_whitespace() || c == '\'' || c == '"')
+            .unwrap_or(tail.len());
+        let authority = &tail[..end];
+        match authority.rfind('@') {
+            Some(at) if scheme == "http" || scheme == "https" || authority[..at].contains(':') => {
+                kept.push_str(&authority[at + 1..]);
+            }
+            _ => kept.push_str(authority),
+        }
+        rest = &tail[end..];
+    }
+    kept.push_str(rest);
+    kept
 }
 
 #[cfg(test)]
@@ -977,6 +1037,19 @@ pub mod tests {
         fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
         fs::create_dir(root.join(".git/rebase-merge")).unwrap();
         assert_eq!(git.repository(&root), Ok(Repository::Busy("rebase")));
+        fs::remove_dir(root.join(".git/rebase-merge")).unwrap();
+        fs::write(root.join(".git/SQUASH_MSG"), "Squashed\n").unwrap();
+        assert_eq!(git.repository(&root), Ok(Repository::Busy("squash merge")));
+        fs::remove_file(root.join(".git/SQUASH_MSG")).unwrap();
+        // A stash popped over other changes leaves its conflict, and no file
+        // in .git saying so.
+        let draft = root.join("Salt Line/drafts/First Draft.tir");
+        fs::write(&draft, "{\"stashed\":1}\n").unwrap();
+        git.run(&root, &["stash", "-q"]).unwrap();
+        fs::write(&draft, "{\"committed\":1}\n").unwrap();
+        git.commit(&root).unwrap();
+        assert!(git.run(&root, &["stash", "pop", "-q"]).is_err());
+        assert_eq!(git.repository(&root), Ok(Repository::Conflicted));
     }
 
     #[test]
@@ -1026,6 +1099,34 @@ pub mod tests {
         ];
         for (paths, expected) in cases {
             assert_eq!(message(paths.iter().copied()), expected, "{paths:?}");
+        }
+    }
+
+    #[test]
+    fn leaves_out_the_login_an_address_carries() {
+        assert_eq!(
+            said(
+                "fatal: unable to access 'https://mara:ghp_secret@github.com/mara/s.git/': The requested URL returned error: 403\n"
+            ),
+            "unable to access 'https://github.com/mara/s.git/': The requested URL returned error: 403"
+        );
+        assert_eq!(
+            redact("https://ghp_secret@github.com/mara/s.git"),
+            "https://github.com/mara/s.git"
+        );
+        assert_eq!(
+            redact("ssh://git:pass@example.com/s.git"),
+            "ssh://example.com/s.git"
+        );
+        // Users that are no secret, and addresses with no login, stay.
+        for kept in [
+            "ssh://git@github.com/mara/s.git",
+            "git@github.com:mara/s.git",
+            "https://github.com/mara/s.git",
+            "/home/mara/s.git",
+            "",
+        ] {
+            assert_eq!(redact(kept), kept);
         }
     }
 

@@ -32,7 +32,7 @@ describe("checking spelling off the interface thread", () => {
     expect(worker.posted).toHaveLength(1);
     worker.fail();
     expect(await waiting).toEqual([[{ start: 0, end: 3, text: "Teh" }]]);
-    expect((await checker.suggest("teh", []))[0]).toBe("the");
+    expect((await checker.suggest("teh", [], []))[0]).toBe("the");
     expect(worker.posted).toHaveLength(1);
     quiet.mockRestore();
   });

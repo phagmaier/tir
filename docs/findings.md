@@ -465,6 +465,16 @@ Observed with git 2.56.0 on the desktop, in temporary directories with
   the same ("Could not resolve hostname", "Network is unreachable",
   "Connection timed out") were not observed here; `git::unreachable`
   matches them as ssh writes them.
+- Git asks a program for a login in this order: `GIT_ASKPASS`, then
+  `core.askPass`, then `SSH_ASKPASS`. Set but empty, `GIT_ASKPASS` stops
+  the search: with `SSH_ASKPASS` naming a program that writes a file,
+  `GIT_ASKPASS=""` and `GIT_TERMINAL_PROMPT=0`, a fetch over HTTPS from a
+  server asking for a login said "could not read Username for '…':
+  terminal prompts disabled" and the program never ran (2026-11-28).
+- `git stash pop` that conflicts exits 1 and leaves the files unmerged
+  (`git ls-files --unmerged`) with no `MERGE_HEAD` or other marker in
+  `.git` (`git.rs`'s tests). `git merge --squash` leaves `SQUASH_MSG`
+  and no `MERGE_HEAD` until the writer commits (2026-11-28).
 
 ## GitHub
 

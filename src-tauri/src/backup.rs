@@ -155,6 +155,9 @@ pub struct Backup {
     root: Result<PathBuf, String>,
     busy: Arc<Mutex<()>>,
     anonymous: Anonymous,
+    /// One connect at a time: two checked side by side would each connect
+    /// their repository, and push to it, in turn.
+    connecting: Mutex<()>,
 }
 
 impl Backup {
@@ -187,6 +190,7 @@ impl Backup {
             root,
             busy,
             anonymous,
+            connecting: Mutex::default(),
         }
     }
 
@@ -245,6 +249,7 @@ impl Backup {
     /// holds nothing the library lacks; backup then records and pushes.
     /// Makes the library, and the library a repository, if need be.
     pub fn connect(&self, pasted: &str) -> Checked {
+        let _one_at_a_time = lock(&self.connecting);
         let Some(address) = github::parse(pasted) else {
             return Checked::NotGitHub;
         };
@@ -438,14 +443,17 @@ impl Worker {
         let looked = match self.repository(&root) {
             // Making the repository is the first change to record.
             Ok(Repository::None) => Ok(true),
-            Ok(_) => self
-                .setup
-                .git
-                .changed(&root)
-                .map_err(|error| unreadable(&error)),
+            Ok(_) => owned(&root).and_then(|()| {
+                self.setup
+                    .git
+                    .changed(&root)
+                    .map_err(|error| unreadable(&error))
+            }),
             Err(problem) => Err(problem),
         };
-        if let Ok(true) = looked {
+        // Changes to record, or a problem the writer may mend meanwhile:
+        // either way, record after the quiet spell.
+        if !matches!(looked, Ok(false)) {
             self.due = Some(Instant::now() + self.setup.timing.quiet);
         }
         let problem = looked.err();
@@ -483,9 +491,15 @@ impl Worker {
             self.due = Some(Instant::now() + self.setup.timing.quiet);
         }
         let made = recorded == Ok(true);
+        let was = self.status().problem.is_some();
         let problem = recorded.err();
+        let mended = was && problem.is_none();
         self.update(|status| status.problem = problem);
         self.refresh(&root);
+        // Commits may have waited while Tir could not record: ask GitHub.
+        if mended && self.status().state != State::Paused {
+            self.next = Some(Instant::now());
+        }
         made
     }
 
@@ -638,7 +652,8 @@ impl Worker {
             } else if status.state == State::Off {
                 status.state = State::BackedUp;
             }
-            status.remote = remote;
+            // Shown in the panel: never a token a clone's address carries.
+            status.remote = remote.as_deref().map(git::redact);
             status.waiting = waiting;
             status.backed_up = standing.and_then(|standing| standing.backed_up);
             status.private = private;
@@ -677,30 +692,41 @@ fn usable(git: &Git, root: &Path) -> Result<Repository, String> {
             "A git {operation} is under way in the library, so Tir records nothing until it \
              is finished in a terminal."
         )),
+        Ok(Repository::Conflicted) => Err(
+            "The library's git repository holds unresolved conflicts, so Tir records nothing \
+             until they are resolved in a terminal."
+                .into(),
+        ),
         Ok(repository) => Ok(repository),
         Err(error) => Err(unreadable(&error)),
     }
 }
 
-/// Makes the library a repository if it is none yet, but never a folder
-/// holding more than Tir's files; or why Tir cannot record its changes.
-fn prepare(git: &Git, root: &Path) -> Result<(), String> {
-    if let Repository::None = usable(git, root)? {
-        match library::foreign_entry(root) {
-            Ok(None) => {}
-            Ok(Some(name)) => {
-                return Err(format!(
-                    "Tir backs up only a library of its own, and “{name}” in {} is none of \
-                     Tir's projects. Move it out of the library and Tir will start backing up.",
-                    root.display()
-                ));
-            }
-            Err(error) => return Err(format!("Tir could not read the library ({error}).")),
-        }
-        git.init(root)
-            .map_err(|error| failure("Tir could not make the library a git repository.", &error))?;
+/// Whether the library holds nothing but Tir's projects and files, or why
+/// Tir will not record it: never a folder such as the home folder, even
+/// one already a repository of the writer's.
+fn owned(root: &Path) -> Result<(), String> {
+    match library::foreign_entry(root) {
+        Ok(None) => Ok(()),
+        Ok(Some(name)) => Err(format!(
+            "Tir backs up only a library of its own, and “{name}” in {} is none of Tir's \
+             projects. Move it out of the library and Tir will start backing up.",
+            root.display()
+        )),
+        Err(error) => Err(format!("Tir could not read the library ({error}).")),
     }
-    Ok(())
+}
+
+/// Makes the library a repository if it is none yet, with Tir's
+/// `.gitignore` unless it has one; or why Tir cannot record its changes.
+fn prepare(git: &Git, root: &Path) -> Result<(), String> {
+    let repository = usable(git, root)?;
+    owned(root)?;
+    match repository {
+        Repository::None => git.init(root),
+        _ => git.ignore(root),
+    }
+    .map_err(|error| failure("Tir could not make the library a git repository.", &error))
 }
 
 /// Why the library's repository could not be read.
@@ -1140,20 +1166,21 @@ mod tests {
         git.run(&root, &["checkout", "-q", "--detach"]).unwrap();
         edit(&root, "{\"detached\":1}\n");
         let (_, backup, heard) = start(&dir, git.clone(), timing(Duration::from_millis(100)));
-        thread::sleep(Duration::from_millis(400));
-        assert!(backup.status().problem.unwrap().contains("not on a branch"));
+        let problem = |part: &'static str| {
+            let backup = &backup;
+            move || {
+                backup
+                    .status()
+                    .problem
+                    .is_some_and(|problem| problem.contains(part))
+            }
+        };
+        wait_until("the detached HEAD", problem("not on a branch"));
         git.run(&root, &["checkout", "-q", BRANCH]).unwrap();
         let head = String::from_utf8(git.run(&root, &["rev-parse", "HEAD"]).unwrap()).unwrap();
         fs::write(root.join(".git/MERGE_HEAD"), head).unwrap();
         backup.changed();
-        thread::sleep(Duration::from_millis(400));
-        assert!(
-            backup
-                .status()
-                .problem
-                .unwrap()
-                .contains("A git merge is under way")
-        );
+        wait_until("the merge", problem("A git merge is under way"));
         assert_eq!(subjects(&git, &root).len(), 1);
         fs::remove_file(root.join(".git/MERGE_HEAD")).unwrap();
         backup.changed();
@@ -1161,6 +1188,66 @@ mod tests {
         backup.finish(|| {});
         assert_eq!(backup.status(), Status::default());
         assert_eq!(lock(&heard).last(), Some(&Status::default()));
+    }
+
+    #[test]
+    fn pushes_what_waited_once_a_problem_is_mended_with_no_change_after() {
+        let dir = TempDir::new();
+        let (git, root, bare) = connected(&dir);
+        git.run(&root, &["checkout", "-q", "--detach"]).unwrap();
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_millis(100)));
+        wait_until("the detached HEAD", || backup.status().problem.is_some());
+        assert_eq!(on_github(&dir, &bare), 0);
+        // Mended in a terminal: Tir sees it by itself, and pushes.
+        git.run(&root, &["checkout", "-q", BRANCH]).unwrap();
+        wait_until("the push", || on_github(&dir, &bare) == 1);
+        wait_until("the status", || backup.status().state == State::BackedUp);
+        assert_eq!(backup.status().problem, None);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn records_nothing_of_a_repository_holding_more_than_tirs_files() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let root = library_in(&dir.0);
+        // A repository of the writer's own, as a home folder might be.
+        fs::write(root.join("taxes.ods"), "").unwrap();
+        elsewhere(&dir, &root, &["init", "-q"]);
+        let (_, backup, _) = start(&dir, git.clone(), timing(Duration::from_millis(100)));
+        wait_until("the problem", || backup.status().problem.is_some());
+        backup.changed();
+        backup.finish(|| {});
+        assert!(subjects(&git, &root).is_empty());
+        assert!(!root.join(".gitignore").exists());
+        assert!(
+            backup
+                .status()
+                .problem
+                .unwrap()
+                .starts_with("Tir backs up only a library of its own, and “taxes.ods”")
+        );
+    }
+
+    #[test]
+    fn gives_a_repository_without_one_tirs_gitignore() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let root = library_in(&dir.0);
+        elsewhere(&dir, &root, &["init", "-q", "--initial-branch", BRANCH]);
+        fs::write(root.join("Salt Line/drafts/First Draft.tir.9-0.tmp"), "{").unwrap();
+        fs::write(root.join("Salt Line/research.pdf"), "%PDF").unwrap();
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        backup.finish(|| {});
+        assert_eq!(
+            committed(&git, &root),
+            [
+                ".gitignore",
+                "Salt Line/drafts/First Draft.fountain",
+                "Salt Line/drafts/First Draft.tir",
+                "Salt Line/project.json",
+            ]
+        );
     }
 
     #[test]

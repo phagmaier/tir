@@ -9,9 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: 6.4, review of Stage 6 (the user asked for 6.1 to 6.4,
-  stopping at 6.5).
-- Next: 6.5, the user's check of Stage 6.
+- Active: 6.5, the user's check of Stage 6 (the user asked for 6.1 to
+  6.4, stopping at 6.5): waiting for the user's report.
+- Next: Stage 7, once 6.5 passes.
 - Blockers: none.
 
 ## How to work this plan
@@ -592,8 +592,8 @@ anything else. V1 is done when 7.4 is checked.
     none, ok, offline and paused panels and its connect dialog. The 2.3
     note's wording for a project not fully pushed is in the brief.
 
-- [ ] 6.4 — Review: Stage 6
-  - Status: in progress
+- [x] 6.4 — Review: Stage 6
+  - Status: done
   - Depends on: 6.3
   - Scope: everything changed since 5.4's recorded state.
   - Check (security and safety first):
@@ -609,6 +609,57 @@ anything else. V1 is done when 7.4 is checked.
       repositories.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-28, reviewed 2526989 plus uncommitted changes
+    (`ec7f6ea..HEAD`: the Stage 5 review fixes 18c0b37 and 1179b46, then
+    6.1–6.3) with the adopted code-review method, two independent
+    reviewers (Rust and safety; page and carry-over) and each finding
+    checked against the code. The checklist: git runs from argument
+    lists, the only command line Tir gives it being the constant ssh
+    command; Tir stores no login, and git's words in the status and log
+    now lose any login an address carries (`git::redact`); no code path
+    merges, rebases, resets or forces; git runs only in the library, and
+    the guard against a folder of the writer's other files now runs
+    before every commit, so a home folder already a repository is never
+    recorded (before, only before `git init`); a dirty tree, a detached
+    HEAD, a merge, a rejected push and a missing git behaved as specified,
+    but a squash merge and a popped stash's conflict would have been
+    committed over, and are now waited out (`Repository::Busy`,
+    `Conflicted`), and a mended problem now pushes what waited; offline
+    never blocks the page, and the three commands that wait for backup
+    moved off the async runtime's shared threads (`blocking`); tests use
+    only the `file` transport, and the sandbox now also keeps out the
+    writer's XDG git files and configuration passed down in the
+    environment; the privacy check refuses public (the API's answer),
+    missing and unreachable repositories (ls-remote with the machine's
+    login) and any answer it cannot read, in tests (real GitHub is a known
+    gap). Also fixed: no program may open a window asking for a login
+    (empty `GIT_ASKPASS`, findings "Git"); a Tir-made `.gitignore` is
+    written before `git init` and into a repository the writer made; a
+    save whose copy failed no longer made the next save look like one
+    over a pull (`Library::save`); one connect at a time, in the dialog
+    and in backup, so two checks cannot connect two repositories; the
+    connect dialog keeps Ctrl+O, Ctrl+S, F7 and F8; the indicator's icon
+    keeps a 16 px box so the bar no longer moves at each save; Back up
+    now and Resume keep focus in the panel while they wait; no draft
+    delete warning over the Projects screen; no stale first status after
+    an event; the panel stays shut while Tir closes. Carry-over: the
+    writer's own small-letter words are suggested as written (5.4's
+    change capitalised them as names), and spell check's chain of checks
+    no longer grows. `mise run check` passed: Biome, both type checks,
+    Vitest (748), `cargo fmt --check`, clippy and `cargo test` (91, new:
+    saving after a failed copy and never over a pull, a mended problem
+    pushing, a repository holding other files, a `.gitignore` for the
+    writer's repository, a squash merge and a stash conflict; the
+    detached-HEAD test waits instead of sleeping). In an isolated trial
+    with real keys and clicks, the connect dialog kept Ctrl+O (which
+    showed the Projects screen once the dialog had closed; F7 and F8 pass
+    the same guard), and during an
+    eight-second push Back up now left focus on the panel, a second Enter
+    opened nothing, and focus came back to Back up now; closing
+    committed and pushed. Deferred to Known gaps: closing behind a push
+    under way, the refused save's wording, push addresses the writer's
+    git configuration rewrites, unbounded waits for git's output, and
+    the panel in focus mode.
 
 - [ ] 6.5 — User check: Stage 6
   - Status: todo
@@ -822,3 +873,25 @@ that will close it.
   a sandbox git instead (6.3; findings, "GitHub"). The user's check (6.5)
   connects a private repository through it; connecting a public one
   would show its warning.
+- A push or check under way when Tir closes finishes before closing's
+  own record and push, within git's two-minute limit (architecture,
+  "Backup"): the window has gone, but Tir may take three minutes to exit
+  and a new Tir is refused until the instance lock goes after the record
+  (6.4).
+- A save refused because the draft changed on disk says to close Tir
+  and open it again, then, like any failed save, "Tir tries again in a
+  moment." (`main.ts` and `backup.ts`), though no retry can succeed
+  before reopening. The page cannot tell this refusal from other
+  failures, which reach it as text (6.4).
+- Connecting checks the address `origin` fetches from; a
+  `remote.origin.pushurl` or a `url.*.pushInsteadOf` rule in the
+  writer's own git configuration could send pushes elsewhere, unchecked
+  (6.4).
+- A git command past its time limit is killed, but its output is read
+  until the pipes close (`git::output`): a program git started that keeps
+  them open, such as an ssh connection left to share, holds backup's
+  thread until it exits. ssh's `ConnectTimeout=20` bounds the usual case
+  (6.4).
+- In focus mode the top bar fades while the backup panel under it stays
+  open (`app.css`'s focus rules apply to the bar, the panel lives in the
+  page's body); Esc closes it (6.4).

@@ -18,14 +18,23 @@ export interface Checked {
 export interface Checker {
   /** Each element's words the dictionary does not hold, in its order. */
   check(elements: readonly Checked[]): Promise<Word[][]>;
-  /** Spellings for `word`, the closest first, `extra` (such as the script's names) among them. */
-  suggest(word: string, extra: readonly string[]): Promise<string[]>;
+  /**
+   * Spellings for `word`, the closest first, among them `names`, the
+   * script's names in small letters, given a name's capitals, and `words`,
+   * the writer's own, as written.
+   */
+  suggest(word: string, names: readonly string[], words: readonly string[]): Promise<string[]>;
 }
 
 /** A request to the worker: elements to check, or a word to suggest spellings for. */
 export type Request =
   | { readonly id: number; readonly check: readonly Checked[] }
-  | { readonly id: number; readonly suggest: string; readonly extra: readonly string[] };
+  | {
+      readonly id: number;
+      readonly suggest: string;
+      readonly names: readonly string[];
+      readonly words: readonly string[];
+    };
 
 export interface Answer {
   readonly id: number;
@@ -49,7 +58,10 @@ export function workerChecker(
         words: request.check.map(({ type, text }) => misspelled(dictionary, type, text)),
       };
     }
-    return { id: request.id, suggestions: dictionary.suggest(request.suggest, request.extra) };
+    return {
+      id: request.id,
+      suggestions: dictionary.suggest(request.suggest, request.names, request.words),
+    };
   };
   const waiting = new Map<
     number,
@@ -87,7 +99,7 @@ export function workerChecker(
   };
   return {
     check: async (elements) => (await ask({ id: next++, check: elements })).words ?? [],
-    suggest: async (word, extra) =>
-      (await ask({ id: next++, suggest: word, extra })).suggestions ?? [],
+    suggest: async (word, names, words) =>
+      (await ask({ id: next++, suggest: word, names, words })).suggestions ?? [],
   };
 }
