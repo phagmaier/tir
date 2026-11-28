@@ -528,9 +528,12 @@ and trial runs use for a temporary directory.
 it back (`write.ts`); `inline.ts` handles emphasis and escapes, and
 `syntax.ts` holds the line rules both use. Reading reports what Tir does not
 keep (notes, boneyard, sections, synopses, scene numbers, unknown title page
-fields), each with the element it sat beside, for the import report. A
-paste reads with `titlePage: false`, so an opening `Key: value` block is
-script.
+fields), each with the element it sat in or beside, for the import report.
+It also discloses two simplifications that lose no text: blank lines beyond
+one between paragraphs, once, and emphasis on the title page. A note inside
+an element keeps its place there: the letters and digits before it on its
+source line, which Fountain's syntax never adds or removes. A paste reads
+with `titlePage: false`, so an opening `Key: value` block is script.
 
 The writer uses plain Fountain where inference reads an element back
 correctly, a forcing character (`!`, `.`, `>`, `@`) where needed, and
@@ -552,16 +555,32 @@ It rejects DOCTYPE declarations and limits nesting to 64 levels, retained
 records to 50,000 and import-report rows to 5,000.
 
 The reader puts typed paragraphs and emphasis into the model and uses
-the title page's alignment and conventional byline/source wording for
-its fixed fields. It reports notes, explicit scene numbers and revision
+the title page's alignment and conventional credit and source wording for
+its fixed fields. A credit is one line of "by" after words only credits
+use ("Written by", "An original screenplay by"), so titles and names
+ending in "by" stay out of it; a later credit stays among the authors in
+printed order. It reports notes, explicit scene numbers and revision
 sets used on the draft, not the unused defaults. Unknown paragraph types
-are reported; their text becomes Action. Document-level layout settings
-do not override Tir's layout engine.
+are reported; their text becomes Action.
+
+Tir keeps its fixed layout but discloses, once each, the file's layout and
+formatting it does not keep. It compares a paragraph's own settings, over
+the file's `ElementSettings` for its type, with `paragraphSpec` in
+`src/core/fdx/format.ts`, which the writer also declares: alignment
+(a paragraph's own centring is kept), indents and spacing, per element
+type. Text runs report fonts other than Courier, sizes other than 12 pt,
+colour, highlighting and styles Tir lacks; a run's own bold, italic and
+underline are kept, but a template's are not. The page reports size,
+margins, leading, sentence breaking, mores and continueds, and a header or
+footer that prints more than the page number. Title-page styling is
+reported, except capitals on the title.
 
 Tir's title-page labels win for their own fields; unlabelled fields are
-still read from the visible layout. The import report resolves an omitted
-item's body-element anchor to its first script page, without giving
-unanchored metadata a script-page number.
+still read from the visible layout. Each reported item carries its body
+element and, inside it, its offset; `leftOutPages` in
+`src/core/import-report.ts` gives the page of the line holding that offset,
+so a note late in an element that crosses a page gets the later page.
+Unanchored metadata gets no script-page number.
 
 Export Final Draft… in the draft menu serializes the draft on screen with
 `src/core/fdx/write.ts` and opens the native Save dialog via `export_fdx`.

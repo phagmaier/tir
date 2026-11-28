@@ -1,9 +1,6 @@
 import {
-  CONTINUED,
   ELEMENT_FORMATS,
-  FONT_SIZE_PT,
   LINES_PER_INCH,
-  MORE,
   NEXT_ON_RETURN,
   NEXT_ON_TAB,
   PAGE,
@@ -11,7 +8,17 @@ import {
   TITLE_PAGE,
 } from "../format.ts";
 import { type Element, type Script, STYLES, type TitlePage } from "../model.ts";
-import { STYLE_NAMES, type TitleField, TYPE_NAMES } from "./format.ts";
+import {
+  DIALOGUE_BREAKS,
+  FONT,
+  MARGINS,
+  PAGE_SIZE,
+  paragraphSpec,
+  SCENE_BREAKS,
+  STYLE_NAMES,
+  type TitleField,
+  TYPE_NAMES,
+} from "./format.ts";
 
 const XML_ENTITIES: Readonly<Record<string, string>> = {
   "&": "&amp;",
@@ -33,8 +40,12 @@ function escapeXml(text: string): string {
   return text.replace(/[&<>"'\r\n\t]/g, (character) => XML_ENTITIES[character] as string);
 }
 
-const POINTS_PER_INCH = 72;
-const LINE_PT = POINTS_PER_INCH / LINES_PER_INCH;
+function attributes(values: Readonly<Record<string, string>>): string {
+  return Object.entries(values)
+    .map(([name, value]) => `${name}="${escapeXml(value)}"`)
+    .join(" ");
+}
+
 const TYPE_ORDER = [
   "general",
   "sceneHeading",
@@ -46,32 +57,31 @@ const TYPE_ORDER = [
   "shot",
 ] as const;
 
-const FONT = `Font="Courier Final Draft" Size="${FONT_SIZE_PT}"`;
+const FONT_ATTRIBUTES = attributes(FONT);
 const SINGLE_SPACED = 'Leading="Regular" Spacing="1" StartsNewPage="No"';
 const elementSettings = TYPE_ORDER.map((type, shortcut) => {
-  const { align, capitals, firstIndent, left, right, spaceBefore } = ELEMENT_FORMATS[type];
   const tab = NEXT_ON_TAB[type];
   return `  <ElementSettings Type="${TYPE_NAMES[type]}">
-    <FontSpec ${FONT} Style="${capitals ? "AllCaps" : ""}"/>
-    <ParagraphSpec Alignment="${align === "right" ? "Right" : "Left"}" FirstIndent="${firstIndent.toFixed(2)}" LeftIndent="${left.toFixed(2)}" RightIndent="${right.toFixed(2)}" SpaceBefore="${spaceBefore * LINE_PT}" ${SINGLE_SPACED}/>
+    <FontSpec ${FONT_ATTRIBUTES} Style="${ELEMENT_FORMATS[type].capitals ? "AllCaps" : ""}"/>
+    <ParagraphSpec ${attributes(paragraphSpec(type))} StartsNewPage="No"/>
     <Behavior PaginateAs="${TYPE_NAMES[type === "shot" ? "sceneHeading" : type]}" ReturnKey="${TYPE_NAMES[NEXT_ON_RETURN[type]]}"${tab ? ` TabKey="${TYPE_NAMES[tab]}"` : ""} Shortcut="${shortcut}" WinShortcut="${shortcut}"/>
   </ElementSettings>`;
 }).join("\n");
 
-const pageLayout = `  <PageLayout TopMargin="${PAGE.topMarginIn * POINTS_PER_INCH}" BottomMargin="${PAGE.bottomMarginIn * POINTS_PER_INCH}" HeaderMargin="${PAGE.headerIn * POINTS_PER_INCH}" FooterMargin="36" DocumentLeading="Normal" BreakDialogueAndActionAtSentences="Yes" UsesSmartQuotes="Yes">
-    <PageSize Width="${PAGE.widthIn.toFixed(2)}" Height="${PAGE.heightIn.toFixed(2)}"/>
+const pageLayout = `  <PageLayout ${attributes(MARGINS)} DocumentLeading="Normal" BreakDialogueAndActionAtSentences="Yes" UsesSmartQuotes="Yes">
+    <PageSize ${attributes(PAGE_SIZE)}/>
   </PageLayout>`;
 
 const pageHeader = `  <HeaderAndFooter HeaderVisible="Yes" HeaderFirstPage="No" FooterVisible="No" FooterFirstPage="No" StartingPage="1">
     <Header>
-      <Paragraph Alignment="Left" FirstIndent="0.00" LeftIndent="1.25" RightIndent="-1.00" SpaceBefore="0" ${SINGLE_SPACED}><Text>&#9;</Text><Text>&#9;</Text><DynamicLabel Type="Page #" ${FONT}/><Text>${PAGINATION.numberSuffix}</Text><Tabstops><Tabstop Position="4.50" Type="Center"/><Tabstop Position="7.25" Type="Right"/></Tabstops></Paragraph>
+      <Paragraph Alignment="Left" FirstIndent="0.00" LeftIndent="1.25" RightIndent="-1.00" SpaceBefore="0" ${SINGLE_SPACED}><Text>&#9;</Text><Text>&#9;</Text><DynamicLabel Type="Page #" ${FONT_ATTRIBUTES}/><Text>${PAGINATION.numberSuffix}</Text><Tabstops><Tabstop Position="4.50" Type="Center"/><Tabstop Position="7.25" Type="Right"/></Tabstops></Paragraph>
     </Header>
     <Footer/>
   </HeaderAndFooter>`;
 const continueds = `  <MoresAndContinueds>
-    <FontSpec ${FONT} Style=""/>
-    <DialogueBreaks AutomaticCharacterContinueds="Yes" BottomOfPage="Yes" TopOfNext="Yes" DialogueBottom="${MORE}" DialogueTop="${escapeXml(CONTINUED.replace("’", "'"))}"/>
-    <SceneBreaks ContinuedNumber="No" SceneBottom="(CONTINUED)" SceneBottomOfPage="No" SceneTop="CONTINUED:" SceneTopOfNext="No"/>
+    <FontSpec ${FONT_ATTRIBUTES} Style=""/>
+    <DialogueBreaks ${attributes(DIALOGUE_BREAKS)}/>
+    <SceneBreaks ${attributes(SCENE_BREAKS)}/>
   </MoresAndContinueds>`;
 
 function textRun(text: string, style = "", field?: TitleField): string {

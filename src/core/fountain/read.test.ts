@@ -288,7 +288,7 @@ describe("title page", () => {
     "EXT. HARBOUR WALL - NIGHT",
   ].join("\n");
 
-  it("reads every field, multi-line values and emphasis-free text", () => {
+  it("reads every field, multi-line values and emphasis-free text, reporting the emphasis", () => {
     const read = readFountain(titlePage);
     expect(read.script.titlePage).toEqual({
       title: "SALT LINE\nA HARBOUR STORY",
@@ -301,6 +301,10 @@ describe("title page", () => {
     });
     expect(read.script.elements).toEqual([
       { type: "sceneHeading", text: "EXT. HARBOUR WALL - NIGHT" },
+    ]);
+    expect(read.leftOut).toEqual([
+      { kind: "formatting", text: "title page bold", at: null },
+      { kind: "formatting", text: "title page underline", at: null },
     ]);
   });
 
@@ -362,10 +366,26 @@ describe("punctuation", () => {
 });
 
 describe("left out: notes, boneyard, sections and synopses", () => {
-  it("removes an inline note and reports it at its element", () => {
+  it("removes an inline note and reports it where it sat in its element", () => {
     const read = readFountain("Rain.\n\nThe lamp [[check the bulb]] turns.");
     expect(read.script.elements[1]).toEqual({ type: "action", text: "The lamp turns." });
-    expect(read.leftOut).toEqual([{ kind: "note", text: "check the bulb", at: 1 }]);
+    expect(read.leftOut).toEqual([{ kind: "note", text: "check the bulb", at: 1, offset: 8 }]);
+  });
+
+  it("finds a note's place past emphasis, escapes and forcing syntax", () => {
+    // The forcing "!" and "@", the escape and the emphasis markers leave the text.
+    const read = readFountain(
+      "!THE \\**LAMP* turns, [[here]] slowly.\n\n@Kit\n_Now_, Ren. [[cue]]",
+    );
+    expect(read.script.elements.map(({ text }) => text)).toEqual([
+      "THE *LAMP turns, slowly.",
+      "Kit",
+      "Now, Ren.",
+    ]);
+    expect(read.leftOut).toEqual([
+      { kind: "note", text: "here", at: 0, offset: 15 },
+      { kind: "note", text: "cue", at: 2, offset: 8 },
+    ]);
   });
 
   it("keeps private-use text beside actual notes, emphasis and Tir type notes", () => {
@@ -373,7 +393,9 @@ describe("left out: notes, boneyard, sections and synopses", () => {
     expect(read.script.elements).toEqual([
       { type: "shot", text: "\uE000 \uE001turn", bold: [[2, 7]] },
     ]);
-    expect(read.leftOut).toEqual([{ kind: "note", text: "keep \uE000 and \uE001", at: 0 }]);
+    expect(read.leftOut).toEqual([
+      { kind: "note", text: "keep \uE000 and \uE001", at: 0, offset: 7 },
+    ]);
   });
 
   it("leaves notes without an associated body element unlocated", () => {
@@ -391,7 +413,8 @@ describe("left out: notes, boneyard, sections and synopses", () => {
       { type: "character", text: "KEEPER" },
       { type: "dialogue", text: "One flash.\nThen two." },
     ]);
-    expect(read.leftOut).toEqual([{ kind: "note", text: "louder?", at: 1 }]);
+    // It sat before the second line.
+    expect(read.leftOut).toEqual([{ kind: "note", text: "louder?", at: 1, offset: 11 }]);
   });
 
   it("removes a note across lines", () => {
@@ -426,9 +449,26 @@ describe("left out: notes, boneyard, sections and synopses", () => {
     ]);
   });
 
-  it("reports something after the last element at the last element", () => {
+  it("reports something after the last element at the end of the last element", () => {
     expect(readFountain("Rain.\n\nWind.\n\n[[end]]").leftOut).toEqual([
-      { kind: "note", text: "end", at: 1 },
+      { kind: "note", text: "end", at: 1, offset: 5 },
+    ]);
+  });
+});
+
+describe("spacing", () => {
+  it("reports blank lines beyond one between paragraphs once, at the element after them", () => {
+    const read = readFountain("Title: Rain\n\n\n\nRain.\n\n\nWind.\n\n\n\nSun.\n\n\n");
+    expect(read.script.elements.map(({ text }) => text)).toEqual(["Rain.", "Wind.", "Sun."]);
+    expect(read.leftOut).toEqual([{ kind: "layout", text: "extra blank lines", at: 1 }]);
+  });
+
+  it("does not count the blank lines around removed text or a page break", () => {
+    const source = "Rain.\n\n[[note]]\n\nWind.\n\n# Act Two\n\n= Later.\n\nSun.\n\n===\n\nMoon.";
+    expect(readFountain(source).leftOut.map(({ kind }) => kind)).toEqual([
+      "note",
+      "section",
+      "synopsis",
     ]);
   });
 });

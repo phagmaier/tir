@@ -9,12 +9,11 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
 
 ## Current status
 
-- Next ready: [7.3c — local import/FDX work](#task-7-3c). Also ready:
-  [7.3d — PDF fidelity](#task-7-3d) and
+- Next ready: [7.3d — PDF fidelity](#task-7-3d). Also ready:
   [7.3e — selection and keyboard access](#task-7-3e).
-  [7.3b](#task-7-3b) is done.
-- External evidence: [7.3a](#task-7-3a) is blocked; 7.3c can start but
-  cannot close without its separate [Final Draft check](#final-draft-evidence).
+  [7.3b](#task-7-3b) is done; [7.3c](#task-7-3c)'s local work is done.
+- External evidence: [7.3a](#task-7-3a) is blocked, and 7.3c waits on
+  its separate [Final Draft check](#final-draft-evidence).
 - Release gate: the [V1 review](#task-7-3) stays open until all five
   follow-ups are verified. Then run the [user writing check](#task-7-4).
 
@@ -141,8 +140,8 @@ V1 is done when [7.4](#task-7-4) passes.
     line warning. Tightened the toolbar's compact spacing. Fountain keeps
     literal private-use characters; FDX preserves unlabelled title-page
     fields beside Tir labels and bounds its parsed output. Import reports
-    show the first script page of the element holding an anchored omission,
-    not necessarily the omission's page. Both native imports cap input
+    gave the first script page of the element holding an anchored
+    omission; 7.3c gives the omission's own page. Both native imports cap input
     bytes. File publication is owner-only; a draft rename prepares both
     files before publication; Delete refuses a declared foreign project
     format; and startup refuses to write without an instance lock.
@@ -229,7 +228,8 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3c"></a>
 
 - [ ] 7.3c — Import accuracy and editable FDX exchange
-  - Status: ready for local work; external acceptance needs Final Draft.
+  - Status: verification pending (Final Draft opening and editing a Tir
+    export; local work done).
   - Depends on: [7.2](history.md#task-7-2), not on completing 7.3a.
   - Spec: [Scope](brief.md#scope) (FDX, Fountain and the import report).
   - Do: Keep titles and author names out of the credit field when they
@@ -245,6 +245,25 @@ V1 is done when [7.4](#task-7-4) passes.
     element types, emphasis, dual dialogue, explicit breaks and default
     settings. Record the receiving version and observations. Tir reading
     its own export and the Story Architect import check do not substitute.
+  - Evidence, local (2026-11-28, `5b2fc875c954257041ea2c8d68e0b6125c0e5fc3`
+    plus uncommitted changes): `mise run check` passed (Biome, both
+    TypeScript checks, 774 Vitest tests, rustfmt, clippy, 100 Rust tests).
+    New fixtures cover a two-line title ending in “By”, an author named
+    “Ren By”, a second credit kept among the authors, each kind of layout
+    and formatting disclosure, Final Draft's defaults written out in full
+    (nothing reported), Fountain title-page emphasis and extra blank lines,
+    note places through Fountain syntax, and, in both formats, a note late
+    in an action split across pages 1 and 2. The title, disclosure and
+    note-place tests failed against the readers at that revision. Three
+    public Final Draft files gave the rows [findings](findings.md#fdx-import-structure)
+    describes. In isolated development WebKitGTK, a native FDX import
+    reported “late note (on page 2)” from an element starting on page 1,
+    “Formatting: strikeout” and “Layout: page margins”; it read the title
+    “The Man Who / Stood By”, credit “Written by” and authors “Jo Vale /
+    Ren By”, and left the source's SHA-256 unchanged. Story Architect's
+    exporter writes margins that are not points, so its imports list page
+    margins ([findings](findings.md#story-architect)). Not done: the Final
+    Draft check.
 
 <a id="task-7-3d"></a>
 

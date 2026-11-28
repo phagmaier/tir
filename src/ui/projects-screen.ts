@@ -15,7 +15,7 @@
  * (zoom, focus mode) do nothing, and Esc closes the menu or dialog open,
  * else goes back.
  */
-import type { LeftOutKind } from "../core/import-report.ts";
+import { type LeftOutKind, leftOutPages } from "../core/import-report.ts";
 import { paginate } from "../core/paginate.ts";
 import { usesOf } from "../core/suggestions.ts";
 import { type BackupStatus, type Coverage, deletionNote } from "./backup.ts";
@@ -66,6 +66,8 @@ const LEFT_OUT: Record<LeftOutKind, string> = {
   scriptNote: "Script note",
   revision: "Revision marks (text kept)",
   elementType: "Element type (text kept as Action)",
+  layout: "Layout",
+  formatting: "Formatting",
 };
 
 const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -639,23 +641,16 @@ export class ProjectsScreen {
     report.append(summary);
 
     if (source.leftOut.length > 0) {
-      const elementPages = new Map<number, number>();
-      for (const page of pages) {
-        for (const { element, kind } of page.lines) {
-          if (kind === "element" && !elementPages.has(element)) {
-            elementPages.set(element, page.number);
-          }
-        }
-      }
+      const pageOf = leftOutPages(pages);
       const omissions = el("div", "import-omissions");
       const list = el("ul");
-      for (const { kind, text, at } of source.leftOut) {
-        const item = el("li");
-        item.append(el("b", "", LEFT_OUT[kind]));
-        if (text) item.append(": ", el("span", "import-omission-text", text));
-        const page = at === null ? undefined : elementPages.get(at);
-        if (page !== undefined) item.append(` (on page ${page})`);
-        list.append(item);
+      for (const item of source.leftOut) {
+        const li = el("li");
+        li.append(el("b", "", LEFT_OUT[item.kind]));
+        if (item.text) li.append(": ", el("span", "import-omission-text", item.text));
+        const page = pageOf(item);
+        if (page !== null) li.append(` (on page ${page})`);
+        list.append(li);
       }
       omissions.append(
         el("div", "import-omission-heading", "Left out, because Tir doesn't keep them:"),

@@ -2,11 +2,11 @@
  * Reads Fountain 1.1 (fountain.io/syntax) into the model. What Tir does not
  * keep (notes, boneyard, sections, synopses, scene numbers and unknown title
  * page fields) is listed in `leftOut` for the import report (brief, "Import
- * report"), each with the element it sat beside so the report can give its
- * page. Tir's own type notes, `[[tir:shot]]`, set the type of the element
+ * report"), each with the element and place it sat at so the report can give
+ * its page. Tir's own type notes, `[[tir:shot]]`, set the type of the element
  * they open (see write.ts).
  *
- * Two simplifications lose no text, so the report omits them: extra blank
+ * The report also lists two simplifications that lose no text: extra blank
  * lines between paragraphs collapse into one, because Final Draft has no
  * blank line that is not an element; and emphasis on the title page is
  * dropped, because Tir sets the title page in its own fixed style.
@@ -42,6 +42,13 @@ import {
 interface Removed {
   readonly kind: LeftOutKind;
   readonly text: string;
+  /**
+   * Letters and digits before it on its line. Fountain's syntax adds and
+   * removes none, so they find the same place in the element's text.
+   */
+  readonly column?: number;
+  /** Where it sat in its element's text, once the element is built. */
+  offset?: number;
 }
 
 interface Line {
@@ -49,8 +56,9 @@ interface Line {
   /** A Tir type note on this line. */
   readonly marker: ElementType | undefined;
   removed: Removed[];
-  /** The element this line became part of. */
+  /** The element this line became part of, and where the line starts in its text. */
   element?: number;
+  offset?: number;
 }
 
 /** An element being built: its type, flags and raw lines. */
@@ -84,7 +92,7 @@ export function readFountain(source: string, options: ReadOptions = {}): ScriptR
   let body = lines;
   if (options.titlePage !== false && isTitlePage(titleLines)) {
     for (let i = 0; i < start; i++) {
-      for (const item of lines[i]?.removed ?? []) leftOut.push({ ...item, at: null });
+      for (const item of lines[i]?.removed ?? []) leftOut.push(unlocated(item));
     }
     titlePage = readTitlePage(titleLines, leftOut);
     body = lines.slice(titleEnd);
@@ -92,8 +100,30 @@ export function readFountain(source: string, options: ReadOptions = {}): ScriptR
 
   const kept = removeLineSyntax(body);
   const elements = buildElements(kept);
-  collectLeftOut(kept, elements.length, leftOut);
+  collectLeftOut(kept, elements, leftOut);
   return { script: { titlePage, elements }, leftOut };
+}
+
+const unlocated = ({ kind, text }: Removed): LeftOut => ({ kind, text, at: null });
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+function wordChars(text: string): number {
+  let count = 0;
+  for (const char of text) if (WORD_CHAR.test(char)) count++;
+  return count;
+}
+
+/** The offset just after the `count`th letter or digit, or the end of a shorter text. */
+function afterWordChars(text: string, count: number): number {
+  if (count === 0) return 0;
+  let seen = 0;
+  let offset = 0;
+  for (const char of text) {
+    offset += char.length;
+    if (WORD_CHAR.test(char) && ++seen === count) return offset;
+  }
+  return text.length;
 }
 
 /** Splits lines and tracks notes as metadata, not as reserved characters in the text. */
@@ -134,7 +164,10 @@ function splitLines(source: string): Line[] {
         const inside = text.slice(i + 2, end);
         const type = boneyard ? null : markerType(inside);
         if (type) marker ??= type;
-        else removed.push({ kind: boneyard ? "boneyard" : "note", text: inside.trim() });
+        else {
+          const column = wordChars(cleaned) + wordChars(text.slice(segmentStart, i));
+          removed.push({ kind: boneyard ? "boneyard" : "note", text: inside.trim(), column });
+        }
         removedSyntax = true;
 
         // Remove one space after an opening run of omissions, or before each
@@ -218,13 +251,19 @@ function isTitlePage(block: readonly Line[]): boolean {
 
 function readTitlePage(block: readonly Line[], leftOut: LeftOut[]): TitlePage {
   const values = new Map<keyof TitlePage, string[]>();
+  const emphasis = new Set<Style>();
+  const plain = (value: string) => {
+    const parsed = parseInline(value);
+    for (const style of STYLES) if (parsed[style].length > 0) emphasis.add(style);
+    return parsed.text;
+  };
   let current: string[] | null = null;
   let shown = false;
   for (const line of block) {
-    for (const item of line.removed) leftOut.push({ ...item, at: null });
+    for (const item of line.removed) leftOut.push(unlocated(item));
     const keyed = titleKey(line);
     if (!keyed) {
-      current?.push(parseInline(line.text.trim()).text);
+      current?.push(plain(line.text.trim()));
       continue;
     }
     const key = normaliseKey(keyed.key);
@@ -238,7 +277,11 @@ function readTitlePage(block: readonly Line[], leftOut: LeftOut[]): TitlePage {
     current = values.get(field) ?? [];
     values.set(field, current);
     const value = keyed.value.trim();
-    if (value) current.push(parseInline(value).text);
+    if (value) current.push(plain(value));
+  }
+  for (const style of STYLES) {
+    if (emphasis.has(style))
+      leftOut.push({ kind: "formatting", text: `title page ${style}`, at: null });
   }
   const text = (field: keyof TitlePage) => (values.get(field) ?? []).join("\n");
   return {
@@ -272,10 +315,15 @@ function removeLineSyntax(lines: readonly Line[]): Line[] {
   return kept;
 }
 
+const EXTRA_BLANK_LINES = "extra blank lines";
+
 function buildElements(lines: readonly Line[]): Element[] {
   const drafts: Draft[] = [];
   let pageBreak = false;
   let paragraph: Line[] = [];
+  // Blank lines since the last paragraph; extra ones are reported once.
+  let blanks = 0;
+  let spaced = false;
   const flush = () => {
     if (paragraph.length === 0) return;
     const made = classify(paragraph);
@@ -288,13 +336,21 @@ function buildElements(lines: readonly Line[]): Element[] {
     if (line.marker === undefined && isPageBreak(line.text)) {
       flush();
       pageBreak = true;
+      blanks = 0;
     } else if (!isBlank(line)) {
+      if (blanks > 1 && drafts.length > 0 && !spaced) {
+        line.removed.push({ kind: "layout", text: EXTRA_BLANK_LINES });
+        spaced = true;
+      }
+      blanks = 0;
       paragraph.push(line);
     } else if (paragraph.length > 0 && line.text.length >= 2 && continues(lines[i + 1])) {
       // Two spaces keep an empty line inside an element.
       paragraph.push(line);
     } else {
       flush();
+      // A blank line carrying omissions follows a paragraph that was removed.
+      blanks = line.removed.length > 0 ? 1 : blanks + 1;
     }
   });
   flush();
@@ -410,12 +466,17 @@ function finish(draft: Draft, index: number): Element {
   let text = "";
   const spans: Record<Style, Span[]> = { bold: [], italic: [], underline: [] };
   draft.lines.forEach(({ line, text: raw, lyric }, i) => {
-    line.element = index;
     if (i > 0) text += "\n";
     // Action keeps its indentation; other elements do not (Fountain, "Indenting").
     const trimmed = draft.type === "action" && !draft.centred ? raw.trimEnd() : raw.trim();
     const parsed = parseInline(trimmed);
     const offset = text.length;
+    line.element = index;
+    line.offset = offset;
+    for (const item of line.removed) {
+      if (item.column !== undefined)
+        item.offset = offset + afterWordChars(parsed.text, item.column);
+    }
     for (const style of STYLES) {
       for (const [start, end] of parsed[style]) spans[style].push([offset + start, offset + end]);
     }
@@ -435,15 +496,30 @@ function finish(draft: Draft, index: number): Element {
   return element;
 }
 
-/** Gives each left-out item the element it sat on or before. */
-function collectLeftOut(lines: readonly Line[], count: number, leftOut: LeftOut[]): void {
+/** Gives each left-out item the element and place it sat at, or before. */
+function collectLeftOut(
+  lines: readonly Line[],
+  elements: readonly Element[],
+  leftOut: LeftOut[],
+): void {
+  const located = ({ kind, text }: Removed, at: number, offset: number): LeftOut =>
+    offset > 0 ? { kind, text, at, offset } : { kind, text, at };
   let pending: Removed[] = [];
   for (const line of lines) {
-    pending.push(...line.removed);
-    if (line.element !== undefined) {
-      for (const item of pending) leftOut.push({ ...item, at: line.element });
-      pending = [];
+    if (line.element === undefined) {
+      pending.push(...line.removed);
+      continue;
     }
+    const start = line.offset ?? 0;
+    for (const item of pending) leftOut.push(located(item, line.element, start));
+    for (const item of line.removed) {
+      leftOut.push(located(item, line.element, item.offset ?? start));
+    }
+    pending = [];
   }
-  for (const item of pending) leftOut.push({ ...item, at: count === 0 ? null : count - 1 });
+  const last = elements.length - 1;
+  for (const item of pending) {
+    const end = elements[last]?.text.length;
+    leftOut.push(end === undefined ? unlocated(item) : located(item, last, end));
+  }
 }

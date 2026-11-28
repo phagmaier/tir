@@ -55,7 +55,10 @@ V1 must have:
   frame; the theme changes only the page: dark paper in the dark theme,
   white paper in the light theme. See [Look](#look).
 - **Import report**: when an imported file holds something Tir does not
-  keep, such as Fountain notes, Tir lists what it left out.
+  keep, such as Fountain notes, Tir lists what it left out. *(Agent-selected,
+  task 7.3c: it also lists, once each, the file's layout and formatting
+  that Tir sets its own way, such as margins, indents, fonts and
+  highlighting, and gives a note the page it sits on.)*
 - **Fountain import and export.**
 - **Final Draft (`.fdx`) import and export.** Submissions go out as PDF;
   `.fdx` is for people who need to edit or produce the script, and it is

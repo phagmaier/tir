@@ -154,12 +154,154 @@ describe("Final Draft import", () => {
   it("reports lost metadata without reporting unused revision sets or dropping revised text", () => {
     expect(readFdx(finalDraft).leftOut).toEqual([
       { kind: "sceneNumber", text: "7A", at: 0 },
-      { kind: "revision", text: "Pink", at: 1 },
-      { kind: "scriptNote", text: "Check the tide.\nAsk Jo.", at: 1 },
+      // Both sit inside "A 🐟 slips & dives": the revised run, then the note after it.
+      { kind: "revision", text: "Pink", at: 1, offset: 5 },
+      { kind: "scriptNote", text: "Check the tide.\nAsk Jo.", at: 1, offset: 10 },
       { kind: "elementType", text: "Outline 1", at: 10 },
+      { kind: "formatting", text: "title page underline", at: null },
       { kind: "revision", text: "Revision 3", at: null },
       { kind: "scriptNote", text: "Read aloud.", at: null },
     ]);
+  });
+
+  describe("a title page without Tir's labels", () => {
+    const page = (...rows: string[]) =>
+      readFdx(
+        script(
+          "",
+          `<TitlePage><Content>${rows
+            .map((row) =>
+              row
+                ? `<Paragraph Alignment="Center"><Text>${row}</Text></Paragraph>`
+                : '<Paragraph Alignment="Center"/>',
+            )
+            .join("")}</Content></TitlePage>`,
+        ),
+      ).script.titlePage;
+
+    it("keeps a title and names ending in “by” out of the credit", () => {
+      expect(
+        page(
+          "The Man Who",
+          "Stood By",
+          "",
+          "Written by",
+          "",
+          "Jo Vale",
+          "Ren By",
+          "",
+          "Story by",
+          "Kit Moss",
+          "",
+          "Based on the song by",
+          "Ash Lee",
+        ),
+      ).toMatchObject({
+        title: "The Man Who\nStood By",
+        credit: "Written by",
+        // A second credit stays in printed order among the authors.
+        authors: "Jo Vale\nRen By\nStory by\nKit Moss",
+        source: "Based on the song by\nAsh Lee",
+      });
+    });
+
+    it.each([
+      [["Stand By", "Written by", "Jo Vale"], "Stand By", "Written by", "Jo Vale"],
+      [["Passing By", "", "Jo By"], "Passing By", "", "Jo By"],
+      [
+        ["Neap", "", "An original screenplay by", "", "Jo Vale"],
+        "Neap",
+        "An original screenplay by",
+        "Jo Vale",
+      ],
+    ])("reads %j as its title, credit and authors", (rows, title, credit, authors) => {
+      expect(page(...rows)).toMatchObject({ title, credit, authors });
+    });
+  });
+
+  it("discloses each kind of layout and formatting Tir does not keep, once, where it first appears", () => {
+    const source = script(
+      `<Paragraph Type="Scene Heading"><Text>INT. PUMP HOUSE - NIGHT</Text></Paragraph>
+      <Paragraph Type="Shot"><Text>The gauge</Text></Paragraph>
+      <Paragraph Type="Action" Alignment="Right"><Text>Water rises.</Text></Paragraph>
+      <Paragraph Type="Action" Alignment="Center" LeftIndent="1.50"><Text Style="Bold+Italic">Kept.</Text></Paragraph>
+      <Paragraph Type="Action" LeftIndent="2.00">
+        <Text>Jo </Text><Text Font="Arial" Size="14" Color="#FFFF00000000" Style="Strikeout">wades</Text><Text Style="Strikeout"> in.</Text>
+      </Paragraph>
+      <Paragraph Type="Character"><Text Style="AllCaps">JO</Text></Paragraph>
+      <Paragraph Type="Transition" Alignment="Right"><Text>CUT TO:</Text></Paragraph>`,
+      `<ElementSettings Type="Scene Heading"><FontSpec Style="Bold+AllCaps"/></ElementSettings>
+      <ElementSettings Type="Shot">
+        <FontSpec Background="#8270FFFF04E0" Style="AllCaps"/><ParagraphSpec Alignment="Right"/>
+      </ElementSettings>
+      <PageLayout TopMargin="90" BottomMargin="72" HeaderMargin="36" FooterMargin="36" DocumentLeading="Tight" BreakDialogueAndActionAtSentences="No">
+        <PageSize Width="8.27" Height="11.69"/>
+      </PageLayout>
+      <MoresAndContinueds><DialogueBreaks DialogueTop="(cont'd)"/></MoresAndContinueds>
+      <HeaderAndFooter><Header><Paragraph><Text>Neap</Text><DynamicLabel Type="Page #"/></Paragraph></Header></HeaderAndFooter>`,
+    );
+    expect(readFdx(source).leftOut).toEqual([
+      { kind: "formatting", text: "bold", at: 0 },
+      { kind: "layout", text: "Shot alignment", at: 1 },
+      { kind: "formatting", text: "highlighting", at: 1 },
+      { kind: "layout", text: "Action alignment", at: 2 },
+      { kind: "layout", text: "Action indents", at: 4 },
+      { kind: "formatting", text: "font Arial", at: 4, offset: 3 },
+      { kind: "formatting", text: "14 pt type", at: 4, offset: 3 },
+      { kind: "formatting", text: "coloured text", at: 4, offset: 3 },
+      { kind: "formatting", text: "strikeout", at: 4, offset: 3 },
+      { kind: "layout", text: "page size", at: null },
+      { kind: "layout", text: "page margins", at: null },
+      { kind: "layout", text: "line spacing", at: null },
+      { kind: "layout", text: "page breaks within sentences", at: null },
+      { kind: "layout", text: "mores and continueds", at: null },
+      { kind: "layout", text: "header and footer", at: null },
+    ]);
+  });
+
+  it("discloses nothing for Final Draft's defaults written out in full", () => {
+    const run =
+      'AdornmentStyle="0" Background="#FFFFFFFFFFFF" Color="#000000000000" Font="Courier Final Draft" Size="12"';
+    const spec = (type: string, left: string, right: string, before: string, extra = "") =>
+      `<ElementSettings Type="${type}"><FontSpec ${run} Style="${extra}"/><ParagraphSpec Alignment="${type === "Transition" ? "Right" : "Left"}" FirstIndent="${type === "Parenthetical" ? "-0.10" : "0.00"}" Leading="Regular" LeftIndent="${left}" RightIndent="${right}" SpaceBefore="${before}" Spacing="1" StartsNewPage="No"/></ElementSettings>`;
+    const source = script(
+      `<Paragraph Type="Scene Heading"><Text ${run} Style="AllCaps">EXT. QUAY - DAWN</Text></Paragraph>
+      <Paragraph Type="Action" Alignment="Left" FirstIndent="0.00" Leading="Regular" LeftIndent="1.50" RightIndent="7.50" SpaceBefore="12" Spacing="1" StartsNewPage="Yes"><Text ${run} Style="">The tide is out.</Text></Paragraph>
+      <Paragraph Type="Character"><Text>KIT</Text></Paragraph>
+      <Paragraph Type="Parenthetical"><Text>(quietly)</Text></Paragraph>
+      <Paragraph Type="Dialogue"><Text ${run} Style="">Late again.</Text></Paragraph>
+      <Paragraph Type="Transition"><Text>CUT TO:</Text></Paragraph>
+      <Paragraph Type="Shot"><Text>THE BUOY</Text></Paragraph>
+      <Paragraph Type="General"><Text>End.</Text></Paragraph>`,
+      `${[
+        spec("General", "1.50", "7.50", "0"),
+        spec("Scene Heading", "1.50", "7.50", "24", "AllCaps"),
+        spec("Action", "1.50", "7.50", "12"),
+        spec("Character", "3.50", "7.25", "12", "AllCaps"),
+        spec("Parenthetical", "3.00", "5.50", "0"),
+        spec("Dialogue", "2.50", "6.00", "0"),
+        spec("Transition", "5.50", "7.10", "12", "AllCaps"),
+        spec("Shot", "1.50", "7.50", "24", "AllCaps"),
+      ].join("")}
+      <PageLayout BackgroundColor="#FFFFFFFFFFFF" BottomMargin="72" BreakDialogueAndActionAtSentences="Yes" DocumentLeading="Normal" FooterMargin="36" HeaderMargin="36" TopMargin="72" UsesSmartQuotes="Yes">
+        <PageSize Height="11.00" Width="8.50"/>
+      </PageLayout>
+      <MoresAndContinueds>
+        <DialogueBreaks AutomaticCharacterContinueds="Yes" BottomOfPage="Yes" DialogueBottom="(MORE)" DialogueTop="(CONT'D)" TopOfNext="Yes"/>
+        <SceneBreaks ContinuedNumber="No" SceneBottom="(CONTINUED)" SceneBottomOfPage="No" SceneTop="CONTINUED:" SceneTopOfNext="No"/>
+      </MoresAndContinueds>
+      <HeaderAndFooter FooterFirstPage="Yes" FooterVisible="No" HeaderFirstPage="No" HeaderVisible="Yes" StartingPage="1">
+        <Header><Paragraph><Text ${run}>&#9;</Text><DynamicLabel Type="Collated Revisions"/><Text>&#9;</Text><DynamicLabel Type="Page #"/><Text>.</Text></Paragraph></Header>
+        <Footer><Paragraph><Text>Footer not shown</Text></Paragraph></Footer>
+      </HeaderAndFooter>
+      <TitlePage><Content>
+        <Paragraph Alignment="Center"><Text ${run} Style="AllCaps">Neap</Text></Paragraph>
+        <Paragraph Alignment="Center"/>
+        <Paragraph Alignment="Center"><Text ${run} Style="">Written by</Text></Paragraph>
+        <Paragraph Alignment="Center"><Text ${run} Style="">Kit Moss</Text></Paragraph>
+      </Content></TitlePage>`,
+    );
+    expect(readFdx(source).leftOut).toEqual([]);
   });
 
   it("reports notes and revisions on the paragraph wrapping a dual pair and on the title page", () => {

@@ -73,6 +73,17 @@ of 51 Final Draft files](https://github.com/NoJuanNobody/scriptcraft/blob/fce1d3
 [Story Architect's FDX exporter](https://github.com/story-apps/starc/blob/1caa60f03b2f907ceaf3a9772b9f1596151eae10/src/corelib/business_layer/export/screenplay/screenplay_fdx_exporter.cpp).
 No script text was copied into Tir's fixtures.
 
+Saved files carry their own layout, and it often differs from the default
+format above: bold scene headings, right-aligned and highlighted shots,
+other indents, 90 and 62 pt margins, `(cont'd)`, a header with the title
+and the date in the footer. Final Draft writes runs either bare or with all
+their attributes; with them, a cue run says `Style="AllCaps"` and an action
+run `Style=""`, so a run's `Style` appears to replace its element's
+`FontSpec` style rather than add to it (not checked in Final Draft). Both
+Final Draft title pages set the title `Underline+AllCaps`. Evidence:
+`Maginvox.fdx`, `sample-01.fdx` and `unclebob/ScriptSchedule/script.fdx`,
+read 2026-11-28.
+
 ## Final Draft's keys
 
 - **Return** at the end of a paragraph starts a new one by the table's
@@ -823,6 +834,16 @@ Fountain and PDF; it imports Celtx, DOCX, FDX, Fountain, KIT Scenarist, PDF
 and Trelby. The user's existing scripts can therefore reach Tir as FDX or
 Fountain. Evidence: `src/corelib/business_layer/export/screenplay/` and
 `.../import/screenplay/` in the repository tree, read 2026-11-26.
+
+Its FDX exporter writes no `ElementSettings` and gives every paragraph an
+`Alignment`. It writes `PageLayout` margins as the template's margins in
+inches times 76, then two-thirds of that for the top and bottom and a third
+for the header and footer, not in points: a one-inch top margin arrives as
+about 51 pt, so Tir's import report lists page margins for its files.
+General paragraphs, the title page's included, also get indents measured
+from Story Architect's text area and a space before in inches. Evidence:
+[the exporter](https://github.com/story-apps/starc/blob/1caa60f03b2f907ceaf3a9772b9f1596151eae10/src/corelib/business_layer/export/screenplay/screenplay_fdx_exporter.cpp)
+(`writeLine`, `writeSettings`), read 2026-11-28.
 
 ## Rejected designs
 
