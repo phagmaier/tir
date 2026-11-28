@@ -474,8 +474,12 @@ with public Final Draft PDFs. A PDF shows printed positions, not the
 original element boundaries or authored breaks, so those comparisons
 are diagnostic. These copyrighted PDFs stay out of version control.
 [Tir editor/PDF agreement](history.md#task-3-2) is a separate check.
-Exact Final Draft parity still needs the [controlled comparison](plan.md#task-7-3a)
-using matched original FDX and PDF files.
+Tir is not tested in Final Draft itself: the user has no copy and chose to
+ship V1 with parity implemented but unverified *(the user's choice,
+2026-11-28: "mark it as not tested on final draft but that it's
+implemented and should work")*. The [controlled comparison](plan.md#final-draft-evidence)
+with matched original FDX and PDF files would verify it if access appears.
+The same applies to Final Draft opening Tir's `.fdx` export.
 
 ## Drafts
 

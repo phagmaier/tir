@@ -12,10 +12,11 @@ Completed Stages 0–6 and tasks 7.1–7.2 are in [history.md](history.md).
 - Next ready: [7.3d — PDF fidelity](#task-7-3d). Also ready:
   [7.3e — selection and keyboard access](#task-7-3e).
   [7.3b](#task-7-3b) is done; [7.3c](#task-7-3c)'s local work is done.
-- External evidence: [7.3a](#task-7-3a) is blocked, and 7.3c waits on
-  its separate [Final Draft check](#final-draft-evidence).
-- Release gate: the [V1 review](#task-7-3) stays open until all five
-  follow-ups are verified. Then run the [user writing check](#task-7-4).
+- Not tested in Final Draft: the user has no copy and deferred
+  [7.3a](#task-7-3a) and 7.3c's [Final Draft check](#final-draft-evidence)
+  (2026-11-28). Both are under [Known gaps](#known-gaps).
+- Release gate: the [V1 review](#task-7-3) stays open until 7.3d and 7.3e
+  are verified. Then run the [user writing check](#task-7-4).
 
 ## How to work this plan
 
@@ -72,9 +73,10 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3"></a>
 
 - [ ] 7.3 — Review: V1
-  - Status: verification pending (7.3a–7.3e and disposition of remaining gaps)
-  - Depends on: [7.2](history.md#task-7-2) and all five follow-ups
-    (7.3a–7.3e). None of the follow-ups waits for this review to close.
+  - Status: verification pending (7.3d, 7.3e and disposition of remaining gaps)
+  - Depends on: [7.2](history.md#task-7-2), 7.3b, 7.3d and 7.3e. The
+    user deferred the Final Draft checks of 7.3a and 7.3c (Known gaps).
+    None of the follow-ups waits for this review to close.
   - Scope: the whole repository.
   - Check:
     - Trace every item in the brief's "V1 must have" list to working,
@@ -86,9 +88,9 @@ V1 is done when [7.4](#task-7-4) passes.
       exporting.
     - Documents describe the present: architecture.md matches the code,
       and findings.md and Known gaps are current.
-  - Done when: the five follow-ups are verified, remaining findings have
-    explicit deferrals under Known gaps with the user's agreement, and
-    `mise run check` passes on the resulting V1.
+  - Done when: 7.3b, 7.3d and 7.3e are verified, the Final Draft checks
+    and remaining findings have explicit deferrals under Known gaps with
+    the user's agreement, and `mise run check` passes on the resulting V1.
   - Scope reviewed: `920cc30c096e5567f72ee9a2b328a951937ec0ca` plus
     uncommitted changes, using the adopted review method and independent
     product and data-safety reviews. V1 trace:
@@ -163,7 +165,12 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3a"></a>
 
 - [ ] 7.3a — Final Draft page parity
-  - Status: blocked (matched Final Draft reference files needed)
+  - Status: deferred by the user: implemented, not tested in Final Draft.
+    On 2026-11-28 the user, who has no copy of Final Draft, said: “Just
+    mark it as not tested on final draft but that it's implemented and
+    should work i guess”. Tir follows Final Draft's documented default
+    format, calibrated against Final Draft PDFs ([Calibration](findings.md#calibration));
+    exact parity is unverified. Run the steps below if access appears.
   - Depends on: [7.2](history.md#task-7-2) and the matched references
     described under [Final Draft evidence](#final-draft-evidence).
   - Spec: [Page parity](brief.md#page-parity). Target the default US Letter
@@ -228,8 +235,9 @@ V1 is done when [7.4](#task-7-4) passes.
 <a id="task-7-3c"></a>
 
 - [ ] 7.3c — Import accuracy and editable FDX exchange
-  - Status: verification pending (Final Draft opening and editing a Tir
-    export; local work done).
+  - Status: local work done; the Final Draft check is deferred by the user
+    (2026-11-28, as for [7.3a](#task-7-3a)): implemented, not tested in
+    Final Draft.
   - Depends on: [7.2](history.md#task-7-2), not on completing 7.3a.
   - Spec: [Scope](brief.md#scope) (FDX, Fountain and the import report).
   - Do: Keep titles and author names out of the credit field when they
@@ -328,14 +336,23 @@ Use only original test scripts and record the version for each check:
   FDX in Final Draft and inspect the fields and settings named in the task.
   These observations do not verify page parity.
 
-Neither check can substitute for the other. If access is unavailable,
-keep the affected acceptance criteria open; proceed with ready local work.
+Neither check can substitute for the other. Both are deferred by the user
+(2026-11-28, no copy of Final Draft); run them if access appears.
 
 ## Known gaps
 
-This list holds limitations not owned by an open task. V1 blockers and
-their acceptance criteria are on [7.3a–7.3e](#task-7-3a).
+This list holds limitations not owned by an open task. Remaining V1
+blockers and their acceptance criteria are on [7.3d–7.3e](#task-7-3d).
 
+- Not tested in Final Draft (the user's choice, 2026-11-28; see
+  [7.3a](#task-7-3a)). Page parity follows Final Draft's documented
+  default format and the calibration against its PDFs, but Final Draft
+  has never paginated a matched script for comparison: automatic
+  `(CONT'D)`, dual dialogue split across pages and some borderline wraps
+  are unverified. Tir's FDX export follows the structure of files Final
+  Draft saved, and Tir reads it back exactly, but Final Draft has not
+  opened or edited one. Defer; run [Final Draft evidence](#final-draft-evidence)
+  if access appears.
 - Fountain round trips have whitespace and emphasis losses, including
   tabs and empty first or last element lines (0.3; full list in
   `src/core/fountain/write.ts`). Defer: the `.tir` draft is authoritative;
