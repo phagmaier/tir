@@ -112,6 +112,20 @@ describe("spell check's squiggles", () => {
       misspelled(dictionary, node.attrs.type as ElementType, node.textContent);
     expect(drawSquiggles(state, flagged, learnedWords(state)).tr).toBeNull();
   });
+
+  it("drops the squiggles of a word just added, even in an element no check has answered for", () => {
+    const { state } = checked(stateOf([action("Halcyn waits.|"), dialogue("Teh Halcyn.")]));
+    expect(squiggled(state)).toEqual(["Halcyn", "Teh", "Halcyn"]);
+    // Typing at the first element's end leaves it unchecked until the next pause.
+    const edited = apply(state, state.tr.insertText("!", state.doc.child(0).nodeSize - 1));
+    const first = edited.doc.child(0);
+    const flagged = (node: Node) =>
+      node === first
+        ? undefined
+        : misspelled(dictionary, node.attrs.type as ElementType, node.textContent);
+    const { tr } = drawSquiggles(edited, flagged, new Set(["halcyn"]));
+    expect(squiggled(tr ? apply(edited, tr) : edited)).toEqual(["Teh"]);
+  });
 });
 
 describe("the spelling menu", () => {

@@ -450,6 +450,13 @@ anything else. V1 is done when 7.4 is checked.
     passed (736 Vitest and 42 Rust tests, both type checks, Biome,
     rustfmt, clippy). Not checked: a real pointer press on a mark, the
     laptop, a release build (7.1).
+  - Follow-up, 2026-11-27: the user left spell check's remaining gap to
+    the agent. After "Add to dictionary", an element edited but not yet
+    checked kept the word's squiggle until its check answered, and for
+    good once spell check had turned itself off; `drawSquiggles` now
+    drops an unchecked element's squiggles for words now known. A new
+    spelling test, failing without the fix, covers it; that file, Biome
+    and the type check passed.
 
 - [x] 5.5 — User check: Stage 5
   - Status: done
@@ -752,6 +759,3 @@ that will close it.
   automated tests, since Vitest here has no DOM: the find bar, the marks,
   F8, and spell check's scheduling, F7 and menu are checked in the app
   only (5.1–5.4). Their commands and states are tested.
-- After "Add to dictionary", an element edited but not yet checked keeps
-  its squiggle until its check lands, and keeps it for good once spell
-  check has turned itself off after a failure (5.4 review).

@@ -218,7 +218,8 @@ export interface Place {
 /**
  * Draws the squiggles for `state`: under each word `flagged` gives for an
  * element that `known` does not accept, but the word the caret ends, which
- * is `held`. An element not checked yet keeps the squiggles it has. The
+ * is `held`. An element not checked yet keeps the squiggles it has, but for
+ * a word `known` now accepts, as one just added to the dictionary. The
  * transaction is null when the squiggles would be those already drawn.
  */
 export function drawSquiggles(
@@ -234,7 +235,9 @@ export function drawSquiggles(
   doc.forEach((node, pos) => {
     const words = flagged(node);
     if (!words) {
-      squiggles.push(...drawn.find(pos, pos + node.nodeSize));
+      for (const squiggle of drawn.find(pos, pos + node.nodeSize)) {
+        if (!accepts(known, squiggle.spec.word)) squiggles.push(squiggle);
+      }
       return;
     }
     for (const word of words) {
