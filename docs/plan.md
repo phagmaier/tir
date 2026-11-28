@@ -61,9 +61,10 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 | [6. GitHub backup](#stage-6-github-backup) | Automatic backup to a private repository | 6.5 |
 | [7. Install and finish](#stage-7-install-and-finish) | Tir installed on NixOS; a final review of V1 | 7.4 |
 
-Risk comes first. Page parity and an editor that shows the engine's
-breaks could each sink the design, so Stages 0 and 1 prove them before
-anything else. V1 is done when 7.4 is checked.
+Stages 0 and 1 calibrated the layout engine against Final Draft PDFs
+and checked the editor's placement. Exact Final Draft page parity
+still needs the controlled comparison in 7.3a. V1 is done when 7.4
+is checked.
 
 ## Stage 3: PDF
 
@@ -721,8 +722,9 @@ anything else. V1 is done when 7.4 is checked.
     build's settings are confirmed.
 
 - [ ] 7.3 — Review: V1
-  - Status: todo
-  - Depends on: 7.2
+  - Status: verification pending (7.3a–7.3e and disposition of remaining gaps)
+  - Depends on: 7.2 and all five follow-ups (7.3a–7.3e), which can start
+    without waiting for this review to close.
   - Scope: the whole repository.
   - Check:
     - Trace every item in the brief's "V1 must have" list to working,
@@ -737,98 +739,159 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: findings are fixed or listed under Known gaps with the
     user's agreement, and `mise run check` passes.
 
-- [ ] 7.4 — User check: V1
+- [ ] 7.3a — Final Draft page parity
+  - Status: blocked (matched Final Draft reference files needed)
+  - Depends on: 7.2 and matched original FDX/PDF references from a named
+    desktop Final Draft version. Begin arranging the references first;
+    lack of references does not block 7.3b–7.3e.
+  - Spec: [Page parity](brief.md#page-parity). Target the default US Letter
+    feature screenplay template at Normal spacing. Custom templates,
+    locked production pages and revision numbering remain outside V1.
+  - Do: Have Final Draft save the original FDX and export its PDF from the
+    same script and settings. Cover a feature-length script and focused
+    cases for action splits, continuation cues, dual dialogue across a
+    page boundary, and borderline wraps in dialogue, cues and dual
+    parentheticals. Use the FDX source to distinguish an authored break
+    from automatic pagination. Use only original test scripts.
+  - Done when: Tir, given the reference scripts, matches the first script
+    line of every page from page 1, without reseeding, including page
+    count. Record the version, settings, fixtures and comparison results.
+    If references cannot be obtained, leave the task open: matching Tir's
+    editor to Tir's PDF does not verify Final Draft parity. Correct the
+    architecture's parity wording to distinguish the two claims.
+
+- [ ] 7.3b — Bound autosave loss and clarify destructive actions
   - Status: todo
+  - Depends on: 7.2
+  - Spec: [Saving and backup](brief.md#saving-and-backup),
+    [Projects](brief.md#projects).
+  - Do: Keep the one-second pause save and also save during uninterrupted
+    writing. Target at most five seconds of lost edits after an abrupt
+    exit on working local storage; a save failure must still be visible.
+    Keep Ctrl+S, save before switching or closing, and the deliberate
+    second-close escape. Keep the close–pull–reopen handoff; do not add
+    live sync or redo Stage 6.
+  - Do: When a draft changed on disk, explain how to preserve the
+    on-screen edits before reopening. Do not promise a retry will fix the
+    conflict. Make same-named projects distinguishable in the Projects
+    list, Delete confirmation and Import destination.
+  - Done when: an isolated continuous-typing and abrupt-exit test shows
+    the recovered draft meets the target; normal close saves; a stale
+    save leaves the changed file intact and gives actionable guidance;
+    and the writer can tell duplicate projects apart before acting.
+
+- [ ] 7.3c — Import accuracy and editable FDX exchange
+  - Status: todo (local work can start; Final Draft needed for verification)
+  - Depends on: 7.2; independent of the 7.3a implementation.
+  - Spec: [Scope](brief.md#scope) (FDX, Fountain and the import report).
+  - Do: Keep titles and author names out of the credit field when they
+    end in “by”. Keep Tir's fixed layout, but disclose unsupported
+    layout or formatting discarded on import rather than saying
+    “Nothing was left out”. Report the location of an anchored omission
+    accurately, or label the page number as the element's starting page.
+    Keep imports read-only and exports non-overwriting.
+  - Done when: focused fixtures cover title-field mapping and report
+    accuracy, including a note in an element that crosses a page; and
+    Final Draft itself opens and can edit a Tir-exported original
+    screenplay, with its title page, element types, emphasis, dual
+    dialogue, explicit breaks and default settings checked. Record the
+    receiving version and observations. Tir reading its own export and
+    the Story Architect import check do not substitute for this.
+
+- [ ] 7.3d — PDF fidelity for submitted scripts
+  - Status: todo
+  - Depends on: 7.2
+  - Spec: [PDF export](brief.md#pdf-export).
+  - Do: Print accented Latin text correctly in body and title fields,
+    including pasted decomposed accents. Use the same body-tab layout
+    in the editor and PDF. Do not silently clip overlong dual dialogue
+    or emit missing glyphs: render the text correctly or explain what
+    prevents export and where to find it. Full multilingual typesetting
+    and right-to-left layout are outside this task.
+  - Done when: fixtures check editor and PDF agreement for body tabs and
+    accented Latin text, and an overlong dual pair and an unsupported
+    character either render completely or produce an actionable message
+    before any misleading PDF is written.
+
+- [ ] 7.3e — Predictable selection edits and keyboard access
+  - Status: todo
+  - Depends on: 7.2
+  - Spec: [Elements and keys](brief.md#elements-and-keys),
+    [Copy and paste](brief.md#copy-and-paste).
+  - Do: Use Cut's element-boundary rules for Backspace, Delete and typing
+    over a selection across elements, preserving the types of surviving
+    text as Cut does. Keep ordinary collapsed-caret editing and Tab's
+    screenplay behavior. Give the main controls a discoverable keyboard
+    route with visible focus, including the sidebar, scenes, paper switch,
+    draft menu and Title page. Expose the active autocomplete and spelling
+    choices to a screen reader.
+  - Done when: selection tests cover matching boundaries and clean Undo,
+    and an isolated native check reaches the controls without a pointer,
+    returns focus to the script and verifies suggestion announcements.
+    Defer drag/drop, primary-selection paste and a broader accessibility
+    audit.
+
+- [ ] 7.4 — User check: V1
+  - Status: todo (blocked on 7.3; writing session not started)
   - Depends on: 7.3
   - Check: the user installs Tir, starts it from the launcher, and writes
     in it for a session.
 
 ## Known gaps
 
-Each entry names the task or stage that found it and, if known, the one
-that will close it.
+Open V1 blockers are tracked in 7.3a–7.3e. Each entry below identifies
+the follow-up or records why the limitation can be deferred for V1.
 
-- Fountain round trips drop trailing whitespace, indentation outside
-  action, a line break in a cue, centring inside a speech, empty lines in
-  title page fields, and some mid-word bold and italic crossings (0.3; the
-  list heads `src/core/fountain/write.ts`). Accepted: the editor rarely
-  produces these.
-- Page parity (0.8): 23 of 605 checkable calibration pages end
-  differently from Final Draft's (findings, "Calibration"): 14 where Final
-  Draft left lines empty that its rules would fill (likely manual page
-  breaks or kept pages), 5 page-top misreads, 4 unexplained (A Real Pain
-  76, Babygirl 87, After the Hunt 12 and 40). Pages ending inside action
-  (99) cannot be checked from PDFs at all. More evidence (FDX files of
-  calibration scripts, or Beat's rules) would settle them.
-- Final Draft's automatic (CONT'D) rule and its dual dialogue splitting are
-  unverified (0.8; findings, "Pagination"); Tir adds (CONT'D) after action
-  within a scene and never splits dual dialogue.
-- About 0.2% of elements wrap differently from Final Draft, whose width
-  measurement is not strictly fixed-pitch (0.8; findings, "Line widths").
-- The cue width (38) and dual parenthetical widths rest on few samples
-  (0.8).
-- `writeFountain` takes about 75–100 ms on a 1,500-element script, and
-  190–243 ms in the page on the 120-page one, because it checks each
-  paragraph by reading it back (0.3). Since 2.2 saves make it in a worker
-  (findings, "Editor"), but copying the whole 120-page script still takes
-  200–230 ms for the same reason (1.6).
+- Fountain round trips have whitespace and emphasis losses, including
+  tabs and empty first or last element lines (0.3; full list in
+  `src/core/fountain/write.ts`). Defer: the `.tir` draft is authoritative;
+  the Fountain copy is readable interchange, not a fidelity format.
+- Exact Final Draft parity is not established. Reseeded page ends and
+  Tir editor-to-PDF page starts are separate results. See
+  [Calibration](findings.md#calibration) for comparisons and mismatches.
+  Final Draft's automatic `(CONT'D)` and dual-dialogue splitting are
+  unverified; some elements wrap differently, and cue and dual
+  parenthetical widths have limited samples. Close in 7.3a.
+- Full-script copy took 200–230 ms in the 120-page trial (1.6); explicit
+  Fountain export also serializes on the interface thread. The
+  190–243 ms measurement was for both save texts together, not Fountain
+  alone. Autosave normally serializes in a worker (2.2). Defer unless
+  whole-draft copy or export disrupts writing.
 - Dragging a selection within the script, and dropping text from elsewhere,
   still go through ProseMirror's own handling (1.6): by ProseMirror's
   source, a drag carries its own slice, element types included, and places
   it by its rules, not the paste rules (text dragged into an element can
-  join it and take its type), and a drop from elsewhere becomes plain
-  paragraphs, so it arrives as action. Neither is checked natively. A
-  middle click pastes the clipboard's text, not the primary selection,
-  through the paste rules (1.10, findings "Editor"). The brief names none
-  of them; 1.10 asked the user (2026-11-27).
-- Backspace, Delete and typing over a selection across elements join its
-  ends into the first element's type, ProseMirror's rule, while cut (1.6)
-  removes the elements it covers whole and leaves a part-covered last one
-  its type: a selection from an element's start into the next leaves the
-  rest as the first's type by the keys and the second's by cut, and one
-  ending at an element's start joins that element on by the keys and not
-  by cut. 1.10 asked the user (2026-11-27) whether the keys should follow
-  cut.
-- Since 2.2 closing saves first, and asks only when a save fails (brief,
-  "Saving and backup"). What a close still loses: a page reloaded in
-  development, or Tir killed, loses what was typed in the second before a
-  save; and a request to close five or more seconds after the first one
-  the page held closes the window without the page, losing what it had
-  not saved (`closing.rs`), so a page that hangs cannot keep Tir open, but
-  neither can the "could not save" question once the writer asks to close
-  again after that long (2.2; kept by the user's choice, 2026-11-27). 1.10
-  asked the user (2026-11-27) whether to ask before closing with changes
-  not saved; since 2.2 a close leaves none unless a save fails.
-- The paper switch, the sidebar's toggle and the scene list have no key,
-  nor, since 2.4 and 2.5, the draft menu and the Title page row (2.7
-  review), and Tab never leaves the script (brief, "Elements and keys"),
-  so no key reaches them from the script; Shift+Tab from the title page's
-  form reaches the last two. Zoom, focus mode and Go to page have keys
-  (1.10). 1.10 asked the user (2026-11-27) how they should be reached.
-- A screen reader is not told of autocomplete suggestions or of the
-  spelling menu's: each is a named listbox, but the editor's root names
-  no active option (1.5, 1.10, 5.3); nor is it told of a squiggle.
-  Attributes on the root change with every popup update, so measure
-  typing with them before adding them.
+  join it and take its type). Neither drop path is verified natively.
+  Middle click pastes clipboard text instead of the primary selection
+  (1.10, findings "Editor"). Defer; use the Cut and Paste commands.
+- Backspace, Delete and typing over a selection across elements can
+  retype surviving text compared with Cut. Close in 7.3e.
+- A kill or development reload can lose an uninterrupted burst: one
+  second is the pause required to start autosave, not a loss bound.
+  Close in 7.3b. Normal close saves first; a deliberate second close
+  after five seconds can still discard unsaved edits (2.2).
+- Direct keyboard access to the sidebar, scenes, paper switch, draft
+  menu and Title page is missing. The suggestion popups do not announce
+  the active choice to a screen reader. Close in 7.3e; announcement of
+  inline squiggles and a broader accessibility audit are deferred.
 - A style boundary inside one grapheme at the end of a line (a combining
   accent styled apart from its letter) would give the line two line-end
   decorations and an extra row (1.10 review, from the source), and so
   would a find highlight ending inside one there, such as "Jose" found in
-  a stored "Jose" and U+0301 (5.4 review). The editor selects whole
-  graphemes, so only an opened or pasted script could hold one.
-- Projects with the same name, such as one Fountain file imported twice
-  as a new project (folders "Salt Line" and "Salt Line 2"), look the same
-  in the Projects screen's list, its Delete confirmation and Import's
-  choice of project; only their order and last edit tell them apart (2.7
-  review). Each action takes the row chosen.
+  a stored "Jose" and U+0301 (5.4 review). Defer the general decoration
+  fix, except where needed for accented-Latin rendering in 7.3d.
+- Same-named projects are not reliably distinguishable in the Projects
+  list, Delete confirmation or Import destination (2.7). Close in 7.3b.
 - After a save wrote the draft but failed on its Fountain copy, the copy
   stays a save behind the draft until a save succeeds; the indicator shows
   "Not saved" meanwhile (2.2, by design: the draft is written first).
+  Defer a two-file transaction; the `.tir` draft is authoritative.
 - Renaming a project or draft to a name differing only in capitals
   (`salt line` to `Salt Line`) is refused as already there when the
   library is on a case-insensitive volume, since the Rust side claims the
   new name before moving (2.1 review). The desktop's home is on btrfs,
   which is case-sensitive; there it works.
+  Defer for the supported local library.
 - A new project whose project file is written but whose library folder
   then fails to sync is reported as not made, though it is there and the
   Projects screen lists it; making it again makes "Name 2" (2.3 review).
@@ -841,46 +904,52 @@ that will close it.
   from an older reading until it is opened again (2.7 review). Rare:
   syncing a folder or moving one within the library fails only on a disk
   error.
+  Defer these rare disk-error paths.
 - Export publishes its file with a hard link, so it fails, with the
   system's "Operation not permitted", on drives without hard links (FAT
   and exFAT USB sticks, some network mounts); exporting to the computer's
-  own disk and copying works (2.6; 2.7 review). A fallback that writes the
-  new file in place (`OpenOptions::create_new`, which also never replaces
-  a file or link) would lose only the all-or-nothing write.
+  own disk and copying works (2.6; 2.7 review). Defer direct export to
+  these drives; preserve non-overwrite and atomic publication.
 - `delete_project` takes any folder with a `project.json` file as a
   project, readable or not, so damaged ones can go. With `library` set to
   a folder holding other things (such as the home folder), a folder with
   another program's `project.json` lists as a project Tir cannot read and
   Delete removes it after its confirmation (2.7 review). The default
   library, `~/Screenplays`, holds only Tir's projects.
-- Courier Prime holds 384 characters: Latin, with no Greek, Cyrillic,
-  combining accents, "ẞ" or emoji. The screen draws those in a fallback
-  font; the PDF embeds only Courier Prime, so they print as its missing
-  glyph (3.1). Embedding a fallback font for them would close it.
-- A literal tab in script text from a hand-edited `.tir` draft or FDX
-  import occupies one engine cell but renders as a tab stop in the
-  editor and expands to four spaces in the PDF (3.3, 4.3). Fountain body
-  import already expands tabs before building elements.
 - Courier Prime's OFL notice is in `src/ui/fonts/OFL-courierprime.txt`,
   and the spell-check dictionary's SCOWL and BSD notices in
   `src/ui/dictionary/README_en_US.txt`. The distributable app does not
   exist yet; the installed package must include both notices alongside
   the bundled fonts and dictionary (3.3, 5.3; 7.1).
-- FDX export's default settings are verified in the XML, not in Final
-  Draft itself (4.3). The Stage 4 user check covers Story Architect's
-  exports, not how Final Draft opens Tir's files.
+- The PDF embeds only Courier Prime. Missing glyphs and body tabs can
+  make the PDF differ from the editor, and overlong dual dialogue can
+  go below the physical page. Close the silent output failures and
+  accented-Latin support in 7.3d. Defer full multilingual typesetting.
+- FDX export settings are tested in XML but not in Final Draft. The
+  report does not always disclose omitted formatting and can label the
+  start of a split element as a later note's location. The FDX title
+  reader can misclassify a title line or author as credit. Close in 7.3c.
 - FDX export refuses an emphasis span that splits the two UTF-16 code
   units of one character, which can occur in a hand-edited `.tir` draft
   (4.3). XML cannot carry either half in a separate text run.
+  Defer; export refuses rather than writing invalid XML.
 - Find compares text as stored, so an accent stored as a separate
   combining mark ("a" and U+0301, as some macOS files hold it) does not
   match the single "á" typed in the find bar, nor the other way round
   (5.1). Normalising both before matching would need offsets mapped back
   to the text as stored.
+  Defer canonical-equivalent Find.
 - The views of find, the formatting check and spell check have no
   automated tests, since Vitest here has no DOM: the find bar, the marks,
   F8, and spell check's scheduling, F7 and menu are checked in the app
   only (5.1–5.4). Their commands and states are tested.
+  Defer broad view automation; keep focused native checks.
+- Long-draft averages omit known pauses around removing a page and
+  very common Find/Replace all queries (history and findings, "Editor").
+  Narrow tiles can scroll sideways at higher zoom (1.10). Defer unless
+  these interrupt writing. Fountain caps input bytes but not parsed
+  records or report rows; defer stricter limits for unusually large
+  imports.
 - A clone or a pull gives each file it writes the time of the clone or
   pull (findings, "Library on disk"), so the Projects screen's last edit
   and the draft menu's dates show a draft brought from the other machine
@@ -888,30 +957,36 @@ that will close it.
   the earlier of its file's time and its last commit's time would be
   right; reading that walks the history at each listing unless it is
   kept until HEAD moves.
+  Defer; this affects dates and ordering, not text.
 - The public check against GitHub itself, GitHub's REST API asked with no
   login through libsoup (`github.rs`'s `get`), runs in no test or trial,
   which never reach the network; tests read sample answers and trials ask
   a sandbox git instead (6.3; findings, "GitHub"). The user's check (6.5)
-  connects a private repository through it; connecting a public one
-  would show its warning.
+  connects a private repository through it. Defer a live public-repository
+  check; it has not been verified.
 - Closing still waits behind a sync already under way, then makes its
   own final attempt. The window is gone during the wait; a new Tir must
   wait for the old instance to release the lock (6.5a).
-- A save refused because the draft changed on disk says to close Tir
-  and open it again, then, like any failed save, "Tir tries again in a
-  moment." (`main.ts` and `backup.ts`), though no retry can succeed
-  before reopening. The page cannot tell this refusal from other
-  failures, which reach it as text (6.4).
+  Defer unless this makes normal relaunch disruptive.
+- The stale-draft save message promises a retry that cannot succeed
+  before reopening, without explaining how to keep all edits since the
+  last successful save. Close the guidance gap in 7.3b.
 - Backup trusts the writer's local Git installation and configuration,
   including credential helpers and clean filters. Destination and file
   checks do not make arbitrary local Git configuration safe (6.5a).
+  Defer arbitrary Git configurations; use the writer's trusted setup.
 - Deletion warnings compare the current path with the last known remote
   tip. They do not search old paths after a rename or prove a version
   recoverable from history (6.5a).
+  Defer history lookup and in-app restoration.
 - If a manual `git pull` replaces a draft after Tir's fingerprint check
   but before its save renames the replacement, the save can still
   overwrite the pulled version. The supported sequence is to close Tir
   before pulling (6.5a).
+  The background startup check cannot guarantee a warning before writing
+  starts. Defer concurrent writers and live sync; use one Tir per library
+  and pull with it closed.
 - In focus mode the top bar fades while the backup panel under it stays
   open (`app.css`'s focus rules apply to the bar, the panel lives in the
   page's body); Esc closes it (6.4).
+  Defer.
