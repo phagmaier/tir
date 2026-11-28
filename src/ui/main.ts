@@ -5,6 +5,7 @@ import { devScript } from "./dev-fixtures.ts";
 import { DraftMenu } from "./draft-menu.ts";
 import { changeDraft, type DraftAction } from "./drafts.ts";
 import { mountEditor } from "./editor.ts";
+import { findBar } from "./find-bar.ts";
 import {
   createDraft,
   createProject,
@@ -103,6 +104,7 @@ const editor = mountEditor(byId("pages"), (opening?.script ?? emptyScript()).ele
     elementToolbar(byId("elements")),
     sceneSidebar(byId("sidebar"), projection, zoom, () => titlePage.close()),
     pagePosition(byId("bar-right"), projection, zoom, () => titlePage.close()),
+    findBar(byId("topbar"), (text) => desk?.toast(text)),
     savingPlugin(saver),
   ],
 });

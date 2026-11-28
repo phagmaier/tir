@@ -13,6 +13,7 @@ import type { Element, ElementType } from "../core/model.ts";
 import { autocomplete } from "./autocomplete.ts";
 import { screenplayKeys } from "./commands.ts";
 import { fromDocument, toDocument } from "./editor-model.ts";
+import { find } from "./find.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
 
 type Extra = Omit<Element, "type" | "text">;
@@ -55,7 +56,7 @@ export function stateOf(elements: readonly Element[]): EditorState {
   return EditorState.create({
     doc,
     selection: TextSelection.create(doc, anchor, head),
-    plugins: [...undoHistory, autocomplete],
+    plugins: [...undoHistory, autocomplete, find],
   });
 }
 

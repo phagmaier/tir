@@ -121,9 +121,9 @@ function follow(tally: Tally, before: Node, after: Node): { tally: Tally; only: 
 /**
  * Whether `tr` is typing or deleting in the caret's element, which keeps its
  * type: the only edits that open the popup. A format key changes the
- * element but not its text. Paste, drop and cut name themselves in
- * `uiEvent`, ProseMirror marks composed input, and undo and redo are the
- * history's.
+ * element but not its text. Paste, drop, cut and find's replacements name
+ * themselves in `uiEvent`, ProseMirror marks composed input, and undo and
+ * redo are the history's.
  */
 function isTyping(tr: Transaction, only: number | null): boolean {
   if (only === null || tr.getMeta("composition") || tr.getMeta("uiEvent")) return false;

@@ -9,9 +9,10 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. 4.3, Stage 4 review, is complete.
-- Next: 4.4, deferred until the user has desktop access.
-- Blockers: Stage 5 waits for 4.4.
+- Active: none. 5.1, find and replace, is complete.
+- Next: 5.2, formatting check. 4.4 stays open until the user has desktop
+  access; its notes become 4.4a… tasks done before 5.4.
+- Blockers: none.
 
 ## How to work this plan
 
@@ -256,16 +257,19 @@ anything else. V1 is done when 7.4 is checked.
     the open draft and returned focus to the editor.
 
 - [ ] 4.4 — User check: Stage 4
-  - Status: deferred (the user is away from their desktop)
+  - Status: deferred (the user is away from their desktop). On 2026-11-27
+    the user chose to start Stage 5 meanwhile; notes from this check
+    become tasks 4.4a… done before 5.4.
   - Depends on: 4.3
   - Check: the user exports a Story Architect script as FDX, imports it,
     and compares it with the Fountain import of the same script.
 
 ## Stage 5: find, formatting check, spell check
 
-- [ ] 5.1 — Find and replace
-  - Status: todo
-  - Depends on: 4.4
+- [x] 5.1 — Find and replace
+  - Status: done
+  - Depends on: 4.3 (4.4 waived for Stage 5's start by the user,
+    2026-11-27)
   - Spec: brief "Find and replace"; prototype piece 1 (find)
   - Do: Find and replace in the active draft, with match case and whole
     word, next and previous, Replace, and Replace all as one undo step.
@@ -273,6 +277,38 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: tests cover regex-special characters in the query, whole
     words next to apostrophes and non-ASCII letters, cues with extensions,
     and the single undo; it works in the app.
+  - Evidence: 2026-11-27. `src/core/find.ts` matches a query in the text
+    as the page shows it (capitals), a word being letters, accents and
+    digits in any script; `src/ui/find.ts` keeps the matches and their
+    highlights, patching them per edit through `changedElements` (now
+    shared with the projection), and holds Next, Previous, Replace and
+    Replace all; `src/ui/find-bar.ts` is prototype piece 5's bar, opened by
+    Ctrl+F. 48 Vitest cases: regex-special characters; match case on shown
+    capitals and "ß"; whole words next to straight and curly apostrophes and
+    to accented, combining, Cyrillic and astral letters; renaming a
+    character in cues with extensions and in action; one Ctrl+Z for Replace
+    all, apart from the typing before it; formats kept; Replace as its own
+    step; wrapping; no autocomplete popup; the selection as the query; and
+    highlights after typing, Enter, a type change, a node inserted beside
+    itself and a deletion equal to a fresh search's (two patch mutations
+    shown failing). In isolated WebKitGTK on Salt Line: Ctrl+F, typing,
+    Enter and Shift+Enter wrapping to page 5 with the page position and
+    scene following, the toggles, Replace by Enter and button, Replace all
+    of 12 cues with its message, Ctrl+Z on the button restoring them and
+    Ctrl+Shift+Z redoing, Esc back to the script with the match selected
+    and ahead of focus mode's Esc, the title page and Projects screen hiding
+    the bar and a fork closing it; screenshots on dark and white paper. On
+    the 120-page spike, typing's median layout stayed 10–11 ms with 17,040
+    highlights, while showing them took 561 ms (600 matches: 75 ms;
+    findings, "Editor"), so the bar searches once typing pauses; "mara"
+    typed quickly searched once. Reviewed with user-code-review and one
+    independent reviewer; fixed a query seeded from a cue's typed small
+    letters (now its capitals), Ctrl+F after Ctrl+A throwing, a waiting
+    search moving a caret clicked into the script, and Enter not bringing
+    a lone match back into view, each checked in tests or the app. Both
+    type checks, Biome on `src` and Vitest on `src/ui` with the core find
+    and purity tests (308) passed. Not checked: `mise run check` (no Rust
+    changed) and the laptop.
 
 - [ ] 5.2 — Formatting check
   - Status: todo
@@ -579,3 +615,8 @@ that will close it.
 - FDX export refuses an emphasis span that splits the two UTF-16 code
   units of one character, which can occur in a hand-edited `.tir` draft
   (4.3). XML cannot carry either half in a separate text run.
+- Find compares text as stored, so an accent stored as a separate
+  combining mark ("a" and U+0301, as some macOS files hold it) does not
+  match the single "á" typed in the find bar, nor the other way round
+  (5.1). Normalising both before matching would need offsets mapped back
+  to the text as stored.

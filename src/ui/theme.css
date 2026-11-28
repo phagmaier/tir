@@ -44,6 +44,11 @@ body[data-theme="light"] {
   --paper: #fdfcf8;
   --ink: #141414;
   --sheet-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 18px 44px rgba(0, 0, 0, 0.5);
-  /* look.css leaves white paper's ghost text to page.css's default. */
+  /* look.css leaves white paper's ghost text and find highlights to
+     page.css's defaults. */
   --ghost: #a8a8a8;
+  --hit: #ffe58a;
+  --hit-cur: #ffbf3c;
+  --hit-cur-fg: #141414;
+  --hit-ring: #e09a00;
 }

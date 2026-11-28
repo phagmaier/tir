@@ -539,6 +539,19 @@ applications are not offered. Tests drive the editor's state and key
 plugins without a browser through `editor-harness.ts`, which keeps
 `editor.ts`'s plugin order.
 
+Find (`find.ts`) is a state plugin holding the query, its matches and
+their highlights; the matching is the core's (`src/core/find.ts`), on the
+text as the page shows it. The current match is the selection when it
+covers a match exactly, so Next, Previous and Replace move the selection,
+and the page position and scene list follow. A new query builds the
+highlight set once; an edit maps it and searches again only the elements
+`changedElements` (`projection.ts`) reports, the same ones the projection
+patches (findings, "Editor"). A replacement names itself in `uiEvent`, as
+paste does, so autocomplete opens no popup. The find bar (`find-bar.ts`)
+is a view plugin drawn in the top bar, so it hides with it; it waits for a
+pause in typing before searching, and holds Esc in a window listener
+while open, ahead of desk's.
+
 The sidebar's scene list and the top bar's page position are view plugins
 that `mountEditor` hands the projection, so they read its `ScriptMap`
 (`src/core/script-map.ts`: each scene's heading and starting page, the

@@ -9,6 +9,7 @@ import { autocomplete, placePopup, popupOf } from "./autocomplete.ts";
 import { clipboard } from "./clipboard.ts";
 import { screenplayKeys } from "./commands.ts";
 import { schema, toDocument } from "./editor-model.ts";
+import { find } from "./find.ts";
 import { type Block, Projection, ROW_PX, SHEET_PX, sameBlock } from "./projection.ts";
 import { SheetLayer } from "./sheets.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
@@ -217,6 +218,7 @@ const statePlugins = [
   keymap(undoKeys),
   keymap(baseKeymap),
   clipboard,
+  find,
 ];
 
 /**

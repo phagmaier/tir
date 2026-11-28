@@ -119,29 +119,10 @@ export class Projection {
     const positionsBefore = this.positions;
     const placements = this.place(doc);
     const positions = positionsOf(doc);
-    // Changed: every node that is not the object it was (mark and attribute
-    // steps move no positions), and every element the steps touched. The
-    // elements outside are the nodes they were, so their earlier placements
-    // and mapped decorations still belong to them, and ProseMirror keeps
-    // their paragraphs and styles.
-    const oldDoc = tr.before;
-    const most = Math.min(doc.childCount, oldDoc.childCount);
-    let first = 0;
-    while (first < most && doc.child(first) === oldDoc.child(first)) first++;
-    let kept = 0;
-    while (
-      kept < most - first &&
-      doc.child(doc.childCount - 1 - kept) === oldDoc.child(oldDoc.childCount - 1 - kept)
-    ) {
-      kept++;
-    }
-    let last = doc.childCount - 1 - kept;
-    const range = changedRange(tr);
-    if (range) {
-      const from = indexAt(positions, range.from);
-      first = Math.min(first, from > 0 && positions[from] === range.from ? from - 1 : from);
-      last = Math.max(last, indexAt(positions, range.to));
-    }
+    // The elements outside the changed ones are the nodes they were, so
+    // their earlier placements and mapped decorations still belong to
+    // them, and ProseMirror keeps their paragraphs and styles.
+    const { first, last } = changedElements(tr, positions);
     const shift = doc.childCount - before.length;
     let decorations = this.decorations.map(tr.mapping, doc);
     const stale: Decoration[] = [];
@@ -424,6 +405,38 @@ function indexAt(positions: readonly number[], pos: number): number {
     else high = mid - 1;
   }
   return low;
+}
+
+/**
+ * The elements `tr` changed, as indices into its final document, whose
+ * elements start at `positions`: every node that is not the object it was
+ * (mark and attribute steps move no positions), and every element the steps
+ * touched. The elements outside are the nodes they were. `first` is past
+ * `last` when none changed.
+ */
+export function changedElements(
+  tr: Transaction,
+  positions: readonly number[],
+): { first: number; last: number } {
+  const { doc, before } = tr;
+  const most = Math.min(doc.childCount, before.childCount);
+  let first = 0;
+  while (first < most && doc.child(first) === before.child(first)) first++;
+  let kept = 0;
+  while (
+    kept < most - first &&
+    doc.child(doc.childCount - 1 - kept) === before.child(before.childCount - 1 - kept)
+  ) {
+    kept++;
+  }
+  let last = doc.childCount - 1 - kept;
+  const range = changedRange(tr);
+  if (range) {
+    const from = indexAt(positions, range.from);
+    first = Math.min(first, from > 0 && positions[from] === range.from ? from - 1 : from);
+    last = Math.max(last, indexAt(positions, range.to));
+  }
+  return { first, last };
 }
 
 /** Where a transaction changed the document, in its final positions. */

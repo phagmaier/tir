@@ -169,7 +169,9 @@ The user has said the V1 list above is everything they need.
   leaves it, as Esc leaves Final Draft's Focus Mode, which has no key of
   its own *(Ctrl+Shift+F agent-selected, from prototype piece 5)*. F8 goes
   to the next formatting finding *(agent-selected: Final Draft's Format
-  Assistant has no key; F8 is the next problem in code editors)*.
+  Assistant has no key; F8 is the next problem in code editors)*. Ctrl+F
+  opens [find and replace](#find-and-replace) *(agent-selected, from
+  prototype piece 5)*.
 - **File keys**: Ctrl+O opens and Ctrl+S saves, as Final Draft's Open and
   Save ([findings](findings.md#final-drafts-keys)). Ctrl+O shows the
   Projects screen, where projects open ([Projects](#projects)). Saving is
@@ -316,6 +318,23 @@ Replace and Replace all. Matches are highlighted on the page, and Replace all
 undoes as one step. Renaming a character with whole word and match case
 changes cues and mentions in action alike, leaving extensions such as (V.O.)
 intact.
+
+*(agent-selected, from prototype piece 5)* The find bar opens under the top
+bar's right end, with its query selected, or with the script's selection as
+the query when that lies on one line. Match case and whole word start off.
+Typing finds as it goes, from the caret; Enter and Shift+Enter go to the next
+and previous match, which is selected in the script and scrolled into view,
+and the bar counts the matches ("3 of 12"). Replace replaces the selected
+match and selects the next, each replacement an undo step of its own. A
+message gives Replace all's count, and one Ctrl+Z, in the script or on one
+of the bar's buttons, undoes it. Esc closes the bar and returns to the
+script with the current match selected. Opening another draft closes it.
+
+*(agent-selected)* Find reads the text as the page shows it, so match case
+finds a cue typed in small letters by its capitals. A word is letters,
+accents and digits in any script: an apostrophe or a hyphen ends one, so
+whole word finds ELLIS in ELLIS'S but not Tom in Tomás. A straight and a
+curly apostrophe match each other.
 
 ## Copy and paste
 

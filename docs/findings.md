@@ -534,6 +534,14 @@ include the per-task results. Reproduce with
   without `nodeName` share a span, including on a line's last character.
   Building a full-document decoration set took 51 ms in that probe;
   map and patch it after edits.
+- **Many highlights cost their drawing, not typing.** On the 120-page
+  spike (2,280 elements, task 5.1), find's query "e" matched 17,040 times
+  and took 561 ms to show: 138 ms to build its decoration set, 151 ms for
+  ProseMirror to redraw the paragraphs and 272 ms of layout. "ma" (1,080
+  matches, replacing "e"'s) took 257 ms, "mara" (600) 75 ms, and removing
+  them 58 ms. Typing's median stayed at 10–11 ms with all 17,040 shown,
+  since edits map the set and patch the elements they change. A spell
+  checker's squiggles meet the same costs.
 - **Test input in WebKitGTK as well as editor state.** ProseMirror
   intercepts Esc before a bubbling window listener can use it. Keep
   composition native and check dead and Compose keys at the window.

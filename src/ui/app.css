@@ -872,6 +872,87 @@ body.focus #title-page {
 .pop[hidden] {
   display: none;
 }
+/* The find bar (prototype piece 5), under the top bar's right end. The title
+   page hides it, as it hides the script. */
+.find-bar {
+  top: 58px;
+  right: 16px;
+  width: min(430px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+html.title-page-shown .find-bar {
+  display: none;
+}
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.find-icon {
+  flex: none;
+  width: 26px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--pop-border);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--pop-fg);
+  font: inherit;
+}
+.find-count {
+  min-width: 52px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.find-icon-button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.find-toggle {
+  flex: none;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.find-icon-button:hover,
+.find-toggle:hover {
+  background: var(--hover);
+  color: var(--pop-fg);
+}
+.find-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.find-action {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--pop-border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.find-action:hover {
+  background: var(--hover);
+}
 /* The draft menu (prototype pieces 1 and 5), including the inline fork form. */
 .draft-menu {
   top: var(--draft-menu-top);
@@ -1264,6 +1345,17 @@ body.focus #title-page {
 /* White space the engine drops where an element splits across pages. */
 .script-editor .skipped {
   display: none;
+}
+/* Find's matches, coloured for each paper (prototype pieces 3 and 4), on
+   screen only. Backgrounds and a shadow move no line. */
+.script-editor .find-hit {
+  border-radius: 1px;
+  background: var(--hit);
+}
+.script-editor .find-current {
+  background: var(--hit-cur);
+  color: var(--hit-cur-fg);
+  box-shadow: 0 0 0 1px var(--hit-ring);
 }
 
 /* ===== Autocomplete (prototype piece 5's popup): beside the editable element,
