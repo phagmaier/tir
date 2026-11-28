@@ -1,17 +1,20 @@
 //! Starts Tir. The Rust side only reads and writes files, runs git and
-//! opens system dialogs (architecture, design rule 3); so far it keeps the
-//! window's settings and the library, shows the dialogs, and holds the
-//! window open on closing until the page has saved.
+//! opens system dialogs (architecture, design rule 3): it keeps the
+//! window's settings and the library, backs the library up with git, shows
+//! the dialogs, and holds the window open on closing until the page has
+//! saved.
 
+mod backup;
 mod closing;
 mod dialogs;
 mod files;
+mod git;
 mod instance;
 mod library;
 mod settings;
 
-use std::path::PathBuf;
-use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent};
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent};
 
 /// `TIR_CONFIG_DIR`, which tests and trial runs set to a temporary
 /// directory, for the settings and, unless they name one, the library;
@@ -68,6 +71,23 @@ fn find_library(app: &AppHandle) -> library::Library {
     library::Library::new(root, configured)
 }
 
+/// The machine's git, or in a sandbox (`TIR_CONFIG_DIR`) git reading only
+/// the sandbox's `gitconfig` and reaching only files, so a trial run never
+/// uses the writer's login or GitHub (architecture, "Running and checking").
+fn find_git() -> git::Git {
+    match sandbox() {
+        Some(dir) => git::Git::sandboxed(dir.join("gitconfig")),
+        None => git::Git::system(),
+    }
+}
+
+/// How backup stands, for the page to show at first; later changes come as
+/// `tir://backup`.
+#[tauri::command]
+fn backup_status(backup: State<'_, backup::Backup>) -> backup::Status {
+    backup.status()
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         // Its dialogs are shown from this side only: the page is given none
@@ -92,6 +112,21 @@ pub fn run() {
                 // Tir still runs, as it would without the lock.
                 Err(error) => eprintln!("Tir could not check for another Tir: {error}"),
             }
+            // Only the one Tir with this library backs it up.
+            let library = app.state::<library::Library>();
+            let emitter = app.handle().clone();
+            let backup = backup::Backup::start(
+                backup::Setup {
+                    git: find_git(),
+                    root: library.root().map(Path::to_path_buf).map_err(str::to_owned),
+                    busy: library.busy(),
+                    quiet: backup::QUIET,
+                },
+                move |status| {
+                    let _ = emitter.emit("tir://backup", status);
+                },
+            );
+            app.manage(backup);
             let window = app
                 .config()
                 .app
@@ -124,6 +159,7 @@ pub fn run() {
             library::commands::delete_draft,
             library::commands::read_dictionary,
             library::commands::add_to_dictionary,
+            backup_status,
             dialogs::open_script,
             dialogs::export_fountain,
             dialogs::export_fdx,
@@ -137,8 +173,12 @@ pub fn run() {
         .expect("error while building Tir");
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            // A save or change under way when the window went finishes first.
+            // A save or change under way when the window went finishes
+            // first; then backup records what is left.
             app.state::<library::Library>().finish_commands();
+            if let Some(backup) = app.try_state::<backup::Backup>() {
+                backup.finish();
+            }
         }
     });
 }

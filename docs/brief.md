@@ -533,10 +533,14 @@ three.
   own settings and library can run beside it *(agent-selected, task 2.7)*.
 - **One private GitHub repository** holds the whole library. Tir runs the
   system `git` with the user's existing GitHub login and stores no tokens.
-  The user gives Tir the repository URL once.
-- After a few minutes without changes, and when the app closes, Tir commits
-  the changes and pushes them. A **Back up now** command does the same on
-  demand.
+  The user gives Tir the repository URL once. *(agent-selected, task 6.1:
+  the repository records only Tir's own files, the projects' files,
+  drafts and Fountain copies and the dictionary, so nothing else put in
+  the library reaches GitHub; and Tir makes a library a repository only
+  when it holds nothing but those.)*
+- After a few minutes without changes *(agent-selected: three)*, and when
+  the app closes, Tir commits the changes and pushes them. A **Back up
+  now** command does the same on demand.
 - **Offline is normal**, not an error: the user is often offline. Commits
   accumulate locally and push when GitHub is reachable again, with automatic
   retry and no nagging.

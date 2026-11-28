@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 
 const PROJECT: &str = "project.json";
@@ -34,8 +34,9 @@ pub struct Library {
     /// The library the settings file named when Tir started.
     configured: Option<String>,
     /// One command at a time, so a change checks and writes a project file
-    /// that no other change is writing.
-    busy: Mutex<()>,
+    /// that no other change is writing; backup holds it too while it
+    /// records the library's changes in git.
+    busy: Arc<Mutex<()>>,
 }
 
 impl Library {
@@ -44,8 +45,18 @@ impl Library {
             root: root
                 .ok_or_else(|| "Tir could not find the home folder, where the library is.".into()),
             configured,
-            busy: Mutex::new(()),
+            busy: Arc::default(),
         }
+    }
+
+    /// The library's folder, or why there is none.
+    pub fn root(&self) -> Result<&Path, &str> {
+        self.root.as_deref().map_err(String::as_str)
+    }
+
+    /// The lock each command holds, for backup to hold while it records.
+    pub fn busy(&self) -> Arc<Mutex<()>> {
+        self.busy.clone()
     }
 
     /// The settings file's `library` when Tir started, which only the writer,
@@ -204,6 +215,36 @@ fn entry_names(dir: &Path) -> io::Result<Vec<String>> {
     }
     names.sort();
     Ok(names)
+}
+
+/// The first entry of the library, in name order, that is none of Tir's:
+/// backup makes the library a repository only when it holds nothing else
+/// (architecture, "Backup"), so never a folder such as the home folder.
+/// Hidden entries and temporary files are Tir's or git's; a folder holding
+/// a project file or a `drafts` folder is a project, readable or not.
+pub fn foreign_entry(root: &Path) -> io::Result<Option<String>> {
+    let mut foreign = Vec::new();
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let shown = name.to_string_lossy();
+        if shown.starts_with('.') || shown.ends_with(".tmp") {
+            continue;
+        }
+        let kind = entry.file_type()?;
+        let ours = if kind.is_dir() {
+            let dir = entry.path();
+            fs::symlink_metadata(dir.join(PROJECT)).is_ok()
+                || fs::symlink_metadata(dir.join(DRAFTS)).is_ok()
+        } else {
+            kind.is_file() && name == DICTIONARY
+        };
+        if !ours {
+            foreign.push(shown.into_owned());
+        }
+    }
+    foreign.sort();
+    Ok(foreign.into_iter().next())
 }
 
 /// Makes the project `folder`, with `project` as its `project.json` and one
@@ -664,9 +705,12 @@ fn taken(path: &Path, error: io::Error) -> io::Error {
 
 /// The library's commands. Each takes names, checked as above, and the
 /// texts to write; a change to a project also takes `was`, the project
-/// file's text it was made from. An error comes back as its message.
+/// file's text it was made from. An error comes back as its message. Each
+/// command that may change the library tells backup, which records the
+/// changes once the library has been quiet for a while.
 pub mod commands {
     use super::Library;
+    use crate::backup::Backup;
     use std::io;
     use std::path::Path;
     use tauri::{AppHandle, Manager, State};
@@ -681,6 +725,18 @@ pub mod commands {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root = library.root.as_deref().map_err(Clone::clone)?;
         command(root).map_err(|error| error.to_string())
+    }
+
+    /// `run` for a command that changes the library, even when it fails
+    /// part way.
+    fn change<T>(
+        library: &Library,
+        backup: &Backup,
+        command: impl FnOnce(&Path) -> io::Result<T>,
+    ) -> Result<T, String> {
+        let result = run(library, command);
+        backup.changed();
+        result
     }
 
     #[tauri::command(async)]
@@ -700,13 +756,14 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn create_project(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         project: String,
         draft: String,
         text: String,
         copy: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::create_project(root, &folder, &project, &draft, &text, &copy)
         })
     }
@@ -714,11 +771,12 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn write_project(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         was: String,
         project: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::write_project(root, &folder, &was, &project)
         })
     }
@@ -726,24 +784,34 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn rename_project(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         to: String,
         was: String,
         project: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::rename_project(root, &folder, &to, &was, &project)
         })
     }
 
     #[tauri::command(async)]
-    pub fn delete_project(library: State<'_, Library>, folder: String) -> Result<(), String> {
-        run(&library, |root| super::delete_project(root, &folder))
+    pub fn delete_project(
+        library: State<'_, Library>,
+        backup: State<'_, Backup>,
+        folder: String,
+    ) -> Result<(), String> {
+        change(&library, &backup, |root| {
+            super::delete_project(root, &folder)
+        })
     }
 
+    // The page names each argument; a struct would change what it sends.
+    #[allow(clippy::too_many_arguments)]
     #[tauri::command(async)]
     pub fn create_draft(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         draft: String,
         text: String,
@@ -751,7 +819,7 @@ pub mod commands {
         was: String,
         project: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::create_draft(root, &folder, &draft, &text, &copy, &was, &project)
         })
     }
@@ -768,12 +836,13 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn write_draft(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         draft: String,
         text: String,
         copy: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::write_draft(root, &folder, &draft, &text, &copy)
         })
     }
@@ -781,13 +850,14 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn rename_draft(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         draft: String,
         to: String,
         was: String,
         project: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::rename_draft(root, &folder, &draft, &to, &was, &project)
         })
     }
@@ -795,12 +865,13 @@ pub mod commands {
     #[tauri::command(async)]
     pub fn delete_draft(
         library: State<'_, Library>,
+        backup: State<'_, Backup>,
         folder: String,
         draft: String,
         was: String,
         project: String,
     ) -> Result<(), String> {
-        run(&library, |root| {
+        change(&library, &backup, |root| {
             super::delete_draft(root, &folder, &draft, &was, &project)
         })
     }
@@ -811,8 +882,12 @@ pub mod commands {
     }
 
     #[tauri::command(async)]
-    pub fn add_to_dictionary(library: State<'_, Library>, word: String) -> Result<(), String> {
-        run(&library, |root| super::add_word(root, &word))
+    pub fn add_to_dictionary(
+        library: State<'_, Library>,
+        backup: State<'_, Backup>,
+        word: String,
+    ) -> Result<(), String> {
+        change(&library, &backup, |root| super::add_word(root, &word))
     }
 }
 

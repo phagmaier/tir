@@ -40,7 +40,7 @@ The user delegated these technical choices during planning.
 | --- | --- |
 | `src/core/` | Pure TypeScript script model, disk formats and the PDF, layout and pagination, and derived data such as the scene and page map |
 | `src/ui/`, `index.html` | The Desk, ProseMirror and the engine's page projection; saving, projects, drafts, and the bridge to the shell |
-| `src-tauri/` | Tauri and its capabilities; Rust owns settings, library access, native dialogs, and window closing |
+| `src-tauri/` | Tauri and its capabilities; Rust owns settings, library access, backup with git, native dialogs, and window closing |
 | `tools/` | Final Draft PDF parity and native editor placement and timing checks |
 | `docs/`, `docs/prototype/` | Product decisions, architecture, findings, active plan, and approved visual references |
 | `flake.nix`, `mise.toml` | System libraries, pinned runtimes, and development tasks |
@@ -58,6 +58,8 @@ library or ambient types, so `document`, `window` or `process` fail.
 
 ```
 ~/Screenplays/                    the library, and the backed-up git repository
+  .git/                           the repository, made by Tir unless the library already is one
+  .gitignore                      what git leaves out: everything but Tir's own files ([Backup](#backup))
   dictionary.txt                  the words the writer added to spell check's dictionary, one a line
   Salt Line/                      one project, its folder named from its name
     project.json                  its name, drafts and active draft
@@ -355,6 +357,57 @@ mounted script. Hiding the script without unmounting it leaves its
 selection and undo history alone. The preview does not use the
 editor's page projection; its places come from `TITLE_PAGE` and `PAGE`
 in `src/core/format.ts`, which the PDF uses too.
+
+## Backup
+
+Backup (brief, "Saving and backup") is `src-tauri/src/backup.rs`'s, on a
+thread of its own, so git never holds up the interface; `git.rs` runs git.
+
+- **When.** Each library command that may change the library tells
+  backup (`change` in `library.rs`'s commands), and backup records the
+  changes as one commit once the library has had no change for `QUIET`
+  (three minutes). It also records at closing: on `RunEvent::Exit`, after
+  the library's command under way has finished (`Backup::finish` follows
+  `finish_commands`). At launch, a library holding changes git has not
+  recorded, made while Tir was closed or left by a Tir that stopped, is
+  recorded after the quiet spell too. Backup holds the library's command
+  lock (`Library::busy`) while it records, so no save writes mid-commit.
+- **The repository.** A library with no `.git` is made a repository on
+  the branch `main` (`git init`), with `git::IGNORE` as its `.gitignore`
+  unless one is there: git records only each project's `project.json`,
+  its drafts and their Fountain copies, the dictionary and the
+  `.gitignore`, never a file the writer put there or a `*.tmp` left by a
+  crash ([Writing files](#writing-files)). Tir makes no repository of a
+  folder holding anything but its projects, the dictionary, hidden
+  entries and temporary files (`library::foreign_entry`), so a `library`
+  set to a folder such as the home folder is never made one; backup
+  reports the first such entry instead. A folder with a `project.json` or
+  a `drafts` folder counts as a project.
+- **Running git.** `git.rs` runs the system's `git` from an argument
+  list, never a shell, in the library, with `GIT_DIR` and
+  `GIT_WORK_TREE` naming the library's `.git` and the library, and the
+  variables that would point git elsewhere removed (`ELSEWHERE`), so git
+  never finds a repository above the library. Its input is empty,
+  `GIT_TERMINAL_PROMPT=0` keeps it from prompting, `LC_ALL=C` keeps its
+  messages recognisable, and a command is stopped after a time limit.
+  Every command runs with hooks and the file system monitor off; a commit
+  is unsigned (`commit.gpgSign=false`) and, when git has no name or email
+  for the writer, made as `Tir <tir@localhost>`. A commit is
+  `git add --all` and `git commit`, its message naming the projects it
+  backs up ("Back up Salt Line and the dictionary").
+- **What stops it.** Nothing is recorded while the repository's HEAD is
+  detached or a merge, rebase, cherry-pick or revert is under way in it
+  (`git::Repository`), since a commit would finish the writer's operation.
+  A missing git, a repository git cannot read, a folder backup will not
+  make a repository, and a failed commit become the status's `problem`
+  (`backup::Status`), tried again after the quiet spell. The page reads
+  the status with `backup_status` and hears each change as
+  `tir://backup`.
+- **In a sandbox** (`TIR_CONFIG_DIR` set; tests use the same), git reads
+  only `$TIR_CONFIG_DIR/gitconfig` (`GIT_CONFIG_GLOBAL`, with
+  `GIT_CONFIG_NOSYSTEM`) and may use only the `file` transport
+  (`GIT_ALLOW_PROTOCOL`), so a trial never reads the writer's git
+  configuration or login, nor reaches GitHub.
 
 ## Settings
 
@@ -707,7 +760,9 @@ Not in git:
 - **Launch an isolated trial** for every agent check:
   `trial=$(mktemp -d) && TIR_CONFIG_DIR="$trial" mise run dev`.
   This starts Vite on port 1420 and opens a window with new settings
-  and a library under `"$trial/Screenplays"`. Use files inside the trial
+  and a library under `"$trial/Screenplays"`, backed up by a git that
+  reads only `"$trial/gitconfig"` and reaches only files ([Backup](#backup)).
+  Use files inside the trial
   directory as export destinations, since exports are not confined to
   the library. Use bare `mise run dev` only when the writer intends to
   open their real settings and library.

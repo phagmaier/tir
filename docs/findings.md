@@ -427,6 +427,32 @@ StudioBinder guides, read 2026-11-26.
   bare repository and two clones, a draft changed and its time set back
   in one, pulled in the other (`stat`, `git log`), 2026-11-27.
 
+## Git
+
+Observed with git 2.56.0 on the desktop, in temporary directories with
+`GIT_CONFIG_GLOBAL` naming an empty file, and in `git.rs`'s tests,
+2026-11-27, unless an entry says otherwise.
+
+- `git init` run with `GIT_DIR` and `GIT_WORK_TREE` naming `LIB/.git`
+  and `LIB` writes no `core.worktree`, so the writer's own git in the
+  library works as in any repository. A folder inside another
+  repository's work tree is made a repository of its own, which the
+  outer one lists as an untracked folder.
+- With `GIT_DIR` set, a repository whose `HEAD` is gone reports "not a
+  git repository: 'LIB/.git'" and a `.git` file of junk "invalid gitfile
+  format", each with exit code 128. `git symbolic-ref -q HEAD` exits 1
+  on a detached HEAD, and prints the branch on a repository with no
+  commit yet.
+- Git refuses to commit with no name and email in its configuration
+  ("Author identity unknown"). `-c core.hooksPath=/dev/null` runs no hook,
+  whatever folder the configuration names.
+- A `.gitignore` can name what git records instead of what it leaves
+  out: `/*` leaves out everything, `!/*/` brings back each top folder,
+  and so on down to the files wanted. Git cannot bring back a file whose
+  folder is left out, so each level's folders come back first. Evidence:
+  `gitignore(5)` of git 2.56.0 ("It is not possible to re-include a file
+  if a parent directory of that file is excluded"), and `git.rs`'s tests.
+
 ## Fountain
 
 - Fountain 1.1 has no Shot or General element, no way to force dialogue or a

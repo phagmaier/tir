@@ -9,8 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. Stage 5 is complete.
-- Next: 6.1, git in the library.
+- Active: 6.2, push, offline and pause (the user asked for 6.1 to 6.4,
+  stopping at 6.5).
+- Next: 6.3, connect dialog and backup panel.
 - Blockers: none.
 
 ## How to work this plan
@@ -484,8 +485,8 @@ anything else. V1 is done when 7.4 is checked.
 
 ## Stage 6: GitHub backup
 
-- [ ] 6.1 — Git in the library
-  - Status: todo
+- [x] 6.1 — Git in the library
+  - Status: done
   - Depends on: 5.5
   - Spec: brief "Saving and backup"; architecture design rule 5
   - Do: Run the system's git from Rust with argument lists, never a shell.
@@ -494,17 +495,27 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: tests against temporary libraries show commits happen at
     those moments, and that a missing git or a damaged repository is
     reported, not crashed on.
-  - Note (from 2.1): a crash can leave `NAME.<pid>-<n>.tmp` files
-    (`files.rs`) and hidden `.deleting.<pid>-<n>.tmp` folders
-    (`library.rs`) in the library; ignore `*.tmp` in its `.gitignore` so
-    they never become commits.
-  - Note (from 2.3): the Projects screen's last edit is a draft file's
-    modification time, which a clone or a pull resets to its own time
-    (findings, "Library on disk"); once the library is a repository, a
-    committed draft's time can come from `git log` instead.
+  - Evidence: 2026-11-27, `cargo test` passed (63), with `cargo clippy -D
+    warnings` and `cargo fmt --check` clean. `backup.rs`'s tests against
+    temporary libraries show a commit only once the library has been quiet
+    (none half a quiet spell after the last change), one at closing, one
+    at launch for changes made while Tir was closed, and the library made
+    a repository; a missing git, a damaged repository (no `HEAD`), no
+    home folder for the library, a detached HEAD and a merge under way
+    are reported in the status, with nothing recorded, and recording
+    resumes once the merge is gone; a folder holding other files is never
+    made a repository. `git.rs`'s tests show the `.gitignore` keeps `*.tmp`
+    files and folders and the writer's own files out of commits, hooks and
+    signing off, a library inside another repository kept apart, a junk
+    `.git` file reported, and a command over its time limit stopped. In an
+    isolated trial, text typed into a library made beforehand was saved,
+    and closing the window normally left one commit, "Back up Salt Line" by
+    `Tir <tir@localhost>`, holding `.gitignore`, the project file, the
+    draft and its copy. The 2.3 note on last-edit times went to Known
+    gaps.
 
 - [ ] 6.2 — Push, offline and pause
-  - Status: todo
+  - Status: in progress
   - Depends on: 6.1
   - Spec: brief "Saving and backup"
   - Do: Push after each commit and on Back up now. While offline, keep
@@ -759,3 +770,10 @@ that will close it.
   automated tests, since Vitest here has no DOM: the find bar, the marks,
   F8, and spell check's scheduling, F7 and menu are checked in the app
   only (5.1–5.4). Their commands and states are tested.
+- A clone or a pull gives each file it writes the time of the clone or
+  pull (findings, "Library on disk"), so the Projects screen's last edit
+  and the draft menu's dates show a draft brought from the other machine
+  as written then (2.3; left by 6.1). For a draft git holds unchanged,
+  the earlier of its file's time and its last commit's time would be
+  right; reading that walks the history at each listing unless it is
+  kept until HEAD moves.
