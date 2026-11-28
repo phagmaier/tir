@@ -1412,10 +1412,14 @@ html.title-page-shown .find-bar {
   overflow-wrap: anywhere;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
   pointer-events: none;
+  /* The interface's size at any zoom, as the popups are, though the script scales. */
+  scale: calc(1 / var(--desk-zoom, 1));
+  transform-origin: top left;
 }
 .finding-mark.right .finding-tip {
   left: auto;
   right: 20px;
+  transform-origin: top right;
 }
 .finding-mark:is(:hover, :focus) .finding-tip,
 .formatting-marks:not(:hover, :focus-within) .at-caret .finding-tip {

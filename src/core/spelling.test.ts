@@ -161,6 +161,9 @@ describe("SCOWL's US English dictionary", () => {
     expect(dictionary.suggest("recieve").length).toBeLessThanOrEqual(6);
     // A missing space comes after every word one edit away.
     expect(dictionary.suggest("occured")[0]).toBe("occurred");
+    // An apostrophe left out of a contraction is one edit, ranked as one.
+    expect(dictionary.suggest("dont")[0]).toBe("don't");
+    expect(dictionary.suggest("youre")[0]).toBe("you're");
   });
 
   it("takes an accented word for the one the dictionary holds without accents", () => {
@@ -176,15 +179,24 @@ describe("SCOWL's US English dictionary", () => {
     expect(dictionary.suggest("does'nt")).toContain("doesn't");
   });
 
-  it("offers the script's names among the suggestions, ahead of the dictionary's", () => {
+  it("offers the script's names among the suggestions, after swapped letters", () => {
     expect(dictionary.suggest("Okafro", ["okafor"])[0]).toBe("Okafor");
     // Many words are one edit from "tep"; the script's name comes first.
     expect(dictionary.suggest("Tep", ["teo"])[0]).toBe("Teo");
+    // Two letters swapped is the commonest slip, so "the" comes before TEO.
+    const teh = dictionary.suggest("teh", ["teo"]);
+    expect(teh[0]).toBe("the");
+    expect(teh).toContain("Teo");
     // An accent the writer left out costs nothing: "Tomas" is in the dictionary too.
     expect(dictionary.suggest("TOMAZ", ["tomás"]).slice(0, 2)).toEqual(["TOMÁS", "TOMAS"]);
     expect(dictionary.suggest("Halcyn", ["mara"])).not.toContain("Mara");
     // A misspelled possessive of a name gets the name's possessive.
     expect(dictionary.suggest("Okafro’s", ["okafor"])[0]).toBe("Okafor’s");
+    // The script's names come in small letters: a name takes the dictionary's
+    // capitals, else a capital to start and any others of the word typed.
+    expect(dictionary.suggest("McDonnel", ["mcdonnell"])[0]).toBe("McDonnell");
+    expect(dictionary.suggest("McOkafro", ["mcokafor"])[0]).toBe("McOkafor");
+    expect(dictionary.suggest("okafro", ["okafor"])[0]).toBe("Okafor");
   });
 });
 

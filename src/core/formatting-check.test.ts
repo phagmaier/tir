@@ -60,19 +60,23 @@ describe("formatting check", () => {
     ).toEqual([]);
   });
 
-  it.each(["int.", "Ext.", "INT./EXT.", "I/E.", "est."])(
+  it.each(["int.", "Ext.", "INT./EXT.", "EXT./INT.", "INT./ EXT.", "ext./ int.", "I/E.", "est."])(
     "accepts the heading prefix %s",
     (prefix) => {
       expect(findings(heading(`${prefix} HALL - DAY`), action("A door opens."))).toEqual([]);
     },
   );
 
-  it.each(["HALL - DAY", "INT HALL - DAY", "INT./EXT HALL - DAY", "INTERNATIONAL - DAY"])(
-    "flags a heading with the wrong prefix: %s",
-    (text) => {
-      expect(findings(heading(text), action("A door opens."))).toEqual(["headingPrefix:0"]);
-    },
-  );
+  it.each([
+    "HALL - DAY",
+    "INT HALL - DAY",
+    "INT/EXT. HALL - DAY",
+    "INT./EXT HALL - DAY",
+    "EXT./INT.HALL - DAY",
+    "INTERNATIONAL - DAY",
+  ])("flags a heading with the wrong prefix: %s", (text) => {
+    expect(findings(heading(text), action("A door opens."))).toEqual(["headingPrefix:0"]);
+  });
 
   it("flags blank elements including automatic parentheses, but not a new blank draft", () => {
     expect(findings(action(""))).toEqual([]);
@@ -85,6 +89,15 @@ describe("formatting check", () => {
         action("(The door opens.)"),
       ),
     ).toEqual(["emptyElement:1", "emptyElement:3"]);
+  });
+
+  it("does not flag the empty element being written, but flags one elsewhere", () => {
+    const draft = [cue("AVA"), dialogue("Come in."), action(""), action("She waits."), action("")];
+    expect(checkFormatting(draft, 4).map(({ kind, index }) => `${kind}:${index}`)).toEqual([
+      "emptyElement:2",
+    ]);
+    // Automatic parentheses the writer has just typed are being written too.
+    expect(checkFormatting([cue("AVA"), paren("()"), dialogue("Come in.")], 1)).toEqual([]);
   });
 
   it("flags scenes with no content before the next heading or the end", () => {
@@ -132,5 +145,39 @@ describe("formatting check", () => {
       "MALA",
     ];
     expect(findings(...names.flatMap((name) => [cue(name), dialogue("Here.")]))).toEqual([]);
+  });
+
+  it.each<[string, string]>([
+    ["BOB", "ROB"],
+    ["DANA", "DAN"],
+    ["MARY JANE", "MARY-JANE"],
+    ["ONEIL", "O'NEIL"],
+  ])(
+    "asks nothing of %s beside %s: a short name, or one apart only by punctuation",
+    (once, name) => {
+      expect(
+        findings(
+          cue(name),
+          dialogue("One."),
+          cue(name),
+          dialogue("Two."),
+          cue(once),
+          dialogue("Three."),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("counts a name as one however its accent is stored", () => {
+    expect(
+      checkFormatting([
+        cue("JOS\u00c9"),
+        dialogue("One."),
+        cue("JOSE\u0301"),
+        dialogue("Two."),
+        cue("JOSE"),
+        dialogue("Three."),
+      ]),
+    ).toEqual([{ kind: "nearDuplicateName", index: 4, name: "JOSE", suggested: "JOS\u00c9" }]);
   });
 });

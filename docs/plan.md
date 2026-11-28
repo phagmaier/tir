@@ -9,8 +9,8 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. 5.3, spell check, is complete.
-- Next: 5.4, review of Stage 5.
+- Active: 5.5, the Stage 5 user check, waiting for the user's report.
+- Next: Stage 6, once 5.5 passes.
 - Blockers: none.
 
 ## How to work this plan
@@ -390,8 +390,8 @@ anything else. V1 is done when 7.4 is checked.
     stay marked, as the brief asks for US English. Core spelling tests
     cover both.
 
-- [ ] 5.4 — Review: Stage 5
-  - Status: todo
+- [x] 5.4 — Review: Stage 5
+  - Status: done
   - Depends on: 5.3
   - Scope: everything changed since 4.3's recorded state.
   - Check:
@@ -404,9 +404,55 @@ anything else. V1 is done when 7.4 is checked.
     - No marks reach exports.
   - Done when: findings are fixed or listed under Known gaps, and
     `mise run check` passes.
+  - Evidence: 2026-11-27. Reviewed `ec7f6ea` (751797f..ec7f6ea: 41bfe96,
+    cc213fd, ec7f6ea; no uncommitted changes) with user-code-review and
+    three independent reviewers, one each for find, the formatting check
+    and spell check, whose findings were checked against the code. By
+    item: (1) escaping and whole words held: every syntax character, a
+    replacement taken literally, apostrophes, hyphens, combining, Cyrillic,
+    astral, Thai and CJK letters, and capitals that would change length;
+    30,000 random edits gave the highlights a fresh search gives. (2)
+    Replace all is one undo step, but its cost grew with matches times
+    steps, since find and the projection mapped their decorations through
+    each replacement's step; past 100 steps (`MANY_STEPS`) both now make
+    their sets afresh: in isolated WebKitGTK on the spike, ". " (2,040
+    matches) from 977 to 268 ms and "the" (6,720) from 3.6 s to 465 ms,
+    undo alike (findings, "Editor"). (3) The calibration run gave 42
+    findings, all explained (findings, "Calibration"), after the user
+    chose to accept EXT./INT. and a space after a combined prefix's slash
+    (five of its eight heading flags). Also fixed: an empty element just
+    made was flagged at each pause, its explanation over the next lines
+    while the caret stayed in it (prototype piece 1 exempts it); the
+    explanation scaled with the zoom; pressing a mark or the count button
+    took focus from the script; "()"'s and the heading's explanations
+    misdescribed the finding. (4) The typing path was unchanged, so the
+    5.3 measurements stand (findings, "Spell check"); fixed: F7 straight
+    after typing skipped the word not yet checked (it now waits for the
+    check), a name the dictionary has came in small letters ("mcdonnell"),
+    "dont" did not offer "don't", and a name one letter off ("Teo")
+    ranked above two letters swapped ("the" for "teh"); the "Add" row now
+    shows the word's capitals. (5) The vendored files match the release
+    byte for byte and the notices are recorded; the word count reads
+    109,922. (6) Marks are decorations or siblings of the editable root;
+    exports come from the saver's model, the clipboard from the selection.
+    The find bar now replaces nothing while the editor is not editable.
+    The user kept learning every word of names and locations. New tests:
+    the empty element being written, accepted and refused prefixes, names
+    apart by length, punctuation or a stored accent, contractions, names'
+    capitals and rank, and Replace all and its undo past `MANY_STEPS` for
+    find and the projection (each shown failing without its fix, except
+    find's, which matches a fresh search either way). In isolated WebKitGTK
+    on the sample: no mark after Enter and a pause, the mark once the
+    caret left and its tip on returning, the tip 270 px wide at 50%, 100%
+    and 200%, mousedown on a mark and the count button prevented
+    (synthetic events), and F7 at once after typing "teh" and "dont"
+    opening their menus with "the" and "don't" first. `mise run check`
+    passed (736 Vitest and 42 Rust tests, both type checks, Biome,
+    rustfmt, clippy). Not checked: a real pointer press on a mark, the
+    laptop, a release build (7.1).
 
 - [ ] 5.5 — User check: Stage 5
-  - Status: todo
+  - Status: in progress (waiting for the user's report)
   - Depends on: 5.4
   - Check: the user renames a character with Replace all, fixes a flagged
     cue, and corrects a misspelling from its suggestions.
@@ -619,9 +665,10 @@ that will close it.
   typing with them before adding them.
 - A style boundary inside one grapheme at the end of a line (a combining
   accent styled apart from its letter) would give the line two line-end
-  decorations and an extra row (1.10 review, from the source). The editor
-  selects whole graphemes, so only an opened or pasted script could hold
-  one.
+  decorations and an extra row (1.10 review, from the source), and so
+  would a find highlight ending inside one there, such as "Jose" found in
+  a stored "Jose" and U+0301 (5.4 review). The editor selects whole
+  graphemes, so only an opened or pasted script could hold one.
 - Projects with the same name, such as one Fountain file imported twice
   as a new project (folders "Salt Line" and "Salt Line 2"), look the same
   in the Projects screen's list, its Delete confirmation and Import's
@@ -683,3 +730,10 @@ that will close it.
   match the single "á" typed in the find bar, nor the other way round
   (5.1). Normalising both before matching would need offsets mapped back
   to the text as stored.
+- The views of find, the formatting check and spell check have no
+  automated tests, since Vitest here has no DOM: the find bar, the marks,
+  F8, and spell check's scheduling, F7 and menu are checked in the app
+  only (5.1–5.4). Their commands and states are tested.
+- After "Add to dictionary", an element edited but not yet checked keeps
+  its squiggle until its check lands, and keeps it for good once spell
+  check has turned itself off after a failure (5.4 review).

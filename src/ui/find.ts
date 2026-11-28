@@ -26,7 +26,7 @@ import { ELEMENT_FORMATS } from "../core/format.ts";
 import { capitals } from "../core/layout.ts";
 import type { ElementType, Span } from "../core/model.ts";
 import { schema } from "./editor-model.ts";
-import { changedElements } from "./projection.ts";
+import { changedElements, MANY_STEPS } from "./projection.ts";
 import { ownStep } from "./undo.ts";
 
 interface Match {
@@ -223,7 +223,10 @@ function search(doc: Node, find: Finder): Found {
   return { find, spans, matches, hits, current: -1, decorations: hits };
 }
 
-/** Follows `tr`: the elements it changed are searched again, and their highlights replaced. */
+/**
+ * Follows `tr`: the elements it changed are searched again, and their
+ * highlights replaced; after `MANY_STEPS`, every highlight is made afresh.
+ */
 function patch(found: Found, tr: Transaction): Found {
   const { doc } = tr;
   const positions: number[] = [];
@@ -231,23 +234,29 @@ function patch(found: Found, tr: Transaction): Found {
     positions.push(pos);
   });
   const { first, last } = changedElements(tr, positions);
+  const afresh = tr.steps.length > MANY_STEPS;
   const matches: Match[] = [];
   const fresh: Decoration[] = [];
   doc.forEach((node, pos, index) => {
-    const changed = index >= first && index <= last;
+    const changed = afresh || (index >= first && index <= last);
     for (const [start, end] of spansOf(found.find, found.spans, node)) {
       const match = { from: pos + 1 + start, to: pos + 1 + end };
       matches.push(match);
       if (changed) fresh.push(Decoration.inline(match.from, match.to, HIT));
     }
   });
-  let hits = found.hits.map(tr.mapping, doc);
-  if (first <= last) {
-    const end = (positions[last] as number) + doc.child(last).nodeSize;
-    const stale = hits.find(positions[first], end);
-    if (stale.length) hits = hits.remove(stale);
+  let hits: DecorationSet;
+  if (afresh) {
+    hits = DecorationSet.create(doc, fresh);
+  } else {
+    hits = found.hits.map(tr.mapping, doc);
+    if (first <= last) {
+      const end = (positions[last] as number) + doc.child(last).nodeSize;
+      const stale = hits.find(positions[first], end);
+      if (stale.length) hits = hits.remove(stale);
+    }
+    if (fresh.length) hits = hits.add(doc, fresh);
   }
-  if (fresh.length) hits = hits.add(doc, fresh);
   return { ...found, matches, hits, current: -1, decorations: hits };
 }
 

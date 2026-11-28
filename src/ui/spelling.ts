@@ -285,6 +285,8 @@ interface Live {
   readonly view: EditorView;
   open(from: number, to: number): void;
   redraw(): void;
+  /** Checks what is waiting for a pause now, and resolves once every check sent has answered. */
+  checked(): Promise<unknown>;
 }
 
 /**
@@ -354,15 +356,19 @@ export function spellCheck(
     }
     event.preventDefault();
     const { view } = live;
-    const { held } = drawSquiggles(view.state, (node) => results.get(node), knownIn(view.state));
-    const next = nextMisspelling(view.state, held);
-    if (!next) {
-      toast(off ? "Spell check is off" : "No misspellings");
-      return;
-    }
-    showScript();
-    view.focus();
-    live.open(next.from, next.to);
+    // The word just typed may wait for its check: F7 goes to it once checked.
+    void live.checked().then(() => {
+      if (live?.view !== view || !view.editable || !canNavigate()) return;
+      const { held } = drawSquiggles(view.state, (node) => results.get(node), knownIn(view.state));
+      const next = nextMisspelling(view.state, held);
+      if (!next) {
+        toast(off ? "Spell check is off" : "No misspellings");
+        return;
+      }
+      showScript();
+      view.focus();
+      live.open(next.from, next.to);
+    });
   };
   window.addEventListener("keydown", onKey);
 
@@ -386,6 +392,8 @@ export function spellCheck(
       let waiting = 0;
       let held = false;
       let destroyed = false;
+      // Settles once every check sent so far has answered.
+      let answered: Promise<unknown> = Promise.resolve();
       const menu = new MenuView(
         view,
         (index) => view.editable && applySpelling(index, add)(view.state, view.dispatch),
@@ -410,7 +418,7 @@ export function spellCheck(
             type: node.attrs.type as ElementType,
             text: node.textContent,
           }));
-          checker.check(elements).then(
+          const check = checker.check(elements).then(
             (words) => {
               unchecked.forEach((node, i) => {
                 results.set(node, words[i] ?? []);
@@ -424,6 +432,7 @@ export function spellCheck(
               toast("Spell check is off: it could not check the script");
             },
           );
+          answered = Promise.all([answered, check]);
         }
         redraw();
       };
@@ -453,7 +462,11 @@ export function spellCheck(
           (error) => console.error("Tir found no spellings:", error),
         );
       };
-      live = { view, open, redraw };
+      const checked = () => {
+        if (waiting) refresh();
+        return answered;
+      };
+      live = { view, open, redraw, checked };
       adders.set(view, add);
       // The script as it opens is checked at once.
       schedule(0);
@@ -537,7 +550,7 @@ class MenuView {
       ...(menu.options.length ? [] : [row("spelling-none", "No suggestions")]),
       row(
         "completion-option spelling-add",
-        `Add “${wordToAdd(menu.word)}” to dictionary`,
+        `Add “${shown(wordToAdd(menu.word))}” to dictionary`,
         menu.options.length,
       ),
       row("completion-keys", "Enter chooses · ↑↓ · Esc"),

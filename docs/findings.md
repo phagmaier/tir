@@ -268,9 +268,9 @@ No script text was copied into Tir's fixtures.
     title-like first page): After the Hunt 1, Heretic 47 and 123, Superman
     22 and 95.
   - 4 unexplained: A Real Pain 76, Babygirl 87, After the Hunt 12 and 40.
-- Formatting check, run on all seven rebuilds: 47 findings. Each finding
-  was inspected in the rebuilt elements and checked against the PDF
-  extraction:
+- Formatting check, run on all seven rebuilds: 42 findings since the
+  Stage 5 review (47 before it). Each finding was inspected in the rebuilt
+  elements and checked against the PDF extraction:
   - 32 blank General elements inferred solely from gaps (Babygirl 16,
     Heretic 10, Sing Sing 2, Superman 4). The PDFs cannot say whether
     those gaps are empty elements or deliberate spacing.
@@ -279,11 +279,12 @@ No script text was copied into Tir's fixtures.
     and quoted thought (Heretic 28 and 83). The single orphan dialogue
     follows a cue at an Action indent (Queer 37). These are effects of
     reconstructing element types from print, not checks on the FDX types.
-  - 8 headings outside the brief's prefix list: reversed or differently
-    spaced or punctuated combined prefixes (After the Hunt 54 and 81;
-    Babygirl 29, 42, 44 and 69), and plain INT or EXT without a period
-    (Babygirl 86 and Superman 124). The check uses the brief's list even
-    when Final Draft permits these spellings.
+  - 3 headings outside the brief's prefixes: INT/EXT. without its first
+    period (Babygirl 42), and plain INT or EXT without a period (Babygirl
+    86 and Superman 124). Five more, EXT./INT. and combined prefixes with
+    a space after the slash (After the Hunt 54 and 81; Babygirl 29, 44 and
+    69), were flagged until the user chose to accept them (brief,
+    "Formatting check", 2026-11-27). Final Draft permits all eight.
   - 1 one-off short spelling of a repeatedly used name (A Real Pain 68).
 
 ## Courier Prime
@@ -501,13 +502,21 @@ StudioBinder guides, read 2026-11-26.
   flags, and `PFX` and `SFX` rules without affixes of their own), leaves
   aside `WORDCHARS`, `COMPOUNDMIN` and `COMPOUNDRULE` (its compounds only
   build ordinals, and Tir leaves words with digits unchecked), and refuses
-  any other. Listing every word its rules make gives 109,924 words.
+  any other. Listing every word its rules make gives 109,922 words.
   Rejected: nspell 2.1.5 (MIT, last published 2022), typo-js 2.0.0
   (BSD-3-Clause; expands words as Tir does, with slow suggestions), and
   Hunspell compiled to WebAssembly (`hunspell-asm` 4.0.2, last published
   2022, 4.9 MB; `hunspell-wasm` 0.3.0, LGPL, GPL or MPL): each is a
   dependency for less than the few hundred lines the one dictionary
   needs. Evidence: npm metadata, 2026-11-27.
+- **It agrees with Hunspell** 1.7.5 (libhunspell from nixpkgs, on the same
+  files): Hunspell accepts all 109,922 words Tir lists, and of 4.42
+  million candidate words the two disagree on 54: 21 mixed-capital words
+  Hunspell accepts and Tir refuses ("D'Arezzo", "IPhone", "KHz"), and 33
+  all-capital forms Tir accepts and Hunspell refuses ("CD'S", "PMED").
+  Hunspell ranks "don't" sixth for "dont"; Tir ranks it first, as it
+  scores likeness without apostrophes. Evidence: the Stage 5 review,
+  2026-11-27.
 - **Cost**, in WebKitGTK 2.54.2's worker: reading the dictionary
   136–162 ms; checking the 120-page spike's 2,280 elements 29–33 ms; a
   suggestion under 1 ms for a short word and up to 80 ms for a ten-letter
@@ -611,6 +620,14 @@ include the per-task results. Reproduce with
   them 58 ms. Typing's median stayed at 10–11 ms with all 17,040 shown,
   since edits map the set and patch the elements they change. A spell
   checker's squiggles meet the same costs.
+- **Mapping a decoration set costs every step of the transaction.**
+  ProseMirror maps each decoration through each step map, so Replace all,
+  one step per match, grew with matches times steps: on the spike, ". "
+  (2,040 matches) took 977 ms in the app and "the" (6,720) 3.6 s, undo
+  alike; in Node, find's highlights took 1,759 ms and the projection's line
+  breaks 694 ms of "the"'s, where making either set afresh took 20–120 ms.
+  Since the Stage 5 review both make their sets afresh past 100 steps
+  (`MANY_STEPS`): 268 ms and 465 ms in the app, undo alike (2026-11-27).
 - **Test input in WebKitGTK as well as editor state.** ProseMirror
   intercepts Esc before a bubbling window listener can use it. Keep
   composition native and check dead and Compose keys at the window.

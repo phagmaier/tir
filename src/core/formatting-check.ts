@@ -18,7 +18,9 @@ export type Finding =
       readonly suggested: string;
     };
 
-const HEADING_PREFIX = /^(?:INT\.\/EXT\.|INT\.|EXT\.|I\/E\.|EST\.)(?=\s|$)/i;
+// The brief's prefixes, a combined one either way round with or without a
+// space after its slash, each followed by a space or nothing.
+const HEADING_PREFIX = /^(?:INT\.\/\s?EXT\.|EXT\.\/\s?INT\.|INT\.|EXT\.|I\/E\.|EST\.)(?=\s|$)/i;
 const NAME = /^[\p{L}\p{M}]+(?:[ ’'-][\p{L}\p{M}]+)*$/u;
 const LETTER = /^\p{L}$/u;
 
@@ -50,8 +52,12 @@ function oneNameEdit(a: readonly string[], b: readonly string[]): boolean {
   );
 }
 
-/** The brief's six formatting rules, in draft order. Nothing changes the model. */
-export function checkFormatting(elements: readonly Element[]): Finding[] {
+/**
+ * The brief's six formatting rules, in draft order. Nothing changes the model.
+ * `writing` is the index of the element the writer is typing in, if any: while
+ * empty it is the place being written, not a stray line (prototype piece 1).
+ */
+export function checkFormatting(elements: readonly Element[], writing = -1): Finding[] {
   // The one blank Action in a new draft is the starting place, not a stray line.
   if (elements.length === 1 && elements[0]?.type === "action" && !elements[0].text.trim()) {
     return [];
@@ -64,7 +70,7 @@ export function checkFormatting(elements: readonly Element[]): Finding[] {
   elements.forEach(({ type, text }, index) => {
     const trimmed = text.trim();
     const empty = !trimmed || (type === "parenthetical" && /^\(\s*\)$/.test(trimmed));
-    if (empty) findings.push({ kind: "emptyElement", index });
+    if (empty && index !== writing) findings.push({ kind: "emptyElement", index });
 
     if (type === "sceneHeading") {
       if (emptyScene !== -1) findings.push({ kind: "emptyScene", index: emptyScene });

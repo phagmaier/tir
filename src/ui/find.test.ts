@@ -257,4 +257,16 @@ describe("highlights follow edits as a new search finds them", () => {
     const undone = press(after, "Ctrl-z").state;
     expect(highlights(undone)).toEqual(searched(undone, q));
   });
+
+  it("a Replace all of more matches than are worth mapping one by one, and its undo", () => {
+    const q = rename("Ellis");
+    const script = Array.from({ length: 120 }, (_, i) => action(`Ellis ${i}.${i ? "" : "|"}`));
+    const found = run(stateOf(script), setFindQuery(q));
+    const after = run(found, replaceAll("Ellis and Ellis"));
+    expect(findStatus(after)?.count).toBe(240);
+    expect(highlights(after)).toEqual(searched(after, q));
+    const undone = press(after, "Ctrl-z").state;
+    expect(findStatus(undone)?.count).toBe(120);
+    expect(highlights(undone)).toEqual(searched(undone, q));
+  });
 });

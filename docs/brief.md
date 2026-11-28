@@ -187,8 +187,9 @@ Flags:
 
 - a character cue with no dialogue under it;
 - dialogue or a parenthetical with no character cue above it;
-- a scene heading that does not start with INT., EXT., INT./EXT., I/E. or
-  EST.;
+- a scene heading that does not start with INT., EXT., INT./EXT. or
+  EXT./INT. (with or without a space after the slash), I/E. or EST.
+  *(EXT./INT.: the user's choice, 2026-11-27)*;
 - an empty element, which adds stray blank lines;
 - a scene heading with nothing under it before the next scene heading;
 - near-duplicate character names, such as JHON beside JOHN.
@@ -197,7 +198,9 @@ Each finding shows as a small mark in the margin beside its element, never
 printed or exported, with an explanation on hover or when the cursor is in
 the element. The top bar shows the number of findings, and F8 jumps to the
 next one. What the editor already enforces, such as capitals, is never
-flagged.
+flagged. *(agent-selected, from prototype piece 1)* An empty element the
+writer has just made or emptied is not flagged while the caret stays in
+it.
 
 ## Spell check
 
@@ -208,7 +211,9 @@ paper, never printed or exported.
 - **The script teaches it.** Each word of a character's name, as the cues
   give it, and of a location, as the scene headings give it, is spelled
   right anywhere in the script, in any capitals, and so is its possessive
-  ("Okafor's").
+  ("Okafor's"). A typo in a cue or heading is therefore not marked *(kept
+  by the user's choice, 2026-11-27)*; the formatting check asks about a
+  one-off cue one letter from a recurring name.
 - **Suggestions.** A right click on a squiggle, or F7 for the next one,
   selects the word and opens a menu of spellings, the script's own names
   among them, then "Add to dictionary". Choosing a spelling replaces the

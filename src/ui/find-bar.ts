@@ -161,6 +161,9 @@ export function findBar(parent: HTMLElement, toast: (text: string) => void): Plu
     revealed = null;
     return run(command);
   };
+  // Replacing, and undoing on the bar's buttons, change the script: never
+  // while it is not editable, as while Tir closes.
+  const change = (command: Command) => !!editor?.editable && act(command);
   const hide = () => {
     bar.hidden = true;
     revealed = null;
@@ -226,10 +229,11 @@ export function findBar(parent: HTMLElement, toast: (text: string) => void): Plu
   previous.addEventListener("click", () => act(findPrevious));
   next.addEventListener("click", () => act(findNext));
   close.addEventListener("click", shut);
-  replace.addEventListener("click", () => act(replaceMatch(replacement.value)));
+  replace.addEventListener("click", () => change(replaceMatch(replacement.value)));
   replaceEvery.addEventListener("click", () => {
+    if (!editor?.editable) return;
     if (pending) search();
-    const replaced = editor && findStatus(editor.state)?.count;
+    const replaced = findStatus(editor.state)?.count;
     if (run(replaceAll(replacement.value))) toast(`Replaced ${replaced} · one Undo reverses it`);
   });
   bar.addEventListener("keydown", (event) => {
@@ -240,7 +244,7 @@ export function findBar(parent: HTMLElement, toast: (text: string) => void): Plu
       act(event.shiftKey ? findPrevious : findNext);
     } else if (plain && !event.shiftKey && event.key === "Enter" && event.target === replacement) {
       event.preventDefault();
-      act(replaceMatch(replacement.value));
+      change(replaceMatch(replacement.value));
     } else if (
       event.ctrlKey &&
       !event.shiftKey &&
@@ -250,7 +254,11 @@ export function findBar(parent: HTMLElement, toast: (text: string) => void): Plu
       event.preventDefault();
       query.focus();
       query.select();
-    } else if (event.target instanceof HTMLButtonElement && undoKey(editor, event)) {
+    } else if (
+      event.target instanceof HTMLButtonElement &&
+      editor.editable &&
+      undoKey(editor, event)
+    ) {
       event.preventDefault();
     }
   });

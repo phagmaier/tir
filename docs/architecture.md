@@ -554,18 +554,23 @@ covers a match exactly, so Next, Previous and Replace move the selection,
 and the page position and scene list follow. A new query builds the
 highlight set once; an edit maps it and searches again only the elements
 `changedElements` (`projection.ts`) reports, the same ones the projection
-patches (findings, "Editor"). A replacement names itself in `uiEvent`, as
-paste does, so autocomplete opens no popup. The find bar (`find-bar.ts`)
-is a view plugin drawn in the top bar, so it hides with it; it waits for a
-pause in typing before searching, and holds Esc in a window listener
-while open, ahead of desk's.
+patches (findings, "Editor"). After a transaction of more than
+`MANY_STEPS` steps, such as Replace all's one step per match, find and the
+projection make their sets afresh instead of mapping them. A replacement
+names itself in `uiEvent`, as paste does, so autocomplete opens no popup.
+The find bar (`find-bar.ts`) is a view plugin drawn in the top bar, so it
+hides with it; it waits for a pause in typing before searching, holds Esc
+in a window listener while open, ahead of desk's, and changes nothing
+while the editor is not editable, as while Tir closes.
 
 Formatting check runs the core's six rules on the active draft after a
 pause in editing, or immediately if F8 or the count button asks for the
-next finding. The view draws marks as siblings of the editable root, on
-the first rows from `ScriptMap`; the right column of dual dialogue uses
-the gutter to keep simultaneous marks apart. Findings never enter
-the document model, clipboard or exports.
+next finding, leaving out an empty element the writer has just typed in
+while the caret stays there. The view draws marks as siblings of the
+editable root, on the first rows from `ScriptMap`; the right column of
+dual dialogue uses the gutter to keep simultaneous marks apart. Their
+explanations keep the interface's size at any zoom (`--desk-zoom`).
+Findings never enter the document model, clipboard or exports.
 
 Spell check (`spelling.ts`) is a state plugin holding the squiggles, as
 decorations, and the spelling menu, placed after autocomplete and before
@@ -582,10 +587,11 @@ and locations (autocomplete's tally) and of the writer's dictionary,
 which the page folds and matches itself, so a new name redraws without
 asking the worker. Between checks an edit maps the squiggles and drops
 each whose word it changed or split, reading only where it changed the
-script (`changedRange`). The menu sits in the script's frame, as the
-autocomplete popup does; a spelling replaces the word as an `ownStep`
-named in `uiEvent`. Squiggles and menu never enter the document model,
-clipboard or exports.
+script (`changedRange`). F7 first sends any check waiting for a pause and
+waits for the answers, so it finds the word just typed. The menu sits in
+the script's frame, as the autocomplete popup does; a spelling replaces
+the word as an `ownStep` named in `uiEvent`. Squiggles and menu never
+enter the document model, clipboard or exports.
 
 The sidebar's scene list and the top bar's page position are view plugins
 that `mountEditor` hands the projection, so they read its `ScriptMap`

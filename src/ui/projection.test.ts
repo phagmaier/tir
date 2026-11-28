@@ -10,8 +10,8 @@ import { paste } from "./clipboard.ts";
 import { screenplayKeys } from "./commands.ts";
 import { action, heading, stateOf } from "./editor-harness.ts";
 import { fromDocument, schema, toDocument } from "./editor-model.ts";
-import { type Block, Projection } from "./projection.ts";
-import { undoHistory } from "./undo.ts";
+import { type Block, MANY_STEPS, Projection } from "./projection.ts";
+import { ownStep, undoHistory } from "./undo.ts";
 
 const TOP_PX = 96;
 
@@ -298,6 +298,21 @@ const edits: [string, (state: EditorState) => Transaction][] = [
     },
   ],
   ["undo that paste", (s) => transactionOf(s, undo)],
+  [
+    "replace every “the” between the first and last ten elements, a step each, as Replace all does",
+    (s) => {
+      const found: number[] = [];
+      const [from, to] = [startOf(s.doc, 10), startOf(s.doc, s.doc.childCount - 10)];
+      s.doc.nodesBetween(from, to, (node, pos) => {
+        for (const match of (node.text ?? "").matchAll(/the/gi)) found.push(pos + match.index);
+      });
+      const tr = s.tr;
+      for (const at of found.reverse()) tr.insertText("a longer word", at, at + 3);
+      expect(tr.steps.length).toBeGreaterThan(MANY_STEPS);
+      return ownStep(tr);
+    },
+  ],
+  ["undo that Replace all", (s) => transactionOf(s, undo)],
 ];
 
 /** The transaction `command` dispatches in `state`. */

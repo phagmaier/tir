@@ -124,7 +124,8 @@ export class Projection {
     // them, and ProseMirror keeps their paragraphs and styles.
     const { first, last } = changedElements(tr, positions);
     const shift = doc.childCount - before.length;
-    let decorations = this.decorations.map(tr.mapping, doc);
+    const afresh = tr.steps.length > MANY_STEPS;
+    let decorations = afresh ? DecorationSet.empty : this.decorations.map(tr.mapping, doc);
     const stale: Decoration[] = [];
     const fresh: Decoration[] = [];
     const restyle: Restyle[] = [];
@@ -136,7 +137,7 @@ export class Projection {
           was === undefined ? { index: i } : { index: i, before: positionsBefore[was] as number },
         );
       }
-      if (!old || !sameNumbers(old.breaks, placement.breaks)) {
+      if (afresh || !old || !sameNumbers(old.breaks, placement.breaks)) {
         const pos = positions[i] as number;
         const node = doc.child(i);
         stale.push(...decorations.find(pos + 1, pos + node.nodeSize - 1));
@@ -406,6 +407,14 @@ function indexAt(positions: readonly number[], pos: number): number {
   }
   return low;
 }
+
+/**
+ * Mapping a decoration costs every step of a transaction, so past this many
+ * steps, as in a Replace all of thousands of matches or its undo, one step
+ * each, decorations are made afresh instead, which costs their number once
+ * (findings, "Editor").
+ */
+export const MANY_STEPS = 100;
 
 /**
  * The elements `tr` changed, as indices into its final document, whose

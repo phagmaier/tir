@@ -91,9 +91,9 @@ type Case = "lower" | "title" | "upper" | "mixed";
 
 /**
  * A suggestion as found: how many edits from the typed word, what kind of
- * edit (the dictionary's capitals or a known word 0, the replacement table
- * 1, two letters swapped 2, another edit 3, a space 4, two edits 5), and
- * how alike the two are.
+ * edit (the dictionary's capitals or the word without its accents 0, the
+ * replacement table 1, two letters swapped 2, a known word such as a name
+ * 3, another edit 4, a space 5, two edits 6), and how alike the two are.
  */
 interface Offer {
   readonly text: string;
@@ -288,23 +288,26 @@ export class Dictionary {
   /**
    * Up to six spellings for `word`, in its capitals and with its shape of
    * apostrophe, the fewest edits away first: the dictionary's own capitals
-   * for it, and the word without its accents; any of `extra`, such as the
-   * script's names, within two edits, or their possessives for a
-   * possessive; then, one edit away, Hunspell's replacement table, two
-   * letters swapped, and a letter extra, missing or wrong; then a space
-   * missing; then two edits away, the most alike first. Among equals, one
-   * keeping the word's first letter comes first.
+   * for it, and the word without its accents; then, one edit away,
+   * Hunspell's replacement table, two letters swapped, any of `extra`, such
+   * as the script's names, or their possessives for a possessive, and a
+   * letter extra, missing or wrong; then, two edits away, `extra`, a space
+   * missing, and other words. Among equals, the most alike first, and one
+   * keeping the word's first letter.
    */
   suggest(word: string, extra: Iterable<string> = []): string[] {
     const typed = this.convert(word);
     const lower = typed.toLowerCase();
+    // An apostrophe parts the letter pairs `likeness` counts, so "dont" would
+    // rank "don't" below words one edit away without it.
+    const unquoted = lower.replaceAll("'", "");
     const offered: Offer[] = [];
     const seen = new Set<string>();
     const offer = (text: string, edits: number, kind: number) => {
       const key = text.toLowerCase();
       if (seen.has(key) || this.unsuggested.has(text)) return;
       seen.add(key);
-      const score = likeness(lower, key) + (key[0] === lower[0] ? 1 : 0);
+      const score = likeness(unquoted, key.replaceAll("'", "")) + (key[0] === lower[0] ? 1 : 0);
       offered.push({ text, edits, kind, score });
     };
     const tryWords = (candidate: string, edits: number, kind: number) => {
@@ -319,15 +322,6 @@ export class Dictionary {
     const plain = bare(lower);
     if (plain !== lower) tryWords(plain, 0, 0);
     const owner = lower.endsWith("'s") ? bare(lower.slice(0, -2)) : null;
-    for (const known of extra) {
-      const converted = this.convert(known);
-      const name = bare(converted.toLowerCase());
-      // An accent the writer left out or added is no edit: "Tomas" for "Tomás".
-      const edits = editDistance(plain, name, 2);
-      if (edits <= 2) offer(converted, edits, 0);
-      const owned = owner === null ? 3 : editDistance(owner, name, 2);
-      if (owned <= 2) offer(`${converted}'s`, owned, 0);
-    }
     for (const [from, to] of this.replacements) {
       for (let at = lower.indexOf(from); at >= 0; at = lower.indexOf(from, at + 1)) {
         tryWords(lower.slice(0, at) + to + lower.slice(at + from.length), 1, 1);
@@ -336,16 +330,33 @@ export class Dictionary {
     for (let i = 0; i < lower.length - 1; i++) {
       tryWords(lower.slice(0, i) + lower[i + 1] + lower[i] + lower.slice(i + 2), 1, 2);
     }
+    // Names come after swapped letters, the commonest slip: "teh" is "the"
+    // before the script's TEO.
+    for (const known of extra) {
+      const converted = this.convert(known);
+      const folded = converted.toLowerCase();
+      const name = bare(folded);
+      // An accent the writer left out or added is no edit: "Tomas" for "Tomás".
+      const edits = editDistance(plain, name, 2);
+      const owned = owner === null ? 3 : editDistance(owner, name, 2);
+      if (edits > 2 && owned > 2) continue;
+      // The script's names come folded: a name takes the dictionary's capitals
+      // ("McDonnell"), else a name's, with any the typed word has.
+      const spelling =
+        converted === folded ? (this.spelled(folded) ?? asName(typed, folded)) : converted;
+      if (edits <= 2) offer(spelling, edits, 3);
+      if (owned <= 2) offer(`${spelling}'s`, owned, 3);
+    }
     const near = this.edits(lower);
-    for (const candidate of near) tryWords(candidate, 1, 3);
+    for (const candidate of near) tryWords(candidate, 1, 4);
     // A missing space ranks after every word one edit away: "occur ed" is no "occurred".
     for (let at = 2; at < lower.length - 1; at++) {
-      tryWords(`${lower.slice(0, at)} ${lower.slice(at)}`, 2, 4);
+      tryWords(`${lower.slice(0, at)} ${lower.slice(at)}`, 2, 5);
     }
     if (offered.length < FEW && lower.length <= LONGEST_FOR_TWO_EDITS) {
       // Repeats cost a lookup each, less than remembering every string tried.
       for (const once of near) {
-        for (const candidate of this.edits(once)) tryWords(candidate, 2, 5);
+        for (const candidate of this.edits(once)) tryWords(candidate, 2, 6);
       }
     }
     offered.sort((a, b) => a.edits - b.edits || a.kind - b.kind || b.score - a.score);
@@ -422,6 +433,23 @@ function inCase(text: string, shape: Case): string {
     return first.toUpperCase() + text.slice(first.length);
   }
   return text;
+}
+
+/**
+ * `text`, a name in small letters, with a capital to start and wherever
+ * `typed` has one: "mcdonel" for "McDonel" makes "McDonell", for "mcdonel"
+ * "Mcdonell".
+ */
+function asName(typed: string, text: string): string {
+  const shape = [...typed];
+  return [...text]
+    .map((char, i) => {
+      const was = shape[i];
+      return i === 0 || (was !== undefined && was !== was.toLowerCase())
+        ? char.toUpperCase()
+        : char;
+    })
+    .join("");
 }
 
 /**

@@ -1,27 +1,35 @@
-import { Plugin } from "prosemirror-state";
+import { type EditorState, Plugin } from "prosemirror-state";
 import { PAGE } from "../core/format.ts";
 import { checkFormatting, type Finding } from "../core/formatting-check.ts";
+import type { ElementType } from "../core/model.ts";
 import { fromDocument } from "./editor-model.ts";
 import { jumpTo } from "./jump.ts";
 import { PITCH_PX, type Projection, ROW_PX } from "./projection.ts";
 
 const ALERT = `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.3 14.2 13H1.8L8 2.3Z"/><path d="M8 6.4v3M8 11.2v.1"/></svg>`;
 
-function explanation(finding: Finding): string {
+function explanation(finding: Finding, type: ElementType): string {
   switch (finding.kind) {
     case "cueWithoutDialogue":
       return "This character cue has no dialogue under it.";
     case "speechWithoutCue":
       return "This element has no character cue above it.";
     case "headingPrefix":
-      return "Start a scene heading with INT., EXT., INT./EXT., I/E. or EST.";
+      return "Start a scene heading with INT., EXT., INT./EXT., EXT./INT., I/E. or EST., then a space.";
     case "emptyElement":
-      return "This empty element prints as a stray blank line.";
+      return type === "parenthetical"
+        ? "This parenthetical holds nothing between its parentheses."
+        : "This empty element prints as a stray blank line.";
     case "emptyScene":
       return "This scene has nothing under its heading.";
     case "nearDuplicateName":
       return `“${finding.name}” appears in one cue. Did you mean “${finding.suggested}”?`;
   }
+}
+
+/** The element holding the caret, as an index into the draft; -1 for a selection. */
+function caretElement({ selection }: EditorState): number {
+  return selection.empty ? selection.$head.index(0) : -1;
 }
 
 /** The count in the top bar and marks on the paper (prototype pieces 1 and 5). */
@@ -47,6 +55,8 @@ export function formattingCheck(
   bar.append(divider, button);
 
   let go: (() => boolean) | undefined;
+  // Pressing the button would take focus, and the caret, from the editor.
+  button.addEventListener("mousedown", (event) => event.preventDefault());
   button.addEventListener("click", () => go?.());
   return new Plugin({
     view(view) {
@@ -54,10 +64,15 @@ export function formattingCheck(
       // clipboard nor any export contains a mark or explanation.
       const layer = document.createElement("div");
       layer.className = "formatting-marks";
+      // Pressing a mark would take focus from the editor; its tip shows on hover.
+      layer.addEventListener("mousedown", (event) => event.preventDefault());
       script.append(layer);
       const marks = new Map<number, HTMLElement>();
       let current: HTMLElement | undefined;
       let waiting = 0;
+      // The element the writer last typed in while the caret stays there: empty, it
+      // is the place being written, as after Enter, and no stray line yet.
+      let writing = -1;
       const indicateCaret = () => {
         const { selection } = view.state;
         const next = selection.empty ? marks.get(selection.$head.index(0)) : undefined;
@@ -69,7 +84,8 @@ export function formattingCheck(
       const refresh = () => {
         clearTimeout(waiting);
         waiting = 0;
-        const findings = checkFormatting(fromDocument(view.state.doc));
+        const { doc } = view.state;
+        const findings = checkFormatting(fromDocument(doc), writing);
         const total = String(findings.length);
         if (count.data !== total) {
           count.data = total;
@@ -81,7 +97,7 @@ export function formattingCheck(
         }
         const groups = new Map<number, string[]>();
         for (const finding of findings) {
-          const message = explanation(finding);
+          const message = explanation(finding, doc.child(finding.index).attrs.type as ElementType);
           const messages = groups.get(finding.index);
           if (messages) messages.push(message);
           else groups.set(finding.index, [message]);
@@ -153,7 +169,13 @@ export function formattingCheck(
             clearTimeout(waiting);
             current?.classList.remove("at-caret");
             current = undefined;
+            writing = caretElement(next.state);
             // Don't scan the draft or draw its marks on the typing path.
+            waiting = window.setTimeout(refresh, 150);
+          } else if (writing !== -1 && caretElement(next.state) !== writing) {
+            // The caret left the element being written: an empty one is a stray line now.
+            writing = -1;
+            clearTimeout(waiting);
             waiting = window.setTimeout(refresh, 150);
           }
           if (!waiting && !next.state.selection.eq(previous.selection)) indicateCaret();
