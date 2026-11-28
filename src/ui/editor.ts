@@ -12,6 +12,7 @@ import { schema, toDocument } from "./editor-model.ts";
 import { find } from "./find.ts";
 import { type Block, Projection, ROW_PX, SHEET_PX, sameBlock } from "./projection.ts";
 import { SheetLayer } from "./sheets.ts";
+import { placeSpellingMenu, spelling } from "./spelling.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
 
 /**
@@ -185,9 +186,14 @@ export interface EditorOptions {
   /**
    * View plugins for interface parts that follow the editor, such as the
    * element toolbar and the scene sidebar, given the projection, which is
-   * up to date whenever they update, and the page's zoom.
+   * up to date whenever they update, the page's zoom, and the scaled script
+   * container for layers outside the editable root.
    */
-  readonly plugins?: (projection: Projection, zoom: () => number) => readonly Plugin[];
+  readonly plugins?: (
+    projection: Projection,
+    zoom: () => number,
+    script: HTMLElement,
+  ) => readonly Plugin[];
   /** The page's scale at first; 1 by default. */
   readonly zoom?: number;
 }
@@ -212,8 +218,10 @@ export interface Editor {
 
 const statePlugins = [
   ...undoHistory,
-  // Before the screenplay's keys: the popup's Enter, Tab and arrows win while it is open.
+  // Before the screenplay's keys: the popup's Enter, Tab and arrows win while it is open,
+  // as the spelling menu's do.
   autocomplete,
+  spelling,
   keymap(screenplayKeys),
   keymap(undoKeys),
   keymap(baseKeymap),
@@ -258,7 +266,7 @@ export function mountEditor(
   let covered: Covered = { top: 0, left: 0 };
   const script = document.createElement("div");
   script.className = "script";
-  script.style.cssText = `--paper-width: ${PAGE.widthIn}in; --paper-height: ${SHEET_PX}px; --row-height: ${ROW_PX}px; --font-size: ${FONT_SIZE_PT}pt`;
+  script.style.cssText = `--paper-width: ${PAGE.widthIn}in; --paper-height: ${SHEET_PX}px; --row-height: ${ROW_PX}px; --font-size: ${FONT_SIZE_PT}pt; --dual-divider: ${DUAL_SPLIT_IN}in`;
   const sheets = new SheetLayer();
   sheets.update(projection.sheets);
   const root = editableRoot();
@@ -297,7 +305,7 @@ export function mountEditor(
     { mount: root },
     {
       state,
-      plugins: plugins(projection, () => zoom),
+      plugins: plugins(projection, () => zoom, script),
       attributes: () => ({
         class: "script-editor",
         "aria-label": "Script",
@@ -369,8 +377,9 @@ export function mountEditor(
       scale();
       // Nothing above the frame scales, so its top stays where it was.
       scrollBy(0, (anchor - top) * (next / was - 1));
-      // The popup keeps the interface's size, so it follows the caret itself.
+      // The popup and the spelling menu keep the interface's size, so they follow the caret.
       placePopup(view);
+      placeSpellingMenu(view);
     },
     setCovered(next) {
       covered = next;

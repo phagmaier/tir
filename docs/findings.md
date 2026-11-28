@@ -268,6 +268,23 @@ No script text was copied into Tir's fixtures.
     title-like first page): After the Hunt 1, Heretic 47 and 123, Superman
     22 and 95.
   - 4 unexplained: A Real Pain 76, Babygirl 87, After the Hunt 12 and 40.
+- Formatting check, run on all seven rebuilds: 47 findings. Each finding
+  was inspected in the rebuilt elements and checked against the PDF
+  extraction:
+  - 32 blank General elements inferred solely from gaps (Babygirl 16,
+    Heretic 10, Sing Sing 2, Superman 4). The PDFs cannot say whether
+    those gaps are empty elements or deliberate spacing.
+  - 5 non-speech lines read as cues from their indent: an end card (After
+    the Hunt 98), a title and a sound effect (Babygirl 2 and 30), a log
+    and quoted thought (Heretic 28 and 83). The single orphan dialogue
+    follows a cue at an Action indent (Queer 37). These are effects of
+    reconstructing element types from print, not checks on the FDX types.
+  - 8 headings outside the brief's prefix list: reversed or differently
+    spaced or punctuated combined prefixes (After the Hunt 54 and 81;
+    Babygirl 29, 42, 44 and 69), and plain INT or EXT without a period
+    (Babygirl 86 and Superman 124). The check uses the brief's list even
+    when Final Draft permits these spellings.
+  - 1 one-off short spelling of a repeatedly used name (A Real Pain 68).
 
 ## Courier Prime
 
@@ -463,6 +480,57 @@ StudioBinder guides, read 2026-11-26.
   fontkit shaping each string into glyphs, so the export runs in a worker:
   the interface thread's longest pause while it ran was 8 ms. Evidence: a
   CPU profile in Node and timings in the dev app, 2026-11-27.
+
+## Spell check
+
+- **Dictionary:** SCOWL's US English Hunspell dictionary, release
+  2026.02.25 (`hunspell-en_US-2026.02.25.zip` from `en-wl/wordlist` on
+  GitHub, the official Hunspell en_US; SCOWL size 60, one spelling of
+  each word, accents stripped, so "cafe", not "café"). Its words are
+  under SCOWL's notice (copyright Kevin Atkinson: use, copy, modify,
+  distribute and sell with the notice kept), its affix file under Geoff
+  Kuenning's BSD licence from Ispell; both are in
+  `src/ui/dictionary/README_en_US.txt`, which must ship with the files.
+  It flags British spellings ("harbour", "grey") and has no "POV" or
+  "CONT'D", which Tir adds. Evidence: the release's README and files,
+  read 2026-11-27.
+- **The checker is Tir's own** (`src/core/spelling.ts`), as the brief's
+  "Stack" asks: it reads the directives that dictionary uses (`SET UTF-8`,
+  `TRY`, `ICONV`, `NOSUGGEST`, `ONLYINCOMPOUND`, `REP`, one-character
+  flags, and `PFX` and `SFX` rules without affixes of their own), leaves
+  aside `WORDCHARS`, `COMPOUNDMIN` and `COMPOUNDRULE` (its compounds only
+  build ordinals, and Tir leaves words with digits unchecked), and refuses
+  any other. Listing every word its rules make gives 109,924 words.
+  Rejected: nspell 2.1.5 (MIT, last published 2022), typo-js 2.0.0
+  (BSD-3-Clause; expands words as Tir does, with slow suggestions), and
+  Hunspell compiled to WebAssembly (`hunspell-asm` 4.0.2, last published
+  2022, 4.9 MB; `hunspell-wasm` 0.3.0, LGPL, GPL or MPL): each is a
+  dependency for less than the few hundred lines the one dictionary
+  needs. Evidence: npm metadata, 2026-11-27.
+- **Cost**, in WebKitGTK 2.54.2's worker: reading the dictionary
+  136–162 ms; checking the 120-page spike's 2,280 elements 29–33 ms; a
+  suggestion under 1 ms for a short word and up to 80 ms for a ten-letter
+  one that needs words two edits away (Node: 95 ms to read it, 9.5 ms to
+  check the 122-page `feature` fixture). So the dictionary lives in a
+  worker, and the page sends it only the elements an edit changed, after
+  a pause (architecture, "The editor"). Words two edits away are tried
+  only when one edit finds fewer than three, for words of up to ten
+  letters: a 14-letter word took 340 ms in Node.
+- **Typing does not wait for it.** Two `mise run editor-timing` runs on
+  the desktop, 2026-11-27, with spell check on (median layout, p95 in
+  brackets): ordinary typing 10–11 ms (17–25), as in the
+  [typing baseline](#typing-baseline); typing as each check's answer and
+  squiggles land 10–12 ms (15–20); on the spike with every "the"
+  misspelled, 5,280 squiggles, 14 ms (16–31), and 10–13 ms (13–16) as
+  checks land. Drawing 5,280 new squiggles at once held the interface for
+  150–160 ms, as many find highlights do (see [Editor](#editor)); a
+  script's usual handful costs little.
+- `vite build` made the `.aff` file, under Vite's 4 KB inlining limit, a
+  `data:` URL in the worker, which the release content security policy's
+  `connect-src` ('self' and Tauri's IPC) does not list, so Tir imports
+  both files with `?url&no-inline`, and the build then emits both as
+  files. A release build has not run spell check yet (plan, 7.1).
+  Evidence: `vite build` and `tauri.conf.json`, 2026-11-27.
 
 ## Reading screenplay PDFs
 

@@ -39,7 +39,8 @@ V1 must have:
   [Elements and keys](#elements-and-keys) describes.
 - **Find and replace**, as [Find and replace](#find-and-replace) describes.
 - **Formatting check**, as [Formatting check](#formatting-check) describes.
-- **Spell check** with a US English dictionary.
+- **Spell check** with a US English dictionary, as [Spell check](#spell-check)
+  describes.
 - **Title page**, as [Title page](#title-page) describes.
 - **Autocomplete** for character names, cue extensions such as (V.O.) and
   (O.S.), scene heading prefixes (INT., EXT.), locations already used, times
@@ -169,9 +170,11 @@ The user has said the V1 list above is everything they need.
   leaves it, as Esc leaves Final Draft's Focus Mode, which has no key of
   its own *(Ctrl+Shift+F agent-selected, from prototype piece 5)*. F8 goes
   to the next formatting finding *(agent-selected: Final Draft's Format
-  Assistant has no key; F8 is the next problem in code editors)*. Ctrl+F
-  opens [find and replace](#find-and-replace) *(agent-selected, from
-  prototype piece 5)*.
+  Assistant has no key; F8 is the next problem in code editors)*. F7 goes
+  to the next misspelling and opens its spellings *(agent-selected: F7 is
+  the spelling check in Word)*. Ctrl+F opens
+  [find and replace](#find-and-replace) *(agent-selected, from prototype
+  piece 5)*.
 - **File keys**: Ctrl+O opens and Ctrl+S saves, as Final Draft's Open and
   Save ([findings](findings.md#final-drafts-keys)). Ctrl+O shows the
   Projects screen, where projects open ([Projects](#projects)). Saving is
@@ -195,6 +198,33 @@ printed or exported, with an explanation on hover or when the cursor is in
 the element. The top bar shows the number of findings, and F8 jumps to the
 next one. What the editor already enforces, such as capitals, is never
 flagged.
+
+## Spell check
+
+The script is checked against a US English dictionary as the writer
+writes, once they pause, and each misspelled word gets a squiggle on the
+paper, never printed or exported.
+
+- **The script teaches it.** Each word of a character's name, as the cues
+  give it, and of a location, as the scene headings give it, is spelled
+  right anywhere in the script, in any capitals, and so is its possessive
+  ("Okafor's").
+- **Suggestions.** A right click on a squiggle, or F7 for the next one,
+  selects the word and opens a menu of spellings, the script's own names
+  among them, then "Add to dictionary". Choosing a spelling replaces the
+  word as one undo step. *(agent-selected: the menu is autocomplete's
+  popup, with its keys.)*
+- **The writer's words.** An added word is spelled right in any capitals,
+  and kept in the library, so it is backed up with the scripts. A
+  possessive is added as its word ("Okafor"). *(agent-selected: the file
+  is `dictionary.txt`, one word a line, which the writer may edit.)*
+- *(agent-selected)* A word is checked as the page shows it, in capitals
+  where its element shows capitals. CONT'D and POV, which screenplays use
+  and the dictionary lacks, are words. A word holding a digit ("21st") is
+  not checked. A word the caret ends is not marked until the caret leaves
+  it, since it may still be being typed. The dictionary has no accents
+  ("cafe"), so an accented word is marked unless the script or the
+  writer's dictionary knows it.
 
 ## Title page
 

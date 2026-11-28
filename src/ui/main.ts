@@ -6,13 +6,16 @@ import { DraftMenu } from "./draft-menu.ts";
 import { changeDraft, type DraftAction } from "./drafts.ts";
 import { mountEditor } from "./editor.ts";
 import { findBar } from "./find-bar.ts";
+import { formattingCheck } from "./formatting-check.ts";
 import {
+  addToDictionary,
   createDraft,
   createProject,
   deleteDraft,
   deleteProject,
   libraryPlace,
   listLibrary,
+  readDictionary,
   readDraftText,
   renameDraft,
   renameProject,
@@ -44,6 +47,8 @@ import {
 } from "./saving.ts";
 import { loadSettings, settingsSaver } from "./settings-file.ts";
 import { sceneSidebar } from "./sidebar.ts";
+import { workerChecker } from "./spell-checker.ts";
+import { spellCheck } from "./spelling.ts";
 import { TitlePageView } from "./title-page.ts";
 import { elementToolbar } from "./toolbar.ts";
 
@@ -96,14 +101,33 @@ const saver = new Saver(
     },
   },
 );
+// Whether F7 and F8 may take the caret to a misspelling or finding.
+const canNavigate = () => !draftAction && !closing && !screen?.shown && !draftMenu?.dialogOpen;
 // With nothing to open, the editor holds an empty script, unseen behind the
 // Projects screen.
 const editor = mountEditor(byId("pages"), (opening?.script ?? emptyScript()).elements, {
   zoom: settings.zoom,
-  plugins: (projection, zoom) => [
+  plugins: (projection, zoom, script) => [
     elementToolbar(byId("elements")),
     sceneSidebar(byId("sidebar"), projection, zoom, () => titlePage.close()),
     pagePosition(byId("bar-right"), projection, zoom, () => titlePage.close()),
+    formattingCheck(
+      byId("bar-right"),
+      script,
+      projection,
+      zoom,
+      () => titlePage.close(),
+      canNavigate,
+      (text) => desk?.toast(text),
+    ),
+    spellCheck(
+      workerChecker(),
+      { words: readDictionary(), add: addToDictionary },
+      canNavigate,
+      () => titlePage.close(),
+      (text) => desk?.toast(text),
+      (title, message) => void tell(title, message),
+    ),
     findBar(byId("topbar"), (text) => desk?.toast(text)),
     savingPlugin(saver),
   ],
@@ -114,7 +138,7 @@ const titlePage = new TitlePageView(
   (page) => saver.editTitlePage(page),
   () => editor.view.focus(),
 );
-// After the page position, at the top bar's right end.
+// After the page position and formatting count, at the top bar's right end.
 showSaved = savedIndicator(byId("bar-right"));
 const settingsFile = settingsSaver();
 desk = new Desk(editor, settings, settingsFile.save, {

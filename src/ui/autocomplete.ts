@@ -160,6 +160,11 @@ function openAt(state: EditorState, tally: Tally): Open | null {
 
 const openIn = (state: EditorState) => key.getState(state)?.open ?? null;
 
+/** How often the script uses each suggestion: its names and locations teach spell check too. */
+export function tallyOf(state: EditorState): Tally | undefined {
+  return key.getState(state)?.tally;
+}
+
 /** Moves the highlight by `by`, round the list. */
 const choose =
   (by: number): Command =>

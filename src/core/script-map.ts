@@ -35,6 +35,7 @@ export class ScriptMap {
   readonly pageCount: number;
   /** The page of each element's first line. */
   private readonly firstPage: Int32Array;
+  private readonly firstRow: Int32Array;
   /** For an element whose lines run onto later pages: each later page and the offset it resumes at. */
   private readonly resumes = new Map<number, number[]>();
   /** Each page's first line of element text: a repeated cue above it is not where the page starts. */
@@ -65,6 +66,7 @@ export class ScriptMap {
       return start;
     });
     this.firstPage = firstPage;
+    this.firstRow = firstRow;
     const scenes: Scene[] = [];
     elements.forEach((element, index) => {
       if (element.type !== "sceneHeading") return;
@@ -77,6 +79,12 @@ export class ScriptMap {
       });
     });
     this.scenes = scenes;
+  }
+
+  /** The first line of an element, even if it continues on another page. */
+  firstSpot(element: number): Spot | undefined {
+    const page = this.firstPage[element];
+    return page ? { element, offset: 0, page, row: this.firstRow[element] as number } : undefined;
   }
 
   /** The page holding `offset` in element `element`'s text: that of the last line starting at or before it. */

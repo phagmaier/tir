@@ -11,6 +11,7 @@
  * Hyprland desktop (architecture, "Measuring the editor").
  */
 import { SAVE_DELAY_MS } from "../../src/ui/saving.ts";
+import { SPELL_CHECK_DELAY_MS } from "../../src/ui/spelling.ts";
 import { load as loadApp, Page, press, sleep } from "../inspector.ts";
 
 /**
@@ -127,6 +128,49 @@ const countSaves = `(() => {
   return true;
 })()`;
 
+/**
+ * Misspells every "the" of the script as "teh" in one change, then waits
+ * until spell check has marked them all. `__spell` notes how many it marked,
+ * how long after the change, and the interface thread's longest pause
+ * meanwhile: the worker checking every changed element and the page
+ * drawing the squiggles.
+ */
+const misspellEvery = `(async () => {
+  const v = tirView;
+  const tr = v.state.tr;
+  const found = [];
+  v.state.doc.descendants((node, pos) => {
+    if (node.isText) for (const m of node.text.matchAll(/\\bthe\\b/g)) found.push(pos + m.index);
+  });
+  for (const at of found.reverse()) tr.insertText("teh", at, at + 3);
+  v.dispatch(tr);
+  // The change's own layout is not spell check's.
+  v.dom.getBoundingClientRect();
+  const t0 = performance.now();
+  let last = t0;
+  let longest = 0;
+  let on = true;
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => {
+    const now = performance.now();
+    longest = Math.max(longest, now - last);
+    last = now;
+    if (on) channel.port2.postMessage(0);
+  };
+  channel.port2.postMessage(0);
+  const count = () => document.querySelectorAll(".script-editor .misspelled").length;
+  while (count() < found.length && performance.now() - t0 < 10000) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const ms = performance.now() - t0;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  on = false;
+  globalThis.__spell = count() + " squiggles in " + ms.toFixed(0) + " ms, longest pause " + longest.toFixed(0) + " ms";
+  return true;
+})()`;
+
+const misspelled = `(async () => { await ${misspellEvery}; return ${caret(1, 2)}; })()`;
+
 interface Scenario {
   readonly edit: string;
   readonly query: string;
@@ -151,7 +195,7 @@ const SCENARIOS: readonly Scenario[] = [
     query: "?fixture=spike",
     setup: cueStart(17),
     key: "a",
-    check: `!document.querySelector(".completion").hidden`,
+    check: `!document.querySelector(".completion:not(.spelling-menu)").hidden`,
   },
   {
     // Each key comes after the pause that starts a save, up to 1.2 s
@@ -161,6 +205,27 @@ const SCENARIOS: readonly Scenario[] = [
     setup: `(${caret(1, 2)}, ${countSaves})`,
     gap: () => SAVE_DELAY_MS + Math.random() * 1200,
     note: `__saves + " saves finished during it"`,
+  },
+  {
+    // Each key comes after the pause that starts a check, so the worker's
+    // answer and its squiggles land as the next keys do.
+    edit: "Typing as a spell check runs",
+    query: "?fixture=spike",
+    setup: caret(1, 2),
+    gap: () => SPELL_CHECK_DELAY_MS + Math.random() * 100,
+  },
+  {
+    edit: "Typing among 5,280 squiggles",
+    query: "?fixture=spike",
+    setup: misspelled,
+    check: `document.querySelectorAll(".script-editor .misspelled").length > 3000`,
+    note: "__spell",
+  },
+  {
+    edit: "Typing among 5,280 squiggles as a spell check runs",
+    query: "?fixture=spike",
+    setup: misspelled,
+    gap: () => SPELL_CHECK_DELAY_MS + Math.random() * 100,
   },
 ];
 

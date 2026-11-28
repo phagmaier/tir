@@ -99,6 +99,7 @@ describe("page positions", () => {
       1, 1, 2, 2,
     ]);
     expect(map.pageAt(16, 0)).toBe(1);
+    expect(map.firstSpot(17)).toEqual({ element: 17, offset: 0, page: 1, row: 51 });
     expect(map.pageStart(1)).toEqual({ element: 0, offset: 0, page: 1, row: 0 });
     expect(map.pageStart(2)).toEqual({ element: 17, offset: 144, page: 2, row: 0 });
     expect(map.pageStart(3)).toBeUndefined();

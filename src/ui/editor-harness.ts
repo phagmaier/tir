@@ -7,13 +7,20 @@
  * exact.
  */
 import { keymap } from "prosemirror-keymap";
-import { type Command, EditorState, TextSelection, type Transaction } from "prosemirror-state";
+import {
+  type Command,
+  EditorState,
+  type Plugin,
+  TextSelection,
+  type Transaction,
+} from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 import type { Element, ElementType } from "../core/model.ts";
 import { autocomplete } from "./autocomplete.ts";
 import { screenplayKeys } from "./commands.ts";
 import { fromDocument, toDocument } from "./editor-model.ts";
 import { find } from "./find.ts";
+import { spelling } from "./spelling.ts";
 import { undoHistory, undoKeys } from "./undo.ts";
 
 type Extra = Omit<Element, "type" | "text">;
@@ -56,7 +63,7 @@ export function stateOf(elements: readonly Element[]): EditorState {
   return EditorState.create({
     doc,
     selection: TextSelection.create(doc, anchor, head),
-    plugins: [...undoHistory, autocomplete, find],
+    plugins: [...undoHistory, autocomplete, spelling, find],
   });
 }
 
@@ -97,7 +104,12 @@ export function run(state: EditorState, command: Command): EditorState {
 }
 
 /** The editor's plugins that take keys, in its order. */
-const keyPlugins = [autocomplete, keymap(screenplayKeys), keymap(undoKeys)];
+const keyPlugins: readonly Plugin[] = [
+  autocomplete,
+  spelling,
+  keymap(screenplayKeys),
+  keymap(undoKeys),
+];
 
 const KEY_CODES: Record<string, number> = {
   Enter: 13,

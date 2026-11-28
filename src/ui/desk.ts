@@ -10,11 +10,13 @@
  * editor takes every Esc (ProseMirror's `captureKeyDown` prevents its
  * default), so on the way back up an Esc that closed nothing looks like
  * one that closed the autocomplete popup. Esc yields instead to what has
- * an Esc of its own: the popup, and a field such as Go to page's.
+ * an Esc of its own: the popup, the spelling menu, and a field such as Go
+ * to page's.
  */
 import { type Settings, type Theme, zoomIn, zoomOut } from "../core/settings.ts";
 import { popupOf } from "./autocomplete.ts";
 import type { Editor } from "./editor.ts";
+import { spellingMenu } from "./spelling.ts";
 
 export type DeskAction = "zoomIn" | "zoomOut" | "focus" | "leaveFocus";
 
@@ -23,7 +25,7 @@ type Keys = Pick<KeyboardEvent, "key" | "ctrlKey" | "shiftKey" | "altKey" | "met
 /** What the window's keys depend on besides the key. */
 export interface DeskKeyState {
   readonly focus: boolean;
-  /** Something nearer the writer closes on Esc: the autocomplete popup, or a field. */
+  /** Something nearer the writer closes on Esc: a popup, the spelling menu, or a field. */
   readonly escTaken: boolean;
 }
 
@@ -152,6 +154,7 @@ export class Desk {
         const escTaken =
           event.key === "Escape" &&
           (!!popupOf(editor.view.state) ||
+            !!spellingMenu(editor.view.state) ||
             event.target instanceof HTMLInputElement ||
             event.target instanceof HTMLTextAreaElement);
         const action = deskKey(event, { focus: this.shown.focus, escTaken });

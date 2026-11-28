@@ -9,8 +9,8 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: none. 5.1, find and replace, is complete.
-- Next: 5.2, formatting check. 4.4 stays open until the user has desktop
+- Active: none. 5.3, spell check, is complete.
+- Next: 5.4, review of Stage 5. 4.4 stays open until the user has desktop
   access; its notes become 4.4a… tasks done before 5.4.
 - Blockers: none.
 
@@ -310,8 +310,8 @@ anything else. V1 is done when 7.4 is checked.
     and purity tests (308) passed. Not checked: `mise run check` (no Rust
     changed) and the laptop.
 
-- [ ] 5.2 — Formatting check
-  - Status: todo
+- [x] 5.2 — Formatting check
+  - Status: done
   - Depends on: 5.1
   - Spec: brief "Formatting check"; prototype piece 1 (findings)
   - Do: The six rules; margin marks with explanations on hover or when the
@@ -320,9 +320,23 @@ anything else. V1 is done when 7.4 is checked.
   - Done when: each rule has tests for flagged and not-flagged cases, and a
     run on the calibration scripts produces no false positives (or each is
     examined and explained).
+  - Evidence: 2026-11-27. The pure check has positive and negative cases
+    for all six rules. Focused Vitest (59 tests across formatting, script
+    map, projection, draft actions and PDF), both TypeScript checks and
+    Biome on the changed sources passed. Ran the check after PDF
+    reconstruction on all seven calibration scripts and accounted for all
+    47 flags ([findings, "Calibration"](findings.md#calibration)).
+    In isolated WebKitGTK, verified F8 across pages and wrapping,
+    count-button navigation, return from the title page, no jump in
+    Projects, and the count and marks following a cue correction and Undo.
+    At desktop size in WebKit, verified caret and hover explanations on
+    both papers and separate marks for simultaneous dual dialogue. Review
+    fixed tooltip overlap on hover and kept right-column marks inside the
+    visible gutter. Marks sit outside the editable root and do not enter
+    the export model; the native Save dialogs were not exercised.
 
-- [ ] 5.3 — Spell check
-  - Status: todo
+- [x] 5.3 — Spell check
+  - Status: done
   - Depends on: 5.2
   - Spec: brief "Scope" (Spell check), "Stack"
   - Do: Choose the spell-check library and a US English Hunspell
@@ -333,6 +347,43 @@ anything else. V1 is done when 7.4 is checked.
     papers, never in exports.
   - Done when: tests cover learned names and suggestions, and checking a
     120-page script never delays typing (measured).
+  - Evidence: 2026-11-27. Tir's own checker (`src/core/spelling.ts`) on
+    SCOWL's en_US Hunspell dictionary, 2026.02.25, vendored with its
+    notices in `src/ui/dictionary/`; choice, rejected libraries and
+    licences in [findings, "Spell check"](findings.md#spell-check). The
+    dictionary lives in a worker; the page checks only elements an edit
+    changed, after a 300 ms pause, and learns cue names and heading
+    locations from autocomplete's tally. Right click or F7 opens the
+    spellings and "Add to dictionary", which appends to `dictionary.txt`
+    in the library (`add_to_dictionary`). Tests: 16 core cases (a
+    hand-worked affix file for each rule and Hunspell's capitals; the real
+    dictionary's flags and suggestions, names ahead of the dictionary's,
+    accents, possessives, curly apostrophes), 9 plugin cases (learned names
+    and locations unmarked, the word being typed held, squiggles following
+    and dropping with edits including Enter, F7's order, a spelling as one
+    undo step keeping its bold), the worker's fallback, and two Rust tests
+    (appending, making the library, refusing non-words and links). In
+    isolated WebKitGTK on the sample: squiggles on dark and white paper,
+    F7 and a real right click opening the menu with no native one, Enter
+    replacing and Ctrl+Z restoring, a real click adding "OKAFOR" to
+    `dictionary.txt` and its squiggle going, after a reload too, the add
+    failure's message box, Esc closing the menu before focus mode, a word
+    marked only once the caret left it, and `mise run editor-placement`
+    with squiggles shown: 0 misses. Two `mise run editor-timing` runs,
+    the second after review fixes, with new spell-check scenarios: typing
+    10–12 ms median layout as checks land and 14 ms among 5,280 squiggles
+    (findings). Reviewed with user-code-review at `41bfe96` plus
+    uncommitted changes, and by one independent reviewer: fixed F7
+    skipping the word just typed, a squiggle surviving Enter inside its
+    word (which a spelling could then use to join two elements), accented
+    and possessive suggestions, curly apostrophes, misses of the right
+    click off a line's end, a mapping cost quadratic in a transaction's
+    steps, the `.aff` file inlined as a `data:` URL the release policy
+    would refuse, Esc reaching focus mode first, and the timing tool's
+    autocomplete check matching the menu. `mise run check` passed (724
+    Vitest and 42 Rust tests, both type checks, Biome, rustfmt, clippy);
+    `vite build` emitted the worker and both dictionary files. No
+    dependency added. Not checked: a release build (7.1) and the laptop.
 
 - [ ] 5.4 — Review: Stage 5
   - Status: todo
@@ -457,6 +508,10 @@ anything else. V1 is done when 7.4 is checked.
     development build, and the PDF worker fetches Courier Prime from the
     page's own origin (`pdf-fonts.ts`); check a save and Export PDF… in
     the release build, under its content security policy.
+  - Note (from 5.3): the spelling worker fetches the dictionary from the
+    page's own origin too (`dictionary.ts`, never as a `data:` URL; see
+    findings, "Spell check"); check that squiggles appear in the release
+    build.
 
 - [ ] 7.2 — Desktop entry, icon and release hardening
   - Status: todo
@@ -552,10 +607,11 @@ that will close it.
   so no key reaches them from the script; Shift+Tab from the title page's
   form reaches the last two. Zoom, focus mode and Go to page have keys
   (1.10). 1.10 asked the user (2026-11-27) how they should be reached.
-- A screen reader is not told of autocomplete suggestions: the popup is a
-  named listbox, but the editor's root names no active option (1.5, 1.10).
-  Attributes on the root change with every popup update, so measure typing
-  with them before adding them.
+- A screen reader is not told of autocomplete suggestions or of the
+  spelling menu's: each is a named listbox, but the editor's root names
+  no active option (1.5, 1.10, 5.3); nor is it told of a squiggle.
+  Attributes on the root change with every popup update, so measure
+  typing with them before adding them.
 - A style boundary inside one grapheme at the end of a line (a combining
   accent styled apart from its letter) would give the line two line-end
   decorations and an extra row (1.10 review, from the source). The editor
@@ -606,9 +662,11 @@ that will close it.
   import occupies one engine cell but renders as a tab stop in the
   editor and expands to four spaces in the PDF (3.3, 4.3). Fountain body
   import already expands tabs before building elements.
-- Courier Prime's OFL notice is in `src/ui/fonts/OFL-courierprime.txt`.
-  The distributable app does not exist yet; the installed package must
-  include that notice alongside the bundled fonts (3.3; 7.1).
+- Courier Prime's OFL notice is in `src/ui/fonts/OFL-courierprime.txt`,
+  and the spell-check dictionary's SCOWL and BSD notices in
+  `src/ui/dictionary/README_en_US.txt`. The distributable app does not
+  exist yet; the installed package must include both notices alongside
+  the bundled fonts and dictionary (3.3, 5.3; 7.1).
 - FDX export's default settings are verified in the XML, not in Final
   Draft itself (4.3). The Stage 4 user check covers Story Architect's
   exports, not how Final Draft opens Tir's files.

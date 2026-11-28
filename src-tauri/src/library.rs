@@ -22,6 +22,11 @@ const PROJECT: &str = "project.json";
 const DRAFTS: &str = "drafts";
 const DRAFT: &str = ".tir";
 const COPY: &str = ".fountain";
+/// The words the writer adds to spell check's dictionary, one a line, in the
+/// library so that they are backed up with the scripts.
+const DICTIONARY: &str = "dictionary.txt";
+/// The longest word, in bytes, the dictionary takes.
+const LONGEST_WORD: usize = 100;
 
 /// The library's folder, found when Tir starts, or why there is none.
 pub struct Library {
@@ -431,6 +436,40 @@ pub fn delete_draft(
     Ok(())
 }
 
+/// The writer's dictionary's text: nothing before the first word is added.
+pub fn read_dictionary(root: &Path) -> io::Result<String> {
+    let file = root.join(DICTIONARY);
+    match fs::symlink_metadata(&file) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        _ => files::read_text(regular_file(&file)?),
+    }
+}
+
+/// Adds `word` to the writer's dictionary, on a line of its own after the
+/// lines already there, unless a line holds it already. The library is
+/// made if need be: a word may come before the first project.
+pub fn add_word(root: &Path, word: &str) -> io::Result<()> {
+    let one = !word.is_empty()
+        && word.len() <= LONGEST_WORD
+        && !word.chars().any(|c| c.is_whitespace() || c.is_control());
+    if !one {
+        return Err(refused(format!(
+            "“{word}” is not a word Tir adds to the dictionary."
+        )));
+    }
+    let mut text = read_dictionary(root)?;
+    if text.lines().any(|line| line.trim() == word) {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(word);
+    text.push('\n');
+    make_library(root)?;
+    files::replace(&root.join(DICTIONARY), text.as_bytes())
+}
+
 /// `name`, refused unless it is one entry of a folder and not hidden: never
 /// `..`, a path, or `.git`. The interface's names are such
 /// (`isSafeName` in `src/core/file-names.ts`).
@@ -765,6 +804,16 @@ pub mod commands {
             super::delete_draft(root, &folder, &draft, &was, &project)
         })
     }
+
+    #[tauri::command(async)]
+    pub fn read_dictionary(library: State<'_, Library>) -> Result<String, String> {
+        run(&library, super::read_dictionary)
+    }
+
+    #[tauri::command(async)]
+    pub fn add_to_dictionary(library: State<'_, Library>, word: String) -> Result<(), String> {
+        run(&library, |root| super::add_word(root, &word))
+    }
 }
 
 #[cfg(test)]
@@ -961,6 +1010,43 @@ mod tests {
                 }],
             }
         );
+    }
+
+    #[test]
+    fn adds_the_writers_words_to_a_dictionary_in_the_library() {
+        let dir = TempDir::new();
+        let root = dir.0.join("Screenplays");
+        assert_eq!(read_dictionary(&root).unwrap(), "");
+        // A word may come before the first project: the library is made.
+        add_word(&root, "Okafor").unwrap();
+        add_word(&root, "Halcyon").unwrap();
+        add_word(&root, "Okafor").unwrap();
+        assert_eq!(read_dictionary(&root).unwrap(), "Okafor\nHalcyon\n");
+        // A line the writer typed without its line break keeps its own line.
+        fs::write(root.join(DICTIONARY), "Okafor\nTeo").unwrap();
+        add_word(&root, "Tomás").unwrap();
+        assert_eq!(read_dictionary(&root).unwrap(), "Okafor\nTeo\nTomás\n");
+        // The dictionary is no project, but no project takes its name.
+        let listing = list(&root).unwrap();
+        assert_eq!(listing.names, [DICTIONARY]);
+        assert!(listing.projects.is_empty());
+    }
+
+    #[test]
+    fn refuses_what_is_no_word_and_a_dictionary_that_is_a_link() {
+        let trial = Trial::new();
+        for word in ["", "two words", "line\nbreak", "tab\t", &"long".repeat(26)] {
+            assert_eq!(
+                add_word(&trial.root, word).unwrap_err().kind(),
+                io::ErrorKind::InvalidInput,
+                "{word:?}"
+            );
+        }
+        assert_eq!(trial.names(""), ["Salt Line"]);
+        symlink(trial.outside.join(PROJECT), trial.root.join(DICTIONARY)).unwrap();
+        assert!(read_dictionary(&trial.root).is_err());
+        assert!(add_word(&trial.root, "Okafor").is_err());
+        trial.assert_outside_untouched();
     }
 
     #[test]

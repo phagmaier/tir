@@ -122,6 +122,8 @@ pub fn run() {
             library::commands::write_draft,
             library::commands::rename_draft,
             library::commands::delete_draft,
+            library::commands::read_dictionary,
+            library::commands::add_to_dictionary,
             dialogs::open_script,
             dialogs::export_fountain,
             dialogs::export_fdx,

@@ -58,6 +58,7 @@ library or ambient types, so `document`, `window` or `process` fail.
 
 ```
 ~/Screenplays/                    the library, and the backed-up git repository
+  dictionary.txt                  the words the writer added to spell check's dictionary, one a line
   Salt Line/                      one project, its folder named from its name
     project.json                  its name, drafts and active draft
     drafts/
@@ -160,6 +161,13 @@ library or ambient types, so `document`, `window` or `process` fail.
   A folder whose project file is missing, damaged, newer or a link comes back with the
   reason, never silently dropped. After a change fails, listing again
   shows what is there.
+- **The writer's dictionary** is `dictionary.txt` in the library
+  (`read_dictionary`, `add_to_dictionary`): plain text, one word a line,
+  which the writer may edit. Adding a word appends a line unless one holds
+  it, making the library if need be, so a word may come before the first
+  project; a word with white space or control characters, or over 100
+  bytes, is refused, as is a link or folder of that name. The listing
+  names it, so no project folder takes the name.
 
 ## The draft file
 
@@ -552,6 +560,33 @@ is a view plugin drawn in the top bar, so it hides with it; it waits for a
 pause in typing before searching, and holds Esc in a window listener
 while open, ahead of desk's.
 
+Formatting check runs the core's six rules on the active draft after a
+pause in editing, or immediately if F8 or the count button asks for the
+next finding. The view draws marks as siblings of the editable root, on
+the first rows from `ScriptMap`; the right column of dual dialogue uses
+the gutter to keep simultaneous marks apart. Findings never enter
+the document model, clipboard or exports.
+
+Spell check (`spelling.ts`) is a state plugin holding the squiggles, as
+decorations, and the spelling menu, placed after autocomplete and before
+the screenplay's keys so the menu's keys win while it is open. The core's
+checker (`src/core/spelling.ts`) reads the Hunspell dictionary in
+`src/ui/dictionary/` (findings, "Spell check"); it lives in a worker
+(`spelling.worker.ts`, through `spell-checker.ts`, which reads it on the
+interface thread should no worker run), since reading it and some
+suggestions take a tenth of a second. A view plugin from `main.ts` sends
+the worker, after a pause in typing, each element it has not checked,
+keyed by its node, which any change replaces, then draws the squiggles
+from the answers, leaving out the words of the script's character names
+and locations (autocomplete's tally) and of the writer's dictionary,
+which the page folds and matches itself, so a new name redraws without
+asking the worker. Between checks an edit maps the squiggles and drops
+each whose word it changed or split, reading only where it changed the
+script (`changedRange`). The menu sits in the script's frame, as the
+autocomplete popup does; a spelling replaces the word as an `ownStep`
+named in `uiEvent`. Squiggles and menu never enter the document model,
+clipboard or exports.
+
 The sidebar's scene list and the top bar's page position are view plugins
 that `mountEditor` hands the projection, so they read its `ScriptMap`
 (`src/core/script-map.ts`: each scene's heading and starting page, the
@@ -737,8 +772,9 @@ target that title, not the inspector's process. If the writer's app is
 open, leave it alone and use address-targeted manual checks instead.
 
 - `mise run editor-timing [--pairs N] [--zoom Z] [--focus]` measures
-  layout, frame and busy times while editing and as automatic saves
-  start and run. See the [dated baseline](findings.md#typing-baseline).
+  layout, frame and busy times while editing, as automatic saves start
+  and run, as spell checks land, and among thousands of squiggles. See the
+  [dated baseline](findings.md#typing-baseline).
 - `mise run editor-placement [--fixture NAME] [--zoom Z] [--focus]`
   checks engine line and mark positions, rendered text, and click
   placement (including the blank part of a dual dialogue row). It exits

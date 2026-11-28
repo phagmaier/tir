@@ -292,6 +292,12 @@ body.focus #canvas {
 .bar-right .pg {
   font-variant-numeric: tabular-nums;
 }
+.formatting-count {
+  font-variant-numeric: tabular-nums;
+}
+.bar-right > .formatting-count.has-findings {
+  color: var(--warn);
+}
 /* Go to page: "Page N of M" with N as a field (prototype piece 7, A). */
 .bar-right .pg.editing {
   padding-top: 0;
@@ -1357,6 +1363,69 @@ html.title-page-shown .find-bar {
   color: var(--hit-cur-fg);
   box-shadow: 0 0 0 1px var(--hit-ring);
 }
+/* The spelling squiggle (prototype pieces 1 and 3): an underline, so it moves no line.
+   White paper takes page.css's red, as look.css leaves it. */
+.script-editor .misspelled {
+  text-decoration: underline wavy var(--spell, #d0342c);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+/* The margin marks sit on the engine's rows, outside the editable root. */
+.formatting-marks {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.finding-mark {
+  position: absolute;
+  left: 1.08in;
+  margin-top: calc(var(--row-height) / 2 - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mark);
+  box-shadow: 0 0 0 3px var(--mark-halo);
+  cursor: help;
+  pointer-events: auto;
+}
+.finding-mark.right {
+  left: calc(var(--dual-divider) - 5px);
+}
+.finding-tip {
+  display: none;
+  position: absolute;
+  left: 20px;
+  top: calc(var(--row-height) - 3px);
+  width: 270px;
+  padding: 8px 10px;
+  border: 1px solid var(--tip-border, transparent);
+  border-radius: 7px;
+  background: var(--tip-bg, #1e1e1e);
+  color: var(--tip-fg, #eee);
+  font:
+    12.5px / 1.45 "IBM Plex Sans",
+    system-ui,
+    sans-serif;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+.finding-mark.right .finding-tip {
+  left: auto;
+  right: 20px;
+}
+.finding-mark:is(:hover, :focus) .finding-tip,
+.formatting-marks:not(:hover, :focus-within) .at-caret .finding-tip {
+  display: block;
+}
+@media print {
+  .formatting-marks {
+    display: none;
+  }
+}
 
 /* ===== Autocomplete (prototype piece 5's popup): beside the editable element,
    at the caret, so neither moves a line ===== */
@@ -1419,4 +1488,13 @@ html.title-page-shown .find-bar {
   padding: 6px 8px 3px;
   font-size: 11px;
   opacity: 0.55;
+}
+/* The spelling menu is autocomplete's popup, with its last row in the interface's font. */
+.completion-option.spelling-add {
+  font-family: inherit;
+  font-size: inherit;
+}
+.spelling-none {
+  padding: 5px 8px;
+  opacity: 0.6;
 }

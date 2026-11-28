@@ -227,3 +227,17 @@ export async function setActiveDraft(project: Project, file: string): Promise<Pr
   await invoke("write_project", { folder: project.folder, was: project.text, project: text });
   return { ...project, info, text };
 }
+
+/** The words the writer added to the dictionary, `dictionary.txt` in the library, one a line. */
+export async function readDictionary(): Promise<string[]> {
+  const text = await invoke<string>("read_dictionary");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Adds `word` to the writer's dictionary; the Rust side makes the library if need be. */
+export async function addToDictionary(word: string): Promise<void> {
+  await invoke("add_to_dictionary", { word });
+}

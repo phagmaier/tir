@@ -440,7 +440,7 @@ export function changedElements(
 }
 
 /** Where a transaction changed the document, in its final positions. */
-function changedRange(tr: Transaction): { from: number; to: number } | null {
+export function changedRange(tr: Transaction): { from: number; to: number } | null {
   let from = Number.POSITIVE_INFINITY;
   let to = Number.NEGATIVE_INFINITY;
   for (const map of tr.mapping.maps) {
