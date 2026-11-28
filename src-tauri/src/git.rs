@@ -309,6 +309,70 @@ impl Git {
         self.config(root, &format!("remote.{REMOTE}.url"))
     }
 
+    /// Whether Tir found, when it connected the repository, that only a
+    /// login can read it.
+    pub fn private(&self, root: &Path) -> Result<bool, Error> {
+        Ok(self.config(root, "tir.private")?.as_deref() == Some("true"))
+    }
+
+    /// Pushes to `url` from now on, recording whether only a login can
+    /// read it. Tir's record of the branch on the repository it replaces,
+    /// if any, goes, so nothing counts as there that the new one lacks.
+    pub fn connect(&self, root: &Path, url: &str, private: bool) -> Result<(), Error> {
+        match self.remote(root)? {
+            Some(was) if was == url => {}
+            Some(_) => {
+                self.run(root, &["remote", "set-url", REMOTE, url])?;
+                let records = self.text(
+                    root,
+                    &[
+                        "for-each-ref",
+                        "--format=%(refname)",
+                        &format!("refs/remotes/{REMOTE}/"),
+                    ],
+                )?;
+                for record in records.lines() {
+                    self.run(root, &["update-ref", "-d", record])?;
+                }
+            }
+            None => {
+                self.run(root, &["remote", "add", REMOTE, url])?;
+            }
+        }
+        let private = if private { "true" } else { "false" };
+        self.run(root, &["config", "tir.private", private])?;
+        Ok(())
+    }
+
+    /// The branches of the repository at `url`, as this machine's git login
+    /// reaches it: each one's name and its newest commit.
+    pub fn ls_remote(&self, root: &Path, url: &str) -> Result<Vec<(String, String)>, Error> {
+        let mut command = self.network(root)?;
+        command.args(["ls-remote", url]);
+        let listed = output(command, NETWORK)?;
+        Ok(String::from_utf8_lossy(&listed)
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .filter(|(_, name)| name.starts_with("refs/heads/"))
+            .map(|(id, name)| (name.to_owned(), id.to_owned()))
+            .collect())
+    }
+
+    /// Whether the branch holds the commit `id`.
+    pub fn holds(&self, root: &Path, id: &str) -> Result<bool, Error> {
+        // An id is hexadecimal: anything else is no commit, and never an
+        // option for git.
+        if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok(false);
+        }
+        match self.run(root, &["merge-base", "--is-ancestor", id, "HEAD"]) {
+            Ok(_) => Ok(true),
+            // Not in the branch, or not here at all, or no branch yet.
+            Err(Error::Failed { .. }) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     /// The commit `name` names, if it names one.
     fn commit_id(&self, root: &Path, name: &str) -> Result<Option<String>, Error> {
         match self.text(
@@ -353,6 +417,35 @@ impl Git {
             waiting,
             behind,
             backed_up,
+        })
+    }
+
+    /// How much of `path`, a project's folder or a draft, GitHub's
+    /// `branch` holds as Tir last heard it.
+    pub fn coverage(&self, root: &Path, branch: &str, path: &str) -> Result<Coverage, Error> {
+        let tracking = tracking(branch);
+        if self.commit_id(root, &tracking)?.is_none() {
+            return Ok(Coverage::None);
+        }
+        // Names are taken as they are, never as patterns.
+        let path = format!(":(literal){path}");
+        let held = self.text(root, &["ls-tree", "--name-only", &tracking, "--", &path])?;
+        if held.is_empty() {
+            return Ok(Coverage::None);
+        }
+        let same = match self.run(root, &["diff", "--quiet", &tracking, "--", &path]) {
+            Ok(_) => true,
+            Err(Error::Failed { code: Some(1), .. }) => false,
+            Err(error) => return Err(error),
+        };
+        let new = self.text(
+            root,
+            &["ls-files", "--others", "--exclude-standard", "--", &path],
+        )?;
+        Ok(if same && new.is_empty() {
+            Coverage::All
+        } else {
+            Coverage::Older
         })
     }
 
@@ -474,6 +567,18 @@ pub struct Standing {
     pub backed_up: Option<f64>,
 }
 
+/// How much of a project or draft GitHub holds.
+#[derive(serde::Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum Coverage {
+    /// None of it.
+    None,
+    /// It as it is here.
+    All,
+    /// An older version, without what changed since.
+    Older,
+}
+
 /// What a push did.
 #[derive(Debug, PartialEq)]
 pub enum Pushed {
@@ -591,7 +696,8 @@ fn wait(child: &mut Child, limit: Duration) -> Result<Option<std::process::ExitS
 }
 
 /// What git said on failing, without its hints: the lines of `stderr` on
-/// one line, "fatal: " and "error: " left out.
+/// one line, "fatal: " and "error: " left out, and a full stop where a line
+/// ends a sentence without one, before a line starting a new one.
 fn said(stderr: &str) -> String {
     let lines: Vec<&str> = stderr
         .lines()
@@ -603,7 +709,17 @@ fn said(stderr: &str) -> String {
                 .unwrap_or(line)
         })
         .collect();
-    let mut message = lines.join(" ");
+    let mut message = String::new();
+    for line in lines {
+        if !message.is_empty() {
+            let ended = message.ends_with(['.', '!', '?', ':', '…']);
+            if !ended && line.starts_with(|c: char| c.is_uppercase()) {
+                message.push('.');
+            }
+            message.push(' ');
+        }
+        message.push_str(line);
+    }
     const LONGEST: usize = 400;
     if message.len() > LONGEST {
         let mut end = LONGEST;
@@ -925,7 +1041,13 @@ pub mod tests {
             said(
                 "fatal: '/r.git' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
             ),
-            "'/r.git' does not appear to be a git repository Could not read from remote repository. Please make sure you have the correct access rights and the repository exists."
+            "'/r.git' does not appear to be a git repository. Could not read from remote repository. Please make sure you have the correct access rights and the repository exists."
+        );
+        assert_eq!(
+            said(
+                "ssh: Could not resolve hostname github.com: Temporary failure in name resolution\nfatal: Could not read from remote repository.\n"
+            ),
+            "ssh: Could not resolve hostname github.com: Temporary failure in name resolution. Could not read from remote repository."
         );
     }
 
@@ -1124,5 +1246,57 @@ pub mod tests {
             assert!(!unreachable(&error), "{message}");
         }
         assert!(!unreachable(&Error::Missing));
+    }
+
+    #[test]
+    fn tells_how_much_of_a_project_or_draft_github_holds() {
+        let dir = TempDir::new();
+        let git = sandboxed(&dir);
+        let bare = github(&dir);
+        let root = connected(&dir, &git, &bare);
+        let draft = "Salt Line/drafts/First Draft.tir";
+        // Never pushed: none of it.
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/").unwrap(),
+            Coverage::None
+        );
+        git.push(&root, BRANCH, NETWORK).unwrap();
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/").unwrap(),
+            Coverage::All
+        );
+        assert_eq!(git.coverage(&root, BRANCH, draft).unwrap(), Coverage::All);
+        // Saved since, recorded or not: an older version.
+        edit(&root, "{\"later\":1}\n");
+        assert_eq!(git.coverage(&root, BRANCH, draft).unwrap(), Coverage::Older);
+        git.commit(&root).unwrap();
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/").unwrap(),
+            Coverage::Older
+        );
+        git.push(&root, BRANCH, NETWORK).unwrap();
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/").unwrap(),
+            Coverage::All
+        );
+        // A new draft not yet recorded leaves its project older.
+        fs::write(root.join("Salt Line/drafts/Rewrite.tir"), "{}\n").unwrap();
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/").unwrap(),
+            Coverage::Older
+        );
+        assert_eq!(
+            git.coverage(&root, BRANCH, "Salt Line/drafts/Rewrite.tir")
+                .unwrap(),
+            Coverage::None
+        );
+        // A name with pattern characters is only itself.
+        fs::create_dir_all(root.join("[Salt] Line/drafts")).unwrap();
+        fs::write(root.join("[Salt] Line/project.json"), "{}\n").unwrap();
+        assert_eq!(
+            git.coverage(&root, BRANCH, "[Salt] Line/").unwrap(),
+            Coverage::None
+        );
+        assert_eq!(git.coverage(&root, BRANCH, "S*/").unwrap(), Coverage::None);
     }
 }

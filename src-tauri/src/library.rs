@@ -694,7 +694,7 @@ fn publish_project(dir: &Path, project: &str) -> io::Result<()> {
 
 /// Makes the library's folder, and any folder above it that is missing, so
 /// that each stays after a crash.
-fn make_library(root: &Path) -> io::Result<()> {
+pub fn make_library(root: &Path) -> io::Result<()> {
     let mut missing = Vec::new();
     let mut dir = root;
     while fs::symlink_metadata(dir).is_err() {

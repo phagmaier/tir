@@ -1,4 +1,5 @@
 /** The draft picker and its actions (brief, "Drafts"; prototype pieces 1 and 5). */
+import { type Coverage, deletionNote } from "./backup.ts";
 import type { DraftAction } from "./drafts.ts";
 import type { Library } from "./library.ts";
 import type { Place } from "./saving.ts";
@@ -7,6 +8,8 @@ interface DraftMenuSide {
   place(): Place | null;
   list(): Promise<Library>;
   run(action: DraftAction): void;
+  /** How much of the draft `file` of the project `folder` GitHub holds. */
+  backupOf(folder: string, file: string): Promise<Coverage>;
 }
 
 // Prototype piece 5's icons, on a 16-unit grid.
@@ -174,7 +177,7 @@ export class DraftMenu {
     const remove = button("draft-action danger", "Delete…");
     remove.disabled = rows.length === 1;
     if (remove.disabled) remove.append(el("small", "", "A project needs at least one draft"));
-    remove.addEventListener("click", () => this.ask("delete", active.name));
+    remove.addEventListener("click", () => void this.askDelete(project.folder, file, active.name));
 
     this.menu.replaceChildren(
       heading,
@@ -289,7 +292,17 @@ export class DraftMenu {
     fork.remove();
   }
 
-  private ask(kind: "rename" | "delete", active: string): void {
+  /** Asks before deleting the draft on screen, saying how much of it GitHub holds. */
+  private async askDelete(folder: string, file: string, active: string): Promise<void> {
+    this.dismiss();
+    const coverage = await this.side.backupOf(folder, file);
+    // Another draft may have taken the screen meanwhile.
+    const place = this.side.place();
+    if (place?.project.folder !== folder || place.file !== file) return;
+    this.ask("delete", active, coverage);
+  }
+
+  private ask(kind: "rename" | "delete", active: string, coverage: Coverage = "none"): void {
     // The native dialog will return focus to the trigger, not to a hidden menu item.
     this.dismiss();
     const deleting = kind === "delete";
@@ -302,7 +315,7 @@ export class DraftMenu {
       const warning = el(
         "p",
         "",
-        "This draft will be permanently deleted from this machine. Tir has no backup of it yet, so this can't be undone.",
+        `This draft will be deleted from this machine. ${deletionNote(coverage)}`,
       );
       warning.id = "draft-delete-warning";
       form.append(warning);

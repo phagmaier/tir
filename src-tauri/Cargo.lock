@@ -3676,6 +3676,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
+ "soup3",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

@@ -18,6 +18,7 @@
 import type { LeftOutKind } from "../core/import-report.ts";
 import { paginate } from "../core/paginate.ts";
 import { usesOf } from "../core/suggestions.ts";
+import { type BackupStatus, type Coverage, deletionNote } from "./backup.ts";
 import { deskKey } from "./desk.ts";
 import type { Library, Project } from "./library.ts";
 import { FIRST_DRAFT } from "./opening.ts";
@@ -31,8 +32,8 @@ import {
   type ScriptImport,
   whenEdited,
 } from "./projects.ts";
-import { savedIndicator } from "./saved-indicator.ts";
 import type { Place, SaveState } from "./saving.ts";
+import { type StatusIndicator, statusIndicator } from "./status-indicator.ts";
 
 /** What the screen needs from the window. */
 export interface ScreenSide {
@@ -47,6 +48,8 @@ export interface ScreenSide {
   openFolder(): string | null;
   /** Goes back to the script in the writing window; false when no script is open. */
   back(): boolean;
+  /** How much of the project `folder` GitHub holds, for the warning before deleting it. */
+  backupOf(folder: string): Promise<Coverage>;
 }
 
 /** A new project's name until the writer gives one (prototype piece 6). */
@@ -135,7 +138,7 @@ export class ProjectsScreen {
   private readonly body: HTMLElement;
   private readonly menu: HTMLElement;
   private readonly dialog: HTMLDialogElement;
-  private readonly showSaved: (state: SaveState, problem: string | null) => void;
+  private readonly indicator: StatusIndicator;
   private shownNow = false;
   /** An action is under way: the screen takes no other until it ends. */
   private busy = false;
@@ -158,7 +161,7 @@ export class ProjectsScreen {
     const bar = el("header", "projects-bar");
     const right = el("div", "bar-right");
     bar.append(el("span", "brand", "Tir"), right);
-    this.showSaved = savedIndicator(right);
+    this.indicator = statusIndicator(right);
 
     const head = el("div", "projects-head");
     this.count = el("span", "count");
@@ -199,7 +202,7 @@ export class ProjectsScreen {
     if (this.shownNow) return;
     this.shownNow = true;
     this.scroll = scrollY;
-    this.showSaved(state, problem);
+    this.indicator.saved(state, problem);
     // No rows until the library is listed afresh: the last showing's would
     // open, or go back to, the wrong project.
     this.count.textContent = "";
@@ -233,7 +236,12 @@ export class ProjectsScreen {
 
   /** The saved state changed while the screen shows. */
   saved(state: SaveState, problem: string | null): void {
-    this.showSaved(state, problem);
+    this.indicator.saved(state, problem);
+  }
+
+  /** Backup's status changed. */
+  backup(status: BackupStatus): void {
+    this.indicator.backup(status);
   }
 
   /**
@@ -442,7 +450,7 @@ export class ProjectsScreen {
     };
     const { project } = row;
     const items = project ? [item("Rename…", () => this.renameProject(project))] : [];
-    items.push(item("Delete…", () => this.deleteProject(row, name), true));
+    items.push(item("Delete…", () => void this.deleteProject(row, name), true));
     this.menu.replaceChildren(...items);
     this.menu.hidden = false;
     this.menuButton = anchor;
@@ -664,7 +672,7 @@ export class ProjectsScreen {
     });
   }
 
-  private deleteProject(row: Row, name: string): void {
+  private async deleteProject(row: Row, name: string): Promise<void> {
     const drafts = row.project?.info.drafts.length;
     const what =
       drafts === undefined
@@ -672,9 +680,11 @@ export class ProjectsScreen {
         : drafts === 1
           ? "Its draft"
           : `Its ${drafts} drafts`;
+    const coverage = await this.side.backupOf(row.folder);
+    if (!this.shownNow) return;
     this.ask({
       title: `Delete “${name}”?`,
-      text: `${what} will be deleted from this machine. Tir has no backup of it yet, so this can't be undone.`,
+      text: `${what} will be deleted from this machine. ${deletionNote(coverage)}`,
       submit: "Delete project",
       danger: true,
       run: () => void this.act(() => this.side.projects.remove(row.folder, name)),

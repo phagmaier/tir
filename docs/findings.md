@@ -466,6 +466,37 @@ Observed with git 2.56.0 on the desktop, in temporary directories with
   "Connection timed out") were not observed here; `git::unreachable`
   matches them as ssh writes them.
 
+## GitHub
+
+How Tir tells whether a repository is public with no stored token
+(architecture, "Backup"): it asks GitHub's REST API with no login at all,
+`GET https://api.github.com/repos/OWNER/NAME`. Not observed against GitHub
+itself, since no test or trial reaches it; the user's check (task 6.5)
+connects a private repository for real.
+
+- With no login, the API answers a public repository with the repository,
+  whose `private` is `false`, and a private one with `404 Not Found`, "to
+  avoid confirming the existence of private repositories", as it answers a
+  missing one. Rate limits answer `403` or `429`; Tir counts those, and
+  any other answer, as not knowing. A request needs a `User-Agent`.
+  Evidence: GitHub Docs, "Troubleshooting the REST API", read 2026-11-27.
+- A request with no `X-GitHub-Api-Version` header gets the oldest
+  supported version (2022-11-28, supported until March 10, 2028), then the
+  next oldest once that one closes; a version that has closed answers
+  `410 Gone`. Tir sends none, so its requests never name a closed
+  version. Evidence: GitHub Docs, "API Versions", read 2026-11-27.
+- Git over HTTPS with no login is no test: since September 2026 GitHub may
+  answer an unauthenticated clone or fetch of a public repository with
+  `401`, asking for a login, during unusual traffic, as it answers one of
+  a private repository. Evidence: GitHub Community discussion #206581
+  ("Unauthenticated clone of a public repo intermittently returns 401",
+  opened 2026-09-02, with GitHub's answer of 2026-09-03), read 2026-11-27.
+- The `soup3` crate (0.5.0), WebKitGTK's HTTP library and already in the
+  build through it, makes the request; its library is named `soup`. It is
+  never called in tests or trials: in a sandbox git reading
+  `gitconfig-anonymous` answers instead. Evidence: `Cargo.lock` (`soup3`
+  under `webkit2gtk` and `wry`) and the crate's sources, 2026-11-27.
+
 ## Fountain
 
 - Fountain 1.1 has no Shot or General element, no way to force dialogue or a
@@ -783,3 +814,15 @@ Observed 2026-11-26.
   its config directory instead. Evidence: tauri-utils 2.10.4
   `enable_gtk_app_id`'s documentation; the plugin's README and
   `platform_impl/linux.rs` (Context7), read 2026-11-27.
+- **Telling a public repository by git with no login, or by `gh`**
+  (task 6.3). Git reading a repository over HTTPS with no login fails for
+  a private repository, but since September 2026 can fail for a public one
+  too (above, "GitHub"), which would let a public repository pass as
+  private. `gh repo view` would use the token `gh` keeps, and Tir stores
+  and uses no token. GitHub's REST API asked with no login tells the two
+  apart.
+- **Pulling the other machine's work with Tir open** (task 6.2): Tir
+  would have to read again the draft on screen once a pull changed it,
+  with a question when the writer had typed in the second before. The
+  user chose to bring work in with Tir closed, with saves refusing to
+  write over a changed draft (brief, "Saving and backup").

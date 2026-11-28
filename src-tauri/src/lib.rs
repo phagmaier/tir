@@ -9,6 +9,7 @@ mod closing;
 mod dialogs;
 mod files;
 mod git;
+mod github;
 mod instance;
 mod library;
 mod settings;
@@ -81,6 +82,18 @@ fn find_git() -> git::Git {
     }
 }
 
+/// How Tir asks what anyone without a login sees of a repository: GitHub's
+/// API, or in a sandbox git reading only `gitconfig-anonymous`, which a
+/// trial points at the repositories it counts as public.
+fn find_anonymous() -> github::Anonymous {
+    match sandbox() {
+        Some(dir) => {
+            github::Anonymous::Sandboxed(git::Git::sandboxed(dir.join("gitconfig-anonymous")))
+        }
+        None => github::Anonymous::Api,
+    }
+}
+
 /// How backup stands, for the page to show at first; later changes come as
 /// `tir://backup`.
 #[tauri::command]
@@ -88,18 +101,35 @@ fn backup_status(backup: State<'_, backup::Backup>) -> backup::Status {
     backup.status()
 }
 
-/// Records the library's changes and pushes them now; how it went comes as
-/// `tir://backup`.
-#[tauri::command]
-fn back_up_now(backup: State<'_, backup::Backup>) {
-    backup.now();
+/// Records the library's changes and pushes them now; how backup stands
+/// once it has.
+#[tauri::command(async)]
+fn back_up_now(backup: State<'_, backup::Backup>) -> Option<backup::Status> {
+    backup.now()
 }
 
 /// Asks GitHub again after a pause, and pushes if it has nothing this
-/// machine lacks.
-#[tauri::command]
-fn resume_backup(backup: State<'_, backup::Backup>) {
-    backup.resume();
+/// machine lacks; how backup stands once it has.
+#[tauri::command(async)]
+fn resume_backup(backup: State<'_, backup::Backup>) -> Option<backup::Status> {
+    backup.resume()
+}
+
+/// Connects the repository at `address`, once it is checked; what came of it.
+#[tauri::command(async)]
+fn connect_repository(backup: State<'_, backup::Backup>, address: String) -> backup::Checked {
+    backup.connect(&address)
+}
+
+/// How much of the project `folder`, or its draft `draft`, GitHub holds:
+/// the warning before deleting it says.
+#[tauri::command(async)]
+fn backup_of(
+    backup: State<'_, backup::Backup>,
+    folder: String,
+    draft: Option<String>,
+) -> git::Coverage {
+    backup.coverage(&folder, draft.as_deref())
 }
 
 pub fn run() {
@@ -136,6 +166,7 @@ pub fn run() {
                     busy: library.busy(),
                     timing: backup::TIMING,
                 },
+                find_anonymous(),
                 move |status| {
                     let _ = emitter.emit("tir://backup", status);
                 },
@@ -176,6 +207,8 @@ pub fn run() {
             backup_status,
             back_up_now,
             resume_backup,
+            connect_repository,
+            backup_of,
             dialogs::open_script,
             dialogs::export_fountain,
             dialogs::export_fdx,

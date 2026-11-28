@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { type BackupStatus, type Checked, type Coverage, NOT_CONNECTED } from "./backup.ts";
+import { BackupPanel } from "./backup-panel.ts";
 import { Desk } from "./desk.ts";
 import { devScript } from "./dev-fixtures.ts";
 import { DraftMenu } from "./draft-menu.ts";
@@ -37,7 +39,6 @@ import { pagePosition } from "./page-position.ts";
 import { makePdf } from "./pdf-export.ts";
 import { PageCounter, Projects } from "./projects.ts";
 import { ProjectsScreen } from "./projects-screen.ts";
-import { savedIndicator } from "./saved-indicator.ts";
 import {
   closer,
   type Place,
@@ -50,6 +51,7 @@ import { loadSettings, settingsSaver } from "./settings-file.ts";
 import { sceneSidebar } from "./sidebar.ts";
 import { workerChecker } from "./spell-checker.ts";
 import { spellCheck } from "./spelling.ts";
+import { statusIndicator } from "./status-indicator.ts";
 import { TitlePageView } from "./title-page.ts";
 import { elementToolbar } from "./toolbar.ts";
 
@@ -71,7 +73,8 @@ const title = byId("title");
 const projectShown = () => title.textContent ?? "";
 const texts = textsInWorker();
 let showSaved: (state: SaveState, problem: string | null) => void = () => {};
-// The saved state as last heard, for the Projects screen's top bar.
+// The saved state as last heard, for the Projects screen's top bar and the
+// backup panel.
 let lastSaved: { state: SaveState; problem: string | null } = { state: "saved", problem: null };
 let screen: ProjectsScreen | undefined;
 let draftMenu: DraftMenu | undefined;
@@ -88,8 +91,8 @@ const saver = new Saver(
   },
   {
     state: (state, why) => {
-      showSaved(state, why);
       lastSaved = { state, problem: why };
+      showSaved(state, why);
       if (screen?.shown) screen.saved(state, why);
     },
     failed: (why) =>
@@ -139,8 +142,39 @@ const titlePage = new TitlePageView(
   (page) => saver.editTitlePage(page),
   () => editor.view.focus(),
 );
-// After the page position and formatting count, at the top bar's right end.
-showSaved = savedIndicator(byId("bar-right"));
+// After the page position and formatting count, at the top bar's right end:
+// the indicator opens the backup panel.
+let backup: BackupStatus = NOT_CONNECTED;
+const backupPanel = new BackupPanel({
+  status: () => backup,
+  saved: () => lastSaved.state,
+  place: libraryPlace,
+  backUpNow: () => invoke<BackupStatus | null>("back_up_now"),
+  resume: () => invoke<BackupStatus | null>("resume_backup"),
+  connect: (address) => invoke<Checked>("connect_repository", { address }),
+  async library() {
+    const { projects } = await listLibrary();
+    const drafts = projects.reduce((count, project) => count + project.info.drafts.length, 0);
+    return { projects: projects.length, drafts };
+  },
+  toast: (text) => desk?.toast(text),
+});
+const indicator = statusIndicator(byId("bar-right"), (anchor) => backupPanel.toggle(anchor));
+showSaved = (state, problem) => {
+  indicator.saved(state, problem);
+  backupPanel.update();
+};
+const heardBackup = (status: BackupStatus) => {
+  backup = status;
+  indicator.backup(status);
+  screen?.backup(status);
+  backupPanel.update();
+};
+await listen<BackupStatus>("tir://backup", ({ payload }) => heardBackup(payload));
+void invoke<BackupStatus>("backup_status").then(heardBackup, console.error);
+/** How much of the project `folder`, or its draft `file`, GitHub holds. */
+const backupOf = (folder: string, file?: string): Promise<Coverage> =>
+  invoke<Coverage>("backup_of", { folder, draft: file ?? null }).catch(() => "none" as const);
 const settingsFile = settingsSaver();
 desk = new Desk(editor, settings, settingsFile.save, {
   topbar: byId("topbar"),
@@ -201,6 +235,7 @@ draftMenu = new DraftMenu(draftTrigger, {
   place: () => (closing ? null : saver.where),
   list: listLibrary,
   run: runDraftAction,
+  backupOf,
 });
 
 function showDraft(place: Place | null): void {
@@ -279,10 +314,13 @@ screen = new ProjectsScreen({
     screen?.hide(() => editor.view.focus());
     return true;
   },
+  backupOf: (folder) => backupOf(folder),
 });
+screen.backup(backup);
 const showProjects = () => {
   if (draftAction || closing || draftMenu?.dialogOpen) return;
   draftMenu?.dismiss();
+  backupPanel.close(false);
   titlePage.close();
   void screen?.show(lastSaved.state, lastSaved.problem);
 };
@@ -318,7 +356,10 @@ const close = closer(
   },
   (on) => {
     closing = !on;
-    if (closing) draftMenu?.dismiss();
+    if (closing) {
+      draftMenu?.dismiss();
+      backupPanel.close(false);
+    }
     editor.view.setProps({ editable: () => on });
     titlePage.setEditable(on);
     screen?.setEditable(on);

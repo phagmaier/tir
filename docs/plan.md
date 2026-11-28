@@ -9,9 +9,9 @@ Completed Stages 0–2 and their evidence are in [history.md](history.md).
 
 ## Current status
 
-- Active: 6.3, connect dialog and backup panel (the user asked for 6.1
-  to 6.4, stopping at 6.5).
-- Next: 6.4, review of Stage 6.
+- Active: 6.4, review of Stage 6 (the user asked for 6.1 to 6.4,
+  stopping at 6.5).
+- Next: 6.5, the user's check of Stage 6.
 - Blockers: none.
 
 ## How to work this plan
@@ -549,8 +549,8 @@ anything else. V1 is done when 7.4 is checked.
     asked whether to close without saving, and Tir then committed and
     pushed before it exited.
 
-- [ ] 6.3 — Connect dialog and backup panel
-  - Status: in progress
+- [x] 6.3 — Connect dialog and backup panel
+  - Status: done
   - Depends on: 6.2
   - Spec: brief "Saving and backup"; prototype piece 5 (backup panel and
     connect dialog)
@@ -561,16 +561,39 @@ anything else. V1 is done when 7.4 is checked.
     including Resume.
   - Done when: each state and warning works in the app against local
     test repositories, and the views match prototype piece 5.
-  - Note (from 2.3): until backup exists, the Projects screen's delete
-    confirmation says "Tir has no backup of it yet, so this can't be
-    undone" (`deleteProject` in `src/ui/projects-screen.ts`; the user's
-    choice, 2026-11-27). Once a project is backed up, it says prototype
-    piece 6's "GitHub keeps the backup history, so it can still be
-    recovered from there"; choose the wording for a project whose last
-    changes are not pushed yet.
+  - Evidence: 2026-11-28, `cargo test` (86), clippy, `cargo fmt --check`,
+    Biome, both type checks and Vitest (748, `backup.test.ts`'s words for
+    each state among them) passed. `backup.rs`'s tests connect a private
+    empty repository and back up to it, refuse a public one, a missing one,
+    one holding a README commit and an address not on GitHub, connect the
+    repository a library came from, move backup to another repository, and
+    report no git; `github.rs`'s read GitHub's address forms and the API's
+    answers; `git.rs`'s tell how much of a project or draft GitHub holds.
+    The public check needs no token: GitHub's REST API asked with no login
+    (findings, "GitHub"). In an isolated trial whose sandbox stood bare
+    repositories in for GitHub, with real clicks, keys and typing, the
+    indicator and panel showed not connected (with Connect a repository…);
+    the connect dialog said to paste an address, that "screenplays" is no
+    GitHub address, that a missing repository was out of reach (with
+    git's words), that a public one was public, and that one with a README
+    already held work; a private empty one connected ("1 project and 1
+    draft"), Done closed it with "Connected. Backups now go to GitHub."
+    and the first backup arrived. Then backed up with the private badge,
+    Back up now ("Backed up just now"), offline ("Offline, 1 waiting",
+    "Still offline…") and back by itself within a minute of coming back,
+    failing in the warning colour with git's words and back on Back up
+    now, paused at launch once the laptop had pushed, with the git pull
+    note and Resume ("GitHub still has changes…"). Esc closed the panel
+    and the dialog, focus back on the indicator. The Projects screen's bar
+    showed "Backup paused"; its delete warnings, and the draft menu's, said
+    GitHub keeps the history (pushed), has none (new project, new draft),
+    or lacks the latest changes (edited since). Closing while paused
+    committed and pushed nothing. Screenshots matched prototype piece 5's
+    none, ok, offline and paused panels and its connect dialog. The 2.3
+    note's wording for a project not fully pushed is in the brief.
 
 - [ ] 6.4 — Review: Stage 6
-  - Status: todo
+  - Status: in progress
   - Depends on: 6.3
   - Scope: everything changed since 5.4's recorded state.
   - Check (security and safety first):
@@ -793,3 +816,9 @@ that will close it.
   the earlier of its file's time and its last commit's time would be
   right; reading that walks the history at each listing unless it is
   kept until HEAD moves.
+- The public check against GitHub itself, GitHub's REST API asked with no
+  login through libsoup (`github.rs`'s `get`), runs in no test or trial,
+  which never reach the network; tests read sample answers and trials ask
+  a sandbox git instead (6.3; findings, "GitHub"). The user's check (6.5)
+  connects a private repository through it; connecting a public one
+  would show its warning.

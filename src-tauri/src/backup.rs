@@ -10,7 +10,8 @@
 //! how backup stands as `tir://backup`. A missing git or a repository Tir
 //! cannot use is reported there, never crashed on.
 
-use crate::git::{self, Git, Pushed, Repository};
+use crate::git::{self, Coverage, Git, Pushed, Repository};
+use crate::github::{self, Anonymous, Seen};
 use crate::library;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -85,6 +86,31 @@ pub struct Status {
     pub reason: Option<String>,
     /// Why Tir cannot record the library's changes in git, if it cannot.
     pub problem: Option<String>,
+    /// Tir found, when it connected the repository, that only a login can
+    /// read it.
+    pub private: bool,
+}
+
+/// What came of connecting a repository, for the connect dialog.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(tag = "result", rename_all = "camelCase")]
+pub enum Checked {
+    /// Backups go to the repository from now on.
+    Connected,
+    /// The address is no GitHub repository's.
+    NotGitHub,
+    /// GitHub could not be reached at all.
+    Offline { reason: String },
+    /// This machine's git login could not reach the repository.
+    Unreachable { reason: String },
+    /// Anyone can read the repository.
+    Public,
+    /// Whether anyone can read it could not be told.
+    Unknown { reason: String },
+    /// The repository holds commits the library lacks.
+    Holds,
+    /// The library cannot be backed up, and why.
+    Problem { reason: String },
 }
 
 /// What backup needs.
@@ -101,11 +127,15 @@ pub struct Setup {
 enum Event {
     /// The library may have changed.
     Changed,
-    /// Back up now: record what changed, and push.
-    Now,
-    /// The writer has brought the library up to date: ask GitHub again,
-    /// and push if it has nothing this machine lacks.
-    Resume,
+    /// Back up now: record what changed, push, and answer how it stands.
+    Now(Sender<Status>),
+    /// Ask GitHub again after a pause, push if it has nothing this machine
+    /// lacks, and answer how it stands.
+    Resume(Sender<Status>),
+    /// Connect the repository at the address: then record, ask it, and
+    /// push. On backup's thread, so no push to the one it replaces is under
+    /// way; the answer is why it could not, if it could not.
+    Connect(String, Sender<Result<(), String>>),
     /// Tir is closing: record what is left, say so, push, and stop.
     Close(Sender<Closing>),
 }
@@ -121,13 +151,23 @@ enum Closing {
 pub struct Backup {
     events: Sender<Event>,
     status: Arc<Mutex<Status>>,
+    git: Git,
+    root: Result<PathBuf, String>,
+    busy: Arc<Mutex<()>>,
+    anonymous: Anonymous,
 }
 
 impl Backup {
-    /// Starts backup's thread; `publish` hears each new status.
-    pub fn start(setup: Setup, publish: impl Fn(&Status) + Send + 'static) -> Self {
+    /// Starts backup's thread; `publish` hears each new status. `anonymous`
+    /// asks what anyone without a login sees of a repository.
+    pub fn start(
+        setup: Setup,
+        anonymous: Anonymous,
+        publish: impl Fn(&Status) + Send + 'static,
+    ) -> Self {
         let (events, received) = mpsc::channel();
         let status = Arc::new(Mutex::new(Status::default()));
+        let (git, root, busy) = (setup.git.clone(), setup.root.clone(), setup.busy.clone());
         let worker = Worker {
             setup,
             status: status.clone(),
@@ -140,7 +180,14 @@ impl Backup {
             .name("backup".into())
             .spawn(move || worker.run(received))
             .expect("Tir could not start its backup thread");
-        Backup { events, status }
+        Backup {
+            events,
+            status,
+            git,
+            root,
+            busy,
+            anonymous,
+        }
     }
 
     /// The library may have changed: its changes are recorded once it has
@@ -149,18 +196,125 @@ impl Backup {
         let _ = self.events.send(Event::Changed);
     }
 
-    /// Records what changed and pushes it, without waiting for quiet.
-    pub fn now(&self) {
-        let _ = self.events.send(Event::Now);
+    /// Records what changed and pushes it, without waiting for quiet; how
+    /// backup stands then, or `None` once backup has stopped.
+    pub fn now(&self) -> Option<Status> {
+        self.ask(Event::Now)
     }
 
-    /// Asks GitHub again after a pause, and pushes if it may.
-    pub fn resume(&self) {
-        let _ = self.events.send(Event::Resume);
+    /// Asks GitHub again after a pause, and pushes if it may; how backup
+    /// stands then.
+    pub fn resume(&self) -> Option<Status> {
+        self.ask(Event::Resume)
+    }
+
+    fn ask(&self, event: impl FnOnce(Sender<Status>) -> Event) -> Option<Status> {
+        let (reply, answer) = mpsc::channel();
+        self.events.send(event(reply)).ok()?;
+        answer.recv().ok()
     }
 
     pub fn status(&self) -> Status {
         lock(&self.status).clone()
+    }
+
+    /// How much of the project `folder`, or of its draft `draft`, GitHub
+    /// holds as Tir last heard: for the warning before it is deleted.
+    pub fn coverage(&self, folder: &str, draft: Option<&str>) -> Coverage {
+        let named = |name: &str| !name.is_empty() && !name.contains('/') && !name.starts_with('.');
+        if !named(folder) || !draft.is_none_or(named) || self.status().remote.is_none() {
+            return Coverage::None;
+        }
+        let Ok(root) = &self.root else {
+            return Coverage::None;
+        };
+        let Ok(Repository::Branch(branch)) = usable(&self.git, root) else {
+            return Coverage::None;
+        };
+        let path = match draft {
+            Some(draft) => format!("{folder}/drafts/{draft}"),
+            None => format!("{folder}/"),
+        };
+        self.git
+            .coverage(root, &branch, &path)
+            .unwrap_or(Coverage::None)
+    }
+
+    /// Connects the repository at the address the writer `pasted`, if this
+    /// machine's git login reaches it, only a login can read it, and it
+    /// holds nothing the library lacks; backup then records and pushes.
+    /// Makes the library, and the library a repository, if need be.
+    pub fn connect(&self, pasted: &str) -> Checked {
+        let Some(address) = github::parse(pasted) else {
+            return Checked::NotGitHub;
+        };
+        let root = match &self.root {
+            Ok(root) => root.clone(),
+            Err(problem) => {
+                return Checked::Problem {
+                    reason: problem.clone(),
+                };
+            }
+        };
+        {
+            let _library = lock(&self.busy);
+            if let Err(error) = library::make_library(&root) {
+                return Checked::Problem {
+                    reason: format!("Tir could not make the library ({error})."),
+                };
+            }
+            if let Err(reason) = prepare(&self.git, &root) {
+                return Checked::Problem { reason };
+            }
+        }
+        let url = address.url();
+        let branches = match self.git.ls_remote(&root, &url) {
+            Ok(branches) => branches,
+            Err(error) if git::unreachable(&error) => {
+                return Checked::Offline {
+                    reason: sentence(&error),
+                };
+            }
+            Err(git::Error::Missing) => {
+                return Checked::Problem {
+                    reason: failure("", &git::Error::Missing),
+                };
+            }
+            Err(error) => {
+                return Checked::Unreachable {
+                    reason: sentence(&error),
+                };
+            }
+        };
+        match self.anonymous.sees(&root, &address) {
+            Seen::Public => return Checked::Public,
+            Seen::Unknown(reason) => return Checked::Unknown { reason },
+            Seen::Nothing => {}
+        }
+        for (_, id) in &branches {
+            match self.git.holds(&root, id) {
+                Ok(true) => {}
+                Ok(false) => return Checked::Holds,
+                Err(error) => {
+                    return Checked::Problem {
+                        reason: unreadable(&error),
+                    };
+                }
+            }
+        }
+        let (reply, answer) = mpsc::channel();
+        if self.events.send(Event::Connect(url, reply)).is_err() {
+            return Checked::Problem {
+                reason: "Tir is closing.".into(),
+            };
+        }
+        match answer.recv() {
+            Ok(Ok(())) => Checked::Connected,
+            Ok(Err(reason)) => Checked::Problem { reason },
+            Err(_) => Checked::Problem {
+                reason: "Tir is closing.".into(),
+            },
+        }
     }
 
     /// Records what is left, calls `recorded`, pushes, and stops backup;
@@ -212,13 +366,24 @@ impl Worker {
             };
             match event {
                 Ok(Event::Changed) => self.due = Some(Instant::now() + self.setup.timing.quiet),
-                Ok(Event::Now) => {
+                Ok(Event::Now(reply)) => {
                     self.record();
                     self.push(self.setup.timing.network);
+                    let _ = reply.send(self.status());
                 }
-                Ok(Event::Resume) => {
+                Ok(Event::Resume(reply)) => {
                     self.record();
                     self.check(true);
+                    let _ = reply.send(self.status());
+                }
+                Ok(Event::Connect(url, reply)) => {
+                    let connected = self.connect(&url);
+                    let done = connected.is_ok();
+                    let _ = reply.send(connected);
+                    if done {
+                        self.record();
+                        self.check(true);
+                    }
                 }
                 Ok(Event::Close(done)) => {
                     self.record();
@@ -327,23 +492,7 @@ impl Worker {
     /// Commits the library's changes; whether there were any.
     fn commit(&self, root: &Path) -> Result<bool, String> {
         let git = &self.setup.git;
-        if let Repository::None = self.repository(root)? {
-            // Never a repository of a folder holding more than Tir's files.
-            match library::foreign_entry(root) {
-                Ok(None) => {}
-                Ok(Some(name)) => {
-                    return Err(format!(
-                        "Tir backs up only a library of its own, and “{name}” in {} is none of \
-                         Tir's projects. Move it out of the library and Tir will start backing up.",
-                        root.display()
-                    ));
-                }
-                Err(error) => return Err(format!("Tir could not read the library ({error}).")),
-            }
-            git.init(root).map_err(|error| {
-                failure("Tir could not make the library a git repository.", &error)
-            })?;
-        }
+        prepare(git, root)?;
         git.commit(root)
             .map(|message| message.is_some())
             .map_err(|error| failure("Tir could not record the library's changes in git.", &error))
@@ -351,19 +500,29 @@ impl Worker {
 
     /// What the library is to git, or why Tir cannot record its changes.
     fn repository(&self, root: &Path) -> Result<Repository, String> {
-        match self.setup.git.repository(root) {
-            Ok(Repository::Detached) => Err(
-                "The library's git repository is not on a branch (its HEAD is detached), so Tir \
-                 records nothing. Check out its branch in a terminal."
-                    .into(),
-            ),
-            Ok(Repository::Busy(operation)) => Err(format!(
-                "A git {operation} is under way in the library, so Tir records nothing until it \
-                 is finished in a terminal."
-            )),
-            Ok(repository) => Ok(repository),
-            Err(error) => Err(unreadable(&error)),
+        usable(&self.setup.git, root)
+    }
+
+    /// Pushes to `url` from now on, a repository only a login can read, and
+    /// asks it afresh: a pause or failure was the old one's.
+    fn connect(&mut self, url: &str) -> Result<(), String> {
+        let root = self
+            .root()
+            .ok_or_else(|| "The library is not there.".to_string())?;
+        {
+            let _library = lock(&self.setup.busy);
+            self.setup
+                .git
+                .connect(&root, url, true)
+                .map_err(|error| failure("Tir could not connect the repository.", &error))?;
         }
+        self.failures = 0;
+        self.update(|status| {
+            status.state = State::BackedUp;
+            status.reason = None;
+        });
+        self.refresh(&root);
+        Ok(())
     }
 
     /// The library's folder and branch, when a repository is connected and
@@ -466,6 +625,7 @@ impl Worker {
     fn refresh(&mut self, root: &Path) -> u32 {
         let git = &self.setup.git;
         let remote = git.remote(root).ok().flatten();
+        let private = remote.is_some() && git.private(root).unwrap_or(false);
         let standing = match self.repository(root) {
             Ok(Repository::Branch(branch)) if remote.is_some() => git.standing(root, &branch).ok(),
             _ => None,
@@ -481,6 +641,7 @@ impl Worker {
             status.remote = remote;
             status.waiting = waiting;
             status.backed_up = standing.and_then(|standing| standing.backed_up);
+            status.private = private;
         });
         waiting
     }
@@ -502,6 +663,44 @@ impl Worker {
         }
         (self.publish)(&status);
     }
+}
+
+/// What the library is to git, or why Tir cannot record its changes.
+fn usable(git: &Git, root: &Path) -> Result<Repository, String> {
+    match git.repository(root) {
+        Ok(Repository::Detached) => Err(
+            "The library's git repository is not on a branch (its HEAD is detached), so Tir \
+             records nothing. Check out its branch in a terminal."
+                .into(),
+        ),
+        Ok(Repository::Busy(operation)) => Err(format!(
+            "A git {operation} is under way in the library, so Tir records nothing until it \
+             is finished in a terminal."
+        )),
+        Ok(repository) => Ok(repository),
+        Err(error) => Err(unreadable(&error)),
+    }
+}
+
+/// Makes the library a repository if it is none yet, but never a folder
+/// holding more than Tir's files; or why Tir cannot record its changes.
+fn prepare(git: &Git, root: &Path) -> Result<(), String> {
+    if let Repository::None = usable(git, root)? {
+        match library::foreign_entry(root) {
+            Ok(None) => {}
+            Ok(Some(name)) => {
+                return Err(format!(
+                    "Tir backs up only a library of its own, and “{name}” in {} is none of \
+                     Tir's projects. Move it out of the library and Tir will start backing up.",
+                    root.display()
+                ));
+            }
+            Err(error) => return Err(format!("Tir could not read the library ({error}).")),
+        }
+        git.init(root)
+            .map_err(|error| failure("Tir could not make the library a git repository.", &error))?;
+    }
+    Ok(())
 }
 
 /// Why the library's repository could not be read.
@@ -556,6 +755,207 @@ mod tests {
         }
     }
 
+    /// What anyone sees, in the sandbox of `dir`: the repositories its
+    /// `gitconfig-anonymous` points GitHub's HTTPS addresses at.
+    fn anonymous(dir: &TempDir) -> Anonymous {
+        Anonymous::Sandboxed(Git::sandboxed(dir.0.join("gitconfig-anonymous")))
+    }
+
+    /// A sandbox standing for GitHub: this machine's login reaches the
+    /// repositories in `dir/remotes`, anyone those in `dir/public`. Makes
+    /// `mara/NAME.git` for each of `names`, empty, and public when `public`
+    /// says so.
+    fn github_with(dir: &TempDir, names: &[(&str, bool)]) {
+        let remotes = dir.0.join("remotes/mara");
+        let public = dir.0.join("public/mara");
+        fs::create_dir_all(&remotes).unwrap();
+        fs::create_dir_all(&public).unwrap();
+        for (name, open) in names {
+            let bare = format!("{name}.git");
+            elsewhere(
+                dir,
+                &remotes,
+                &["init", "-q", "--bare", "--initial-branch", BRANCH, &bare],
+            );
+            if *open {
+                std::os::unix::fs::symlink(remotes.join(&bare), public.join(&bare)).unwrap();
+            }
+        }
+        fs::write(
+            dir.0.join("gitconfig"),
+            format!(
+                "[url \"{}/\"]\n\tinsteadOf = git@github.com:\n\tinsteadOf = https://github.com/\n",
+                dir.0.join("remotes").display()
+            ),
+        )
+        .unwrap();
+        fs::write(
+            dir.0.join("gitconfig-anonymous"),
+            format!(
+                "[url \"{}/\"]\n\tinsteadOf = https://github.com/\n",
+                dir.0.join("public").display()
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn connects_a_private_empty_repository_and_backs_up_to_it() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("screenplays", false)]);
+        let (git, root) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        assert_eq!(backup.status().state, State::Off);
+        assert_eq!(
+            backup.connect("  https://github.com/mara/screenplays\n"),
+            Checked::Connected
+        );
+        assert_eq!(
+            git.remote(&root).unwrap().as_deref(),
+            Some("https://github.com/mara/screenplays.git")
+        );
+        let bare = dir.0.join("remotes/mara/screenplays.git");
+        wait_until("the first backup", || on_github(&dir, &bare) == 1);
+        wait_until("the status", || backup.status().state == State::BackedUp);
+        assert!(backup.status().private);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn warns_of_a_public_repository_and_connects_nothing() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("screenplays", true)]);
+        let (git, root) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        assert_eq!(
+            backup.connect("git@github.com:mara/screenplays.git"),
+            Checked::Public
+        );
+        assert_eq!(git.remote(&root).unwrap(), None);
+        assert_eq!(backup.status().state, State::Off);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn refuses_a_missing_repository_and_no_github_address() {
+        let dir = TempDir::new();
+        github_with(&dir, &[]);
+        let (git, root) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        let Checked::Unreachable { reason } = backup.connect("git@github.com:mara/missing.git")
+        else {
+            panic!("a missing repository was reached");
+        };
+        assert!(
+            reason.contains("does not appear to be a git repository"),
+            "{reason}"
+        );
+        assert_eq!(
+            backup.connect("/home/mara/screenplays.git"),
+            Checked::NotGitHub
+        );
+        assert_eq!(backup.connect(""), Checked::NotGitHub);
+        assert_eq!(git.remote(&root).unwrap(), None);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn refuses_a_repository_holding_work_the_library_lacks() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("screenplays", false)]);
+        // GitHub's "Add a README" made a first commit of its own.
+        let bare = dir.0.join("remotes/mara/screenplays.git");
+        elsewhere(
+            &dir,
+            &dir.0,
+            &["clone", "-q", bare.to_str().unwrap(), "web"],
+        );
+        fs::write(dir.0.join("web/README.md"), "# screenplays\n").unwrap();
+        elsewhere(&dir, &dir.0.join("web"), &["add", "README.md"]);
+        elsewhere(
+            &dir,
+            &dir.0.join("web"),
+            &["commit", "-q", "-m", "Initial commit"],
+        );
+        elsewhere(&dir, &dir.0.join("web"), &["push", "-q", REMOTE, BRANCH]);
+        let (git, root) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        assert_eq!(
+            backup.connect("git@github.com:mara/screenplays.git"),
+            Checked::Holds
+        );
+        assert_eq!(git.remote(&root).unwrap(), None);
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn connects_the_repository_a_library_was_cloned_from() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("screenplays", false)]);
+        let (git, root) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        assert_eq!(
+            backup.connect("git@github.com:mara/screenplays.git"),
+            Checked::Connected
+        );
+        let bare = dir.0.join("remotes/mara/screenplays.git");
+        wait_until("the first backup", || on_github(&dir, &bare) == 1);
+        // Connected again, as from a clone of it: GitHub holds nothing the
+        // library lacks.
+        assert_eq!(
+            backup.connect("git@github.com:mara/screenplays.git"),
+            Checked::Connected
+        );
+        assert_eq!(
+            git.remote(&root).unwrap().as_deref(),
+            Some("git@github.com:mara/screenplays.git")
+        );
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn moves_backup_to_another_repository() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("old", false), ("new", false)]);
+        let (git, _) = recorded(&dir);
+        let (_, backup, _) = start(&dir, git.clone(), TIMING);
+        assert_eq!(
+            backup.connect("git@github.com:mara/old.git"),
+            Checked::Connected
+        );
+        let old = dir.0.join("remotes/mara/old.git");
+        wait_until("the first backup", || on_github(&dir, &old) == 1);
+        assert_eq!(
+            backup.connect("git@github.com:mara/new.git"),
+            Checked::Connected
+        );
+        let new = dir.0.join("remotes/mara/new.git");
+        wait_until("the backup to the new one", || on_github(&dir, &new) == 1);
+        wait_until("the status", || {
+            backup.status().state == State::BackedUp && backup.status().waiting == 0
+        });
+        assert_eq!(
+            backup.status().remote.as_deref(),
+            Some("git@github.com:mara/new.git")
+        );
+        backup.finish(|| {});
+    }
+
+    #[test]
+    fn connects_nothing_without_git() {
+        let dir = TempDir::new();
+        github_with(&dir, &[("screenplays", false)]);
+        let (_, backup, _) = start(&dir, missing(&dir), TIMING);
+        assert_eq!(
+            backup.connect("git@github.com:mara/screenplays.git"),
+            Checked::Problem {
+                reason: "Tir could not find git on this machine, so it cannot back up the library."
+                    .into()
+            }
+        );
+        backup.finish(|| {});
+    }
+
     /// Backup of the library in `dir`, made holding "Salt Line" unless it
     /// is there, and every status it published.
     fn start(
@@ -576,6 +976,7 @@ mod tests {
                 busy: Arc::default(),
                 timing,
             },
+            anonymous(dir),
             move |status| lock(&published).push(status.clone()),
         );
         (root, backup, heard)
@@ -772,6 +1173,7 @@ mod tests {
                 busy: Arc::default(),
                 timing: TIMING,
             },
+            anonymous(&dir),
             |_| {},
         );
         backup.now();
@@ -794,6 +1196,7 @@ mod tests {
                 busy: busy.clone(),
                 timing: TIMING,
             },
+            anonymous(&dir),
             |_| {},
         );
         let command = lock(&busy);

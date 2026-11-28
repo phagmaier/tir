@@ -24,3 +24,7 @@ serde_json = "1"
 # Decodes an exported PDF's suggested name from its request header (task
 # 3.1); already in the build through Tauri.
 percent-encoding = "2"
+# Asks GitHub's API, with no login, whether a repository is public (task
+# 6.3; findings, "GitHub"); already in the build through WebKitGTK, whose
+# HTTP library it is.
+soup3 = "0.5"

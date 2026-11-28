@@ -263,11 +263,14 @@ screenplay convention, shows no number.
   top bar) lists every project with its title, active draft, page count,
   number of drafts and last edit, most recent first (prototype piece 6).
   From it the user creates, opens, renames and deletes projects. Deleting
-  asks for confirmation; GitHub's history still holds a deleted project.
-  Until backup arrives (Stage 6) a deleted project is gone for good, and
-  the confirmation says so: "Its 2 drafts will be deleted from this
-  machine. Tir has no backup of it yet, so this can't be undone." *(the
-  user's choice, 2026-11-27)*. *(agent-selected: the screen covers the
+  asks for confirmation, which says what GitHub keeps of the project:
+  "GitHub keeps the backup history, so it can still be recovered from
+  there" when GitHub holds it as it is (prototype piece 6); "GitHub keeps a
+  backup without its latest changes, so only the backed-up version can be
+  recovered from there" when GitHub holds an older version *(agent-selected,
+  task 6.3)*; and "Tir has no backup of it yet, so this can't be undone"
+  when GitHub holds none of it *(the user's choice, 2026-11-27)*. Deleting a
+  draft says the same of the draft. *(agent-selected: the screen covers the
   writing window, and Esc, or a click on the open project, goes back to
   the script as it was left; while it shows, the writing window's keys do
   nothing. A project's last edit is when one of its drafts was last saved
@@ -546,6 +549,14 @@ three.
   retry and no nagging.
 - **A small top-bar indicator** shows both states at a glance: whether the
   work is saved, and whether it is backed up to GitHub or waiting to be.
+  It opens the backup panel, with Back up now, Resume backup and the
+  connect dialog (prototype piece 5). *(agent-selected, task 6.3: besides
+  the prototype's states, "Backing up…" while a push runs, "Backup
+  failing" in the warning colour when GitHub refuses a push for a reason
+  other than being unreachable, and "Not backed up" in the warning colour,
+  with why, when Tir cannot use git in the library. The connect dialog
+  also refuses a repository that already holds commits the library
+  lacks, such as a README GitHub made.)*
 - If GitHub has changes this machine lacks, for example from a second
   computer, Tir does not merge. It pauses backup and tells the user.
   *(agent-selected: Tir asks GitHub at launch and every few minutes, so

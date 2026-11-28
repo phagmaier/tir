@@ -283,7 +283,7 @@ and backup") by `src/ui/saving.ts`'s `Saver`, which a view plugin
   Draft". The settings file then names it as the project last shown.
 - **Failures.** The top bar shows "Saved", "Saving…" from the first change
   until the draft holds it, and "Not saved" when a save failed
-  (`saved-indicator.ts`). A save that fails is tried again after the next
+  (`status-indicator.ts`, which shows backup beside it). A save that fails is tried again after the next
   pause in typing, or after five seconds; the writer hears of it once, in
   a message box, until a save succeeds. A caller of `settle` tells the
   writer itself, or asks it to tell as a save after a pause does
@@ -438,11 +438,38 @@ thread of its own, so neither git nor GitHub ever holds up the interface;
   (`backup::Status`), tried again after the quiet spell. The page reads
   the status with `backup_status` and hears each change as
   `tir://backup`.
+- **Connecting** (`Backup::connect`, the `connect_repository` command)
+  takes only a GitHub address (`github::parse`: `git@github.com:`,
+  `ssh://git@github.com/` or `https://github.com/`, then owner and name),
+  and gives git that address rebuilt from the names. It makes the library
+  a repository if need be, then refuses, with why, a repository this
+  machine's git login cannot list (`git ls-remote`; offline told apart),
+  one anyone can read (`github::Anonymous`: GitHub's REST API asked with
+  no login, which answers a private or missing repository "Not Found";
+  findings, "GitHub"), and one holding a commit the branch lacks, such as
+  a README GitHub made, since pushing would then need a merge. Only then
+  does backup's thread set `origin` (`git::connect`, which drops Tir's
+  record of the repository it replaces and marks `tir.private` in the
+  library's git configuration), record and push, so no push to the old
+  repository is under way while it changes.
+- **The page.** `status-indicator.ts` shows the saved state and backup's
+  beside it, in words and icons from `backup.ts` (prototype piece 5), and
+  in the writing window opens `backup-panel.ts`'s panel: its state, the
+  repository, the library's place, and Back up now (`back_up_now`),
+  Resume backup (`resume_backup`) or Connect / Change repository…, which
+  opens the connect dialog. Back up now and Resume answer once backup has
+  done them, so the panel can say how it went. The Projects screen's and
+  the draft menu's warnings before a deletion say how much of the project
+  or draft GitHub holds (`backup_of`, `git::Coverage`: none, all, or an
+  older version).
 - **In a sandbox** (`TIR_CONFIG_DIR` set; tests use the same), git reads
   only `$TIR_CONFIG_DIR/gitconfig` (`GIT_CONFIG_GLOBAL`, with
   `GIT_CONFIG_NOSYSTEM`) and may use only the `file` transport
   (`GIT_ALLOW_PROTOCOL`), so a trial never reads the writer's git
-  configuration or login, nor reaches GitHub.
+  configuration or login, nor reaches GitHub. What anyone can read is
+  what git reaches reading only `$TIR_CONFIG_DIR/gitconfig-anonymous`.
+  A trial stands local bare repositories in for GitHub with `insteadOf`
+  rules ([Running and checking](#running-and-checking)).
 
 ## Settings
 
@@ -801,6 +828,19 @@ Not in git:
   directory as export destinations, since exports are not confined to
   the library. Use bare `mise run dev` only when the writer intends to
   open their real settings and library.
+- **A trial with backup** stands bare repositories in for GitHub. Make
+  them with `git init --bare` as `"$trial/remotes/OWNER/NAME.git"`, and
+  write `"$trial/gitconfig"` with `[url "$trial/remotes/"]` and the lines
+  `insteadOf = git@github.com:` and `insteadOf = https://github.com/`, so
+  GitHub addresses pasted in the connect dialog reach them. A repository
+  is public when `"$trial/public/OWNER/NAME.git"` reaches it (a link
+  does), with `"$trial/gitconfig-anonymous"` holding
+  `[url "$trial/public/"]` and `insteadOf = https://github.com/`. To go
+  offline, give the library's remote a `receivepack` (and `uploadpack`)
+  that says what ssh says offline and fails:
+  `git -C "$trial/Screenplays" config remote.origin.receivepack "echo 'ssh: Could not resolve hostname github.com' >&2; exit 1; :"`;
+  unset it to come back. A clone of a bare repository, committing and
+  pushing, stands in for the other machine.
 - **`mise run check`** runs, in order and stopping at the first failure:
   Biome (lint and format), the type check of the whole project, the type check
   of `src/core/` without the DOM, Vitest, `cargo fmt --check`, clippy with

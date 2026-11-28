@@ -321,9 +321,10 @@ body.focus #canvas {
   outline: none;
 }
 
-/* The saved state (prototype piece 5), after a rule. Its labels share one
-   grid cell and only the current one shows, so the indicator keeps the
-   widest label's width and a change of state moves nothing. */
+/* The indicator (prototype piece 5), after a rule: the saved state, then
+   backup's. The saved labels share one grid cell and only the current one
+   shows, so the indicator keeps the widest label's width and a change of
+   saved state moves nothing. */
 .bar-right > .sep {
   width: 1px;
   height: 16px;
@@ -331,7 +332,7 @@ body.focus #canvas {
   margin: 0 4px;
   background: var(--rule);
 }
-.bar-right > .saved {
+.status .saved {
   display: grid;
   justify-items: end;
 }
@@ -344,8 +345,27 @@ body.focus #canvas {
 .saved[data-state="failed"] > [data-state="failed"] {
   visibility: visible;
 }
-.bar-right > .saved[data-state="failed"] {
+.bar-right > .status.warn {
   color: var(--warn);
+}
+.status .dot {
+  opacity: 0.5;
+}
+.status .backup-icon {
+  display: inline-flex;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
 }
 
 /* ===== The scene sidebar (prototype piece 5). The list scrolls on its own:
@@ -1174,6 +1194,132 @@ html.title-page-shown .find-bar {
 }
 .draft-dialog .field {
   margin-top: 14px;
+}
+
+/* Notes in a panel or dialog (prototype piece 5): what came of a check,
+   or what to do. */
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.note {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.note-icon {
+  display: inline-flex;
+  flex: none;
+  margin-top: 1px;
+}
+.note.warn {
+  color: var(--warn);
+  background: rgba(240, 138, 110, 0.1);
+}
+.note.ok {
+  color: var(--ok);
+  background: rgba(156, 199, 162, 0.1);
+}
+
+/* The backup panel, under the indicator, and the connect dialog
+   (prototype piece 5). */
+.backup-panel {
+  width: 360px;
+  padding: 16px;
+  font-size: 13px;
+}
+.bp-h {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.bp-ic {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+}
+.bp-ic.ok {
+  color: var(--ok);
+  background: rgba(156, 199, 162, 0.12);
+}
+.bp-ic.warn {
+  color: var(--warn);
+  background: rgba(240, 138, 110, 0.12);
+}
+.bp-h b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.bp-text {
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.bp-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--pop-border);
+  font-size: 12.5px;
+}
+.bp-dl dt {
+  color: var(--faint);
+}
+.bp-dl dd {
+  margin: 0;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.bp-dl small {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--muted);
+  font-size: 11px;
+}
+.backup-panel .note {
+  margin-top: 12px;
+}
+.backup-panel code,
+.connect-dialog code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--field);
+  font:
+    12px ui-monospace,
+    monospace;
+}
+.bp-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.connect-dialog .help {
+  color: var(--faint);
+  font-size: 12px;
+}
+.connect-result {
+  margin-top: 12px;
+}
+.connect-result:empty {
+  display: none;
 }
 
 .import-dialog {
